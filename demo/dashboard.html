@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mesh — Dashboard Demo</title>
+    <meta name="description" content="Interactive demo of the Mesh Platform dashboard — manage agents, view cluster topology, and interact with agent terminals.">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm@5.3.0/css/xterm.css">
+    <link rel="stylesheet" href="dashboard.css">
+</head>
+<body>
+
+    <!-- ========== TOAST CONTAINER ========== -->
+    <div class="toast-container" id="toastContainer"></div>
+
+    <!-- ========== LOGIN VIEW ========== -->
+    <section class="view" id="view-login">
+        <div class="login-bg-grid"></div>
+        <div class="login-card">
+            <div class="login-logo">
+                <span class="login-diamond">&#9670;</span>
+            </div>
+            <h1 class="login-title">Welcome to Mesh</h1>
+            <p class="login-subtitle">Enter your invite token to connect to the cluster dashboard.</p>
+            <div class="login-form">
+                <input type="text" id="inviteToken" class="login-input" placeholder="Enter invite token..." autocomplete="off" spellcheck="false">
+                <button class="btn btn-primary btn-login" id="loginBtn" onclick="handleLogin()">Connect to Cluster</button>
+            </div>
+            <p class="login-hint">Demo token: <code>mesh-demo-2026</code></p>
+            <div class="login-loading" id="loginLoading">
+                <div class="spinner"></div>
+                <span>Connecting to cluster...</span>
+            </div>
+            <div class="login-error" id="loginError">Invalid invite token. Please try again.</div>
+        </div>
+        <a href="index.html" class="login-back">&larr; Back to Landing Page</a>
+    </section>
+
+    <!-- ========== APP SHELL (sidebar + main) ========== -->
+    <div class="app-shell" id="appShell">
+
+        <!-- Sidebar -->
+        <aside class="sidebar" id="sidebar">
+            <div class="sidebar-header">
+                <div class="sidebar-brand">
+                    <span class="nav-logo">&#9670;</span>
+                    <span class="nav-name">mesh</span>
+                </div>
+                <div class="cluster-selector" id="clusterSelector">
+                    <span class="cluster-icon">&#9881;</span>
+                    <span class="cluster-name">agent-mesh</span>
+                    <span class="cluster-provider">DigitalOcean NYC3</span>
+                </div>
+            </div>
+            <nav class="sidebar-nav">
+                <a href="#dashboard" class="nav-item active" data-view="dashboard" onclick="navigateTo('dashboard')">
+                    <span class="nav-icon">&#9635;</span>
+                    <span>Dashboard</span>
+                </a>
+                <a href="#agents" class="nav-item" data-view="agents" onclick="navigateTo('agents')">
+                    <span class="nav-icon">&#9881;</span>
+                    <span>Agents</span>
+                </a>
+                <a href="#topology" class="nav-item" data-view="topology" onclick="navigateTo('topology')">
+                    <span class="nav-icon">&#9670;</span>
+                    <span>Topology</span>
+                </a>
+                <a href="#settings" class="nav-item" data-view="settings" onclick="navigateTo('settings')">
+                    <span class="nav-icon">&#9881;</span>
+                    <span>Settings</span>
+                </a>
+            </nav>
+            <div class="sidebar-footer">
+                <div class="sidebar-user">
+                    <div class="user-avatar">S</div>
+                    <div class="user-info">
+                        <span class="user-name">Samanvaya</span>
+                        <span class="user-role">Admin</span>
+                    </div>
+                </div>
+                <a href="index.html" class="sidebar-back-link">&larr; Landing</a>
+            </div>
+        </aside>
+
+        <!-- Main Content Area -->
+        <main class="main-content" id="mainContent">
+
+            <!-- ===== DASHBOARD VIEW ===== -->
+            <section class="view-content" id="view-dashboard">
+                <div class="view-header">
+                    <h2 class="view-title">Cluster Dashboard</h2>
+                    <div class="view-actions">
+                        <button class="btn btn-sm btn-secondary" onclick="playGuidedDemo()">&#9654; Play Guided Demo</button>
+                        <button class="btn btn-sm btn-primary" onclick="showToast('Agent deployment wizard coming soon!', 'info')">+ Deploy Agent</button>
+                    </div>
+                </div>
+
+                <!-- Cluster Health Summary -->
+                <div class="health-summary">
+                    <div class="health-card">
+                        <span class="health-value green">3</span>
+                        <span class="health-label">Nodes Online</span>
+                    </div>
+                    <div class="health-card">
+                        <span class="health-value cyan">3</span>
+                        <span class="health-label">Agents Running</span>
+                    </div>
+                    <div class="health-card">
+                        <span class="health-value purple">2</span>
+                        <span class="health-label">Snapshots</span>
+                    </div>
+                    <div class="health-card">
+                        <span class="health-value">47h</span>
+                        <span class="health-label">Uptime</span>
+                    </div>
+                </div>
+
+                <!-- Node Cards -->
+                <div class="section-label">Nodes</div>
+                <div class="node-grid" id="nodeGrid">
+                    <!-- Populated by JS -->
+                </div>
+
+                <!-- Agent Cards -->
+                <div class="section-label">Agents</div>
+                <div class="agent-grid" id="agentGrid">
+                    <!-- Populated by JS -->
+                </div>
+
+                <!-- Quick Actions -->
+                <div class="quick-actions">
+                    <button class="btn btn-sm btn-secondary" onclick="showToast('Snapshot of all agents initiated...', 'success')">&#128247; Snapshot All</button>
+                    <button class="btn btn-sm btn-secondary" onclick="navigateTo('topology')">&#128274; View Topology</button>
+                    <button class="btn btn-sm btn-secondary" onclick="showToast('Cluster metrics refreshed', 'info')">&#8635; Refresh Metrics</button>
+                </div>
+            </section>
+
+            <!-- ===== AGENTS VIEW (Terminal) ===== -->
+            <section class="view-content" id="view-agents">
+                <div class="view-header">
+                    <h2 class="view-title">Agent Terminal</h2>
+                    <div class="view-actions">
+                        <button class="btn btn-sm btn-secondary" id="guidedDemoBtn" onclick="playGuidedDemo()">&#9654; Play Guided Demo</button>
+                    </div>
+                </div>
+
+                <div class="agent-layout">
+                    <!-- Agent Sidebar (metadata) -->
+                    <div class="agent-sidebar" id="agentSidebar">
+                        <div class="agent-sidebar-header">
+                            <h3>Agents</h3>
+                        </div>
+                        <div class="agent-list" id="agentList">
+                            <!-- Populated by JS -->
+                        </div>
+                    </div>
+
+                    <!-- Terminal Area -->
+                    <div class="terminal-area">
+                        <div class="terminal-toolbar">
+                            <div class="terminal-tabs" id="terminalTabs">
+                                <!-- Populated by JS -->
+                            </div>
+                            <div class="terminal-actions">
+                                <button class="toolbar-btn" onclick="clearActiveTerminal()" title="Clear">&#128465;</button>
+                                <button class="toolbar-btn" onclick="snapshotActiveAgent()" title="Snapshot">&#128247;</button>
+                                <button class="toolbar-btn" onclick="restartActiveTerminal()" title="Restart">&#8635;</button>
+                            </div>
+                        </div>
+                        <div class="terminal-container" id="terminalContainer">
+                            <!-- xterm.js instances mounted here -->
+                            <div class="terminal-placeholder" id="terminalPlaceholder">
+                                <span class="placeholder-icon">&#9670;</span>
+                                <p>Select an agent to open its terminal</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- ===== TOPOLOGY VIEW ===== -->
+            <section class="view-content" id="view-topology">
+                <div class="view-header">
+                    <h2 class="view-title">Cluster Topology</h2>
+                </div>
+                <div class="topology-container">
+                    <div class="topology-diagram" id="topologyDiagram">
+                        <!-- Populated by JS -->
+                    </div>
+                    <div class="topology-legend">
+                        <div class="legend-item"><span class="legend-dot green"></span> Leader Node</div>
+                        <div class="legend-item"><span class="legend-dot cyan"></span> Worker Node</div>
+                        <div class="legend-item"><span class="legend-dot purple"></span> Agent</div>
+                        <div class="legend-item"><span class="legend-line"></span> Mesh Link</div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- ===== SETTINGS VIEW ===== -->
+            <section class="view-content" id="view-settings">
+                <div class="view-header">
+                    <h2 class="view-title">Settings</h2>
+                </div>
+                <div class="settings-grid">
+                    <div class="settings-card">
+                        <h3>Cluster Configuration</h3>
+                        <div class="settings-row">
+                            <span class="settings-label">Cluster Name</span>
+                            <span class="settings-value">agent-mesh</span>
+                        </div>
+                        <div class="settings-row">
+                            <span class="settings-label">Provider</span>
+                            <span class="settings-value">DigitalOcean</span>
+                        </div>
+                        <div class="settings-row">
+                            <span class="settings-label">Region</span>
+                            <span class="settings-value">NYC3</span>
+                        </div>
+                        <div class="settings-row">
+                            <span class="settings-label">Tailscale Tailnet</span>
+                            <span class="settings-value">connected</span>
+                        </div>
+                        <div class="settings-row">
+                            <span class="settings-label">Nomad Version</span>
+                            <span class="settings-value">1.7.2</span>
+                        </div>
+                        <div class="settings-row">
+                            <span class="settings-label">Consul Version</span>
+                            <span class="settings-value">1.17.0</span>
+                        </div>
+                    </div>
+                    <div class="settings-card">
+                        <h3>Access &amp; Security</h3>
+                        <div class="settings-row">
+                            <span class="settings-label">Nomad ACLs</span>
+                            <span class="settings-value warn">Disabled</span>
+                        </div>
+                        <div class="settings-row">
+                            <span class="settings-label">Mesh Network</span>
+                            <span class="settings-value green">Encrypted (WireGuard)</span>
+                        </div>
+                        <div class="settings-row">
+                            <span class="settings-label">TLS</span>
+                            <span class="settings-value green">Auto (Let's Encrypt)</span>
+                        </div>
+                        <div class="settings-row">
+                            <span class="settings-label">Invite Tokens</span>
+                            <span class="settings-value">3 active</span>
+                        </div>
+                    </div>
+                    <div class="settings-card">
+                        <h3>Resource Limits</h3>
+                        <div class="settings-row">
+                            <span class="settings-label">Leader Memory</span>
+                            <span class="settings-value">2 GB</span>
+                        </div>
+                        <div class="settings-row">
+                            <span class="settings-label">Worker Memory (avg)</span>
+                            <span class="settings-value">2 GB</span>
+                        </div>
+                        <div class="settings-row">
+                            <span class="settings-label">Control Plane Overhead</span>
+                            <span class="settings-value">530 MB</span>
+                        </div>
+                        <div class="settings-row">
+                            <span class="settings-label">Max Agents per Worker</span>
+                            <span class="settings-value">5</span>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+        </main>
+    </div>
+
+    <!-- Scripts -->
+    <script src="https://cdn.jsdelivr.net/npm/xterm@5.3.0/lib/xterm.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/xterm-addon-fit@0.8.0/lib/xterm-addon-fit.js"></script>
+    <script src="terminal-mock.js"></script>
+    <script src="dashboard.js"></script>
+</body>
+</html>

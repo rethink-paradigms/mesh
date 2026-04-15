@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mesh — Cluster</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&family=IBM+Plex+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="cluster.css">
+</head>
+<body>
+<script>if(new URLSearchParams(window.location.search).has('demo')){var el=document.createElement('div');el.id='demoTransitionScreen';el.style.cssText='position:fixed;inset:0;z-index:10000;background:#080808;';document.body.prepend(el);}</script>
+
+    <div class="shell">
+
+        <aside class="sidebar">
+            <div class="sidebar-brand">
+                <span class="brand-mark">&#9670;</span>
+                <span class="brand-text">mesh</span>
+            </div>
+            <div class="sidebar-cluster">
+                <span class="cluster-name">agent-mesh</span>
+                <span class="cluster-loc">3 nodes · digitalocean nyc3</span>
+            </div>
+            <nav class="sidebar-nav">
+                <a href="#" class="nav-link active" data-view="agents" onclick="switchView('agents')">
+                    <span class="nav-icon">&#9654;</span>
+                    agents
+                </a>
+                <a href="#" class="nav-link" data-view="distribution" onclick="switchView('distribution')">
+                    <span class="nav-icon">&#9638;</span>
+                    distribution
+                </a>
+                <a href="#" class="nav-link" data-view="performance" onclick="switchView('performance')">
+                    <span class="nav-icon">&#9679;</span>
+                    performance
+                </a>
+                <a href="#" class="nav-link" data-view="terminal" onclick="switchView('terminal')">
+                    <span class="nav-icon">&#9608;</span>
+                    terminal
+                </a>
+            </nav>
+            <div class="sidebar-footer">
+                <a href="index.html" class="back-link">&larr; landing</a>
+                <button class="demo-btn" onclick="playGuidedDemo()">
+                    <span class="demo-btn-icon">&#9654;</span>
+                    Play Guided Demo
+                </button>
+            </div>
+        </aside>
+
+        <main class="main">
+
+            <!-- ===== AGENTS VIEW (default) ===== -->
+            <section class="view active" id="view-agents">
+                <header class="view-header">
+                    <div>
+                        <h1 class="view-title">agents</h1>
+                        <p class="view-sub">persistent, stateful, yours</p>
+                    </div>
+                    <div class="view-header-actions">
+                        <button class="btn-ghost" onclick="showToast('Snapshot queue started for all agents')">snapshot all</button>
+                        <button class="btn-accent" onclick="showToast('Agent deploy wizard — coming soon', 'info')">deploy agent</button>
+                    </div>
+                </header>
+
+                <div class="agents-summary" id="agentsSummary">
+                    <!-- JS rendered -->
+                </div>
+
+                <div class="agents-grid" id="agentsGrid">
+                    <!-- JS rendered -->
+                </div>
+            </section>
+
+            <!-- ===== DISTRIBUTION VIEW ===== -->
+            <section class="view" id="view-distribution">
+                <header class="view-header">
+                    <div>
+                        <h1 class="view-title">distribution</h1>
+                        <p class="view-sub">where your agents live, on your hardware</p>
+                    </div>
+                </header>
+
+                <div class="dist-grid" id="distGrid">
+                    <!-- JS rendered -->
+                </div>
+            </section>
+
+            <!-- ===== PERFORMANCE VIEW ===== -->
+            <section class="view" id="view-performance">
+                <header class="view-header">
+                    <div>
+                        <h1 class="view-title">performance</h1>
+                        <p class="view-sub">your system, your resources</p>
+                    </div>
+                </header>
+
+                <div class="perf-grid" id="perfGrid">
+                    <!-- JS rendered -->
+                </div>
+            </section>
+
+            <!-- ===== TERMINAL VIEW ===== -->
+            <section class="view" id="view-terminal">
+                <header class="view-header">
+                    <div>
+                        <h1 class="view-title">terminal</h1>
+                        <p class="view-sub">direct agent access</p>
+                    </div>
+                </header>
+
+                <div class="term-layout">
+                    <div class="term-agent-list" id="termAgentList">
+                        <!-- JS rendered -->
+                    </div>
+                    <div class="term-main">
+                        <div class="term-bar" id="termBar">
+                            <span class="term-bar-label" id="termBarLabel">no agent selected</span>
+                            <div class="term-bar-actions">
+                                <button class="term-action" onclick="clearTerm()" title="clear">&#10005;</button>
+                            </div>
+                        </div>
+                        <div class="term-body" id="termBody">
+                            <div class="term-placeholder">
+                                <span class="term-placeholder-mark">&#9670;</span>
+                                <span>select an agent from the left</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+        </main>
+    </div>
+
+    <div class="toast-rack" id="toastRack"></div>
+
+    <div class="demo-overlay" id="demoOverlay">
+        <div class="demo-overlay-inner">
+            <span class="demo-overlay-label">guided demo</span>
+            <div class="demo-overlay-bar">
+                <div class="demo-overlay-progress" id="demoProgress"></div>
+            </div>
+            <span class="demo-overlay-step" id="demoStep"></span>
+        </div>
+    </div>
+
+    <script src="cluster.js"></script>
+</body>
+</html>

@@ -1,0 +1,95 @@
+name: Reusable Nomad Deploy
+
+on:
+  workflow_call:
+    inputs:
+      app_name:
+        required: true
+        type: string
+        description: "Application Name (used for job name and secrets path)"
+      job_file:
+        required: true
+        type: string
+        description: "Path to the Nomad job file (.nomad.hcl)"
+      nomad_addr:
+        required: true
+        type: string
+        description: "Nomad Server Address"
+      image_tag:
+        required: true
+        type: string
+        description: "Docker Image Tag to deploy"
+    secrets:
+      nomad_token:
+        required: false
+        description: "Nomad ACL Token"
+      app_secrets:
+        required: false
+        description: "JSON string of application secrets (key-value pairs)"
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Nomad
+        uses: hashicorp/setup-nomad@v3
+        with:
+          version: "1.9.3"
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Python Dependencies
+        run: pip install requests python-dotenv
+
+      - name: Sync Secrets to Nomad
+        if: ${{ secrets.app_secrets != '' }}
+        env:
+          APP_SECRETS: ${{ secrets.app_secrets }}
+          NOMAD_TOKEN: ${{ secrets.nomad_token }}
+        run: |
+          # 1. Dump secrets JSON to .env format
+          echo "$APP_SECRETS" | jq -r 'to_entries|map("\(.key)=\(.value)")|.[]' > secrets.env
+
+          # 2. Run Sync Script
+          # Assuming script is in the same repo at ops-src/scripts/sync_secrets.py
+          # If this workflow is called FROM another repo, we need to make sure we have the script.
+          # For now, assuming monorepo or checkout includes it.
+
+          python3 src/workloads/manage_secrets/manage.py \
+            --source file \
+            --env-file secrets.env \
+            --job "jobs/${{ inputs.app_name }}/secrets" \
+            --address "${{ inputs.nomad_addr }}" \
+            --token "$NOMAD_TOKEN"
+
+          rm secrets.env
+
+      - name: Prepare Job File
+        run: |
+          sed "s/JOB_NAME_PLACEHOLDER/${{ inputs.app_name }}/g" ${{ inputs.job_file }} > deployed_job.nomad
+
+      - name: Validate Job
+        env:
+          NOMAD_ADDR: ${{ inputs.nomad_addr }}
+          NOMAD_TOKEN: ${{ secrets.nomad_token }}
+        run: |
+          nomad job validate \
+            -var="image_tag=${{ inputs.image_tag }}" \
+            -var="app_name=${{ inputs.app_name }}" \
+            deployed_job.nomad
+
+      - name: Deploy Job
+        env:
+          NOMAD_ADDR: ${{ inputs.nomad_addr }}
+          NOMAD_TOKEN: ${{ secrets.nomad_token }}
+        run: |
+          nomad job run \
+            -var="image_tag=${{ inputs.image_tag }}" \
+            -var="app_name=${{ inputs.app_name }}" \
+            deployed_job.nomad

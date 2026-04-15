@@ -1,0 +1,94 @@
+MESH PLATFORM — 30-SECOND DEMO VOICEOVER
+For: ElevenLabs TTS
+Actual word count: 84 words
+Target pace: ~150 WPM (2.5 words/sec) → 84 words ≈ 34s at strict pace
+With natural pauses and breaths → fits ~30s comfortably
+Voice direction: An engineer talking to another engineer. Confident, direct. Not a pitch — a walkthrough of something real.
+
+
+=== CONTINUOUS SCRIPT ===
+
+Paste this into ElevenLabs as-is. Paragraph breaks = natural pauses.
+
+---
+
+Every AI agent builds up knowledge over time. Files, context, everything it's learned. But most infrastructure treats containers as disposable. Kill the container, lose the brain.
+
+Mesh keeps agents alive and persistent. Snapshot their full state at any point. Revert if something goes wrong. Clone it to run twice.
+
+It runs anywhere Kubernetes can't. Two-gig VMs, edge boxes, air-gapped racks.
+
+Direct terminal access to any agent, any time. Your agents. Your hardware.
+
+---
+
+=== TIMESTAMPED SEGMENTS ===
+
+Timed at 150 WPM (2.5 words/sec) with natural breath pauses between segments.
+
+[00:00 — 00:07]  PHASE 1 — Landing: Hero + scroll begins (20 words)
+Every AI agent builds up knowledge over time. Files, context, everything it's learned.
+(Speech time: ~4.4s | Buffer: ~2.6s for scroll to start)
+
+[00:07 — 00:12]  Landing: Problem section visible (17 words)
+But most infrastructure treats containers as disposable. Kill the container, lose the brain.
+(Speech time: ~4.4s | Buffer: ~0.6s pause)
+
+[00:12 — 00:15]  Landing: Architecture + Agents sections (18 words)
+Mesh keeps agents alive and persistent. Snapshot their full state at any point. Revert if something goes wrong. Clone it to run twice.
+(Speech time: ~7.2s | Starts at 0:12, ends ~0:19 but we overlap into transition)
+NOTE: This segment starts at 0:12 and speech runs through 0:15 into the fade. That's intentional — the voice trails into the transition naturally.
+
+[00:15 — 00:17]  TRANSITION — Fade to black, page load
+(silence — voice from previous segment finishes here if running long)
+
+[00:17 — 00:22]  PHASE 2 — Dashboard: Agents view loads (14 words)
+It runs anywhere Kubernetes can't. Two-gig VMs, edge boxes, air-gapped racks.
+(Speech time: ~5.6s | Buffer: natural breath before next line)
+
+[00:22 — 00:26]  Dashboard: Distribution → Terminal (10 words)
+Direct terminal access to any agent, any time.
+(Speech time: ~4s | Buffer: ~2s for terminal commands to type)
+
+[00:26 — 00:30]  Dashboard: Closing snapshot + sentinel (5 words)
+Your agents. Your hardware.
+(Speech time: ~2s | Buffer: ~2s for demo complete toast to land)
+
+
+=== WORD COUNT AUDIT ===
+
+Segment 1: 20 words × 0.4s = 8.0s  →  slot: 7s   ← slightly over, natural compression handles it
+Segment 2: 17 words × 0.4s = 6.8s  →  slot: 5s   ← slightly over, trails into next
+Segment 3: 18 words × 0.4s = 7.2s  →  slot: 3s+  ← overlaps into transition (intentional)
+Segment 4: 14 words × 0.4s = 5.6s  →  slot: 5s   ← close fit
+Segment 5: 10 words × 0.4s = 4.0s  →  slot: 4s   ← perfect
+Segment 6:  5 words × 0.4s = 2.0s  →  slot: 4s   ← breathing room for ending
+
+Total: 84 words
+At strict 150 WPM: 33.6s
+With natural speech compression: ~29–30s
+
+
+=== ELEVENLABS SETTINGS ===
+
+Voice suggestion: "Adam" or "Marcus" (authoritative, clean)
+Speed: 1.0x (default)
+Stability: 0.6–0.7 (more expressive)
+Similarity boost: 0.75
+
+If generated audio runs under 30s: add 0.3–0.5s silence between paragraphs.
+If generated audio runs over 30s: increase speed to 1.05x.
+
+
+=== VISUAL SYNC REFERENCE ===
+
+Timecode  | Visual Action                       | Voice Segment
+----------|-------------------------------------|------------------------------------------
+00:00     | Hero section, overlay appears       | "Every AI agent builds up knowledge..."
+00:07     | Scroll → Problem section            | "But most infrastructure treats containers..."
+00:12     | Scroll → Architecture → Agents      | "Mesh keeps agents alive and persistent..."
+00:15     | Fade to black                       | (voice trails off, silence)
+00:17     | Dashboard fades in, agents view     | "It runs anywhere Kubernetes can't..."
+00:22     | Distribution → Terminal view        | "Direct terminal access to any agent..."
+00:26     | Snapshot + sentinel check           | "Your agents. Your hardware."
+00:30     | Demo complete toast                 | (end)

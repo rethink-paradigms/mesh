@@ -1,0 +1,183 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mesh"
+version = "0.3.0"
+description = "Lightweight infrastructure orchestration platform for multi-cloud container deployment"
+readme = "README.md"
+requires-python = ">=3.11"
+license = {text = "MIT"}
+authors = [
+    {name = "Mesh Platform Contributors"}
+]
+keywords = ["infrastructure", "multi-cloud", "nomad", "consul", "pulumi", "containers"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: System :: Systems Administration",
+    "Topic :: System :: Distributed Computing",
+]
+
+dependencies = [
+# Pulumi - Infrastructure as Code
+    "pulumi>=3.110.0",
+    "pulumi-aws>=6.0.0", 
+    "pulumi-tailscale>=0.8.0",
+
+    # Environment & Configuration
+    "python-dotenv>=1.0.0",
+
+    # Templating
+    "jinja2>=3.1.0",
+
+    # Testing
+    "pytest>=7.4.0",
+    "pytest-mock>=3.12.0",
+    "pytest-cov>=4.1.0",
+
+    # HTTP & API
+    "requests>=2.31.0",
+
+    # Multi-Provider Cloud Support (NEW)
+    "apache-libcloud>=3.8.0",  # 50+ cloud provider drivers
+    "pyyaml>=6.0.0",           # YAML configuration for provider registry
+    
+    # CLI Framework (NEW - required for CLI implementation)
+    "typer>=0.9.0",           # CLI framework
+    "questionary>=2.0.0",       # Interactive prompts  
+    "rich>=13.0.0",             # Progress bars and formatting
+]
+
+[project.optional-dependencies]
+dev = [
+    "black>=23.0.0",
+    "flake8>=6.0.0",
+    "mypy>=1.5.0",
+    "isort>=5.12.0",
+    "pre-commit>=3.3.0",
+]
+
+# Enterprise features (GPU, monitoring, backups) are in the mesh-enterprise package
+
+[project.scripts]
+mesh = "src.cli.main:main"
+
+# Enterprise and third-party CLI plugins register under this group:
+# [project.entry-points."mesh.plugins"]
+# Example: gpu = "mesh_enterprise.cli.gpu:register"
+
+[project.urls]
+Homepage = "https://github.com/your-org/mesh"
+Documentation = "https://github.com/your-org/mesh/docs"
+Repository = "https://github.com/your-org/mesh"
+Issues = "https://github.com/your-org/mesh/issues"
+
+[tool.setuptools.packages.find]
+where = ["."]
+
+[tool.setuptools.package-data]
+"*" = ["*.nomad.hcl", "*.sh", "*.yaml", "*.yml", "*.j2", "*.md"]
+
+[tool.black]
+line-length = 100
+target-version = ['py311', 'py312']
+include = '\.pyi?$'
+extend-exclude = '''
+/(
+  # defaults
+  \.eggs
+  | \.git
+  | \.hg
+  | \.mypy_cache
+  | \.tox
+  | \.venv
+  | build
+  | dist
+  # custom
+  | src/infrastructure/provision_cloud_cluster  # Pulumi project has its own venv
+)/
+'''
+
+[tool.isort]
+profile = "black"
+line_length = 100
+multi_line_output = 3
+include_trailing_comma = true
+force_grid_wrap = 0
+use_parentheses = true
+ensure_newline_before_comments = true
+
+[tool.mypy]
+python_version = "3.11"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = false
+disallow_incomplete_defs = false
+check_untyped_defs = true
+no_implicit_optional = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+warn_no_return = true
+strict_equality = true
+
+[[tool.mypy.overrides]]
+module = [
+    "pulumi.*",
+    "pulumi_aws.*",
+    "pulumi_tailscale.*",
+    "libcloud.*",
+]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+minversion = "7.0"
+testpaths = ["src"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = [
+    "-v",
+    "--strict-markers",
+    "--tb=short",
+    "--cov=src",
+    "--cov-report=term-missing",
+    "--cov-report=html",
+]
+markers = [
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+    "integration: marks tests as integration tests",
+    "e2e: marks tests as end-to-end tests (require cluster)",
+    "local_only: marks tests requiring local infrastructure",
+]
+filterwarnings = [
+    "ignore::DeprecationWarning",
+    "ignore::PendingDeprecationWarning",
+]
+
+[tool.coverage.run]
+source = ["src"]
+omit = [
+    "*/test_*.py",
+    "*/__pycache__/*",
+    "*/tests/*",
+    "src/infrastructure/provision_cloud_cluster/*",  # Pulumi main entrypoint
+]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+    "if TYPE_CHECKING:",
+    "if typing.TYPE_CHECKING:",
+    "@abstract",
+]
+precision = 2
