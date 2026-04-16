@@ -1,6 +1,5 @@
-# Existing patterns
+# User-generated app scaffolds
 apps/
-run_tests.sh
 
 # Python
 __pycache__/
@@ -16,6 +15,12 @@ pip-delete-this-directory.txt
 .pytest_cache/
 .coverage
 htmlcov/
+
+# Python build artifacts
+build/
+dist/
+*.egg-info/
+*.egg
 
 # Environment Variables & Secrets
 .env

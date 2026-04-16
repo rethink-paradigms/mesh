@@ -26,8 +26,8 @@ if env_path.exists():
             os.environ.setdefault(k.strip(), v.strip())
 
 # Now import project modules
-from src.infrastructure.providers import get_credentials, get_driver
-from src.infrastructure.boot_consul_nomad.generate_boot_scripts import generate_cloud_init_yaml
+from mesh.infrastructure.providers import get_credentials, get_driver
+from mesh.infrastructure.boot_consul_nomad.generate_boot_scripts import generate_cloud_init_yaml
 
 
 # ── Configuration ──────────────────────────────────────────────────────────

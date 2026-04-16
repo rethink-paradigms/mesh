@@ -22,7 +22,7 @@ if env_path.exists():
             k, v = line.split("=", 1)
             os.environ.setdefault(k.strip(), v.strip())
 
-from src.infrastructure.providers import get_credentials, get_driver
+from mesh.infrastructure.providers import get_credentials, get_driver
 
 STATE_FILE = Path(__file__).parent / ".cluster-state.json"
 

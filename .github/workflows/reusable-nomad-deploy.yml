@@ -61,7 +61,7 @@ jobs:
           # If this workflow is called FROM another repo, we need to make sure we have the script.
           # For now, assuming monorepo or checkout includes it.
 
-          python3 src/workloads/manage_secrets/manage.py \
+          python3 src/mesh/workloads/manage_secrets/manage.py \
             --source file \
             --env-file secrets.env \
             --job "jobs/${{ inputs.app_name }}/secrets" \

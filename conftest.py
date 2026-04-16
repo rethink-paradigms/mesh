@@ -1,5 +1,5 @@
-import sys
 import os
+import sys
 
-# Add the project root to sys.path so that 'migration' package can be imported
-sys.path.insert(0, os.path.abspath(os.path.dirname(__file__)))
+# Add src/ to sys.path so `import mesh` works when running tests in-repo
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "src"))

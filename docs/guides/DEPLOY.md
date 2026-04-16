@@ -12,7 +12,7 @@
 For solo projects and minimal budgets (~$8/month), deploy everything on a single VM with Caddy ingress.
 
 ```bash
-cd src/infrastructure/provision_cloud_cluster
+cd src/mesh/infrastructure/provision_cloud_cluster
 pulumi stack init lite-cluster
 
 pulumi config set provider aws
@@ -51,7 +51,7 @@ The platform supports 50+ cloud providers through Apache Libcloud.
 #### Quickstart: DigitalOcean
 
 ```bash
-cd src/infrastructure/provision_cloud_cluster
+cd src/mesh/infrastructure/provision_cloud_cluster
 pulumi stack init do-cluster
 
 pulumi config set provider digitalocean
@@ -68,7 +68,7 @@ pulumi up
 #### Quickstart: AWS
 
 ```bash
-cd src/infrastructure/provision_cloud_cluster
+cd src/mesh/infrastructure/provision_cloud_cluster
 pulumi stack init aws-cluster
 
 pulumi config set provider aws
@@ -164,7 +164,7 @@ Full list: https://libcloud.readthedocs.io/en/stable/compute/supported_providers
 
 ```bash
 # Start local cluster
-cd src/infrastructure/provision_local_cluster
+cd src/mesh/infrastructure/provision_local_cluster
 python3 cli.py up
 
 # Check status
@@ -183,7 +183,7 @@ python3 cli.py down
 ### Deploy a Web Service
 
 ```bash
-nomad job run src/workloads/deploy_web_service/web_service.nomad.hcl \
+nomad job run src/mesh/workloads/deploy_web_service/web_service.nomad.hcl \
   -var="app_name=myapp" \
   -var="image=nginx" \
   -var="image_tag=latest" \
@@ -219,7 +219,7 @@ deploy_monitoring_job(
 ### Deploy GPU Workload
 
 ```bash
-nomad job run src/workloads/deploy_gpu_service/gpu_service.nomad.hcl \
+nomad job run src/mesh/workloads/deploy_gpu_service/gpu_service.nomad.hcl \
   -var="app_name=pytorch-training" \
   -var="image=pytorch/pytorch:2.1.0-cuda12.1-runtime" \
   -var="gpu_count=1" \
@@ -269,7 +269,7 @@ The `mesh` CLI is a planned interactive tool to reduce onboarding from 2-4 hours
 ### Planned Architecture
 
 ```
-src/cli/
+src/mesh/cli/
 ├── main.py                    # Typer app definition
 ├── commands/
 │   ├── init.py                # mesh init
