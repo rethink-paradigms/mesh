@@ -8,7 +8,8 @@ version = "0.3.0"
 description = "Lightweight infrastructure orchestration platform for multi-cloud container deployment"
 readme = "README.md"
 requires-python = ">=3.11"
-license = {text = "MIT"}
+license = "MIT"
+license-files = ["LICENSE"]
 authors = [
     {name = "Mesh Platform Contributors"}
 ]
@@ -16,7 +17,6 @@ keywords = ["infrastructure", "multi-cloud", "nomad", "consul", "pulumi", "conta
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
-    "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
@@ -66,23 +66,23 @@ dev = [
 # Enterprise features (GPU, monitoring, backups) are in the mesh-enterprise package
 
 [project.scripts]
-mesh = "src.cli.main:main"
+mesh = "mesh.cli.main:main"
 
 # Enterprise and third-party CLI plugins register under this group:
 # [project.entry-points."mesh.plugins"]
 # Example: gpu = "mesh_enterprise.cli.gpu:register"
 
 [project.urls]
-Homepage = "https://github.com/your-org/mesh"
-Documentation = "https://github.com/your-org/mesh/docs"
-Repository = "https://github.com/your-org/mesh"
-Issues = "https://github.com/your-org/mesh/issues"
+Homepage = "https://github.com/rethink-paradigms/mesh"
+Documentation = "https://github.com/rethink-paradigms/mesh/tree/main/docs"
+Repository = "https://github.com/rethink-paradigms/mesh"
+Issues = "https://github.com/rethink-paradigms/mesh/issues"
 
 [tool.setuptools.packages.find]
-where = ["."]
+where = ["src"]
 
 [tool.setuptools.package-data]
-"*" = ["*.nomad.hcl", "*.sh", "*.yaml", "*.yml", "*.j2", "*.md"]
+"mesh" = ["**/*.nomad.hcl", "**/*.sh", "**/*.yaml", "**/*.yml", "**/*.j2", "**/*.md"]
 
 [tool.black]
 line-length = 100
@@ -100,7 +100,7 @@ extend-exclude = '''
   | build
   | dist
   # custom
-  | src/infrastructure/provision_cloud_cluster  # Pulumi project has its own venv
+  | src/mesh/infrastructure/provision_cloud_cluster  # Pulumi project has its own venv
 )/
 '''
 
@@ -137,7 +137,8 @@ ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 minversion = "7.0"
-testpaths = ["src"]
+testpaths = ["src/mesh"]
+pythonpath = ["src"]
 python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
@@ -145,7 +146,7 @@ addopts = [
     "-v",
     "--strict-markers",
     "--tb=short",
-    "--cov=src",
+    "--cov=mesh",
     "--cov-report=term-missing",
     "--cov-report=html",
 ]
@@ -154,6 +155,9 @@ markers = [
     "integration: marks tests as integration tests",
     "e2e: marks tests as end-to-end tests (require cluster)",
     "local_only: marks tests requiring local infrastructure",
+    "destructive: marks tests that mutate live infrastructure",
+    "cloud_only: marks tests that require a live cloud cluster",
+    "cross_cloud: marks tests spanning multiple cloud providers",
 ]
 filterwarnings = [
     "ignore::DeprecationWarning",
@@ -161,12 +165,12 @@ filterwarnings = [
 ]
 
 [tool.coverage.run]
-source = ["src"]
+source = ["mesh"]
 omit = [
     "*/test_*.py",
     "*/__pycache__/*",
     "*/tests/*",
-    "src/infrastructure/provision_cloud_cluster/*",  # Pulumi main entrypoint
+    "src/mesh/infrastructure/provision_cloud_cluster/*",  # Pulumi main entrypoint
 ]
 
 [tool.coverage.report]

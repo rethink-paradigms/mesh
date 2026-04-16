@@ -198,8 +198,8 @@ Each feature directory contains a `CONTEXT.md` (interface contract), implementat
 ## Testing
 
 ```bash
-pytest src/ -v -m "not e2e"       # Unit + integration
-pytest src/verification/ -v        # End-to-end (requires running cluster)
+pytest src/mesh -v -m "not e2e"       # Unit + integration
+pytest src/mesh/verification/ -v        # End-to-end (requires running cluster)
 ```
 
 ---
