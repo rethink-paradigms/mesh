@@ -9,82 +9,110 @@ from typing import Dict, Any, Optional, Callable
 from pulumi import automation as auto
 from pulumi.automation import ProjectSettings, LocalWorkspaceOptions
 
+from mesh.infrastructure.config.env import EnvVars, get_env
+
 
 class CloudClusterAutomation:
-    """
-    Simplified wrapper for Pulumi Automation API.
-    """
-
     def __init__(self, stack_name: str = "dev", work_dir: Optional[str] = None):
         self.stack_name = stack_name
         self.work_dir = work_dir or os.path.dirname(__file__)
 
-    async def deploy_cluster(
+    def deploy_cluster(
         self,
         config: Dict[str, Any],
         progress_callback: Optional[Callable[[str], None]] = None,
     ) -> Dict[str, Any]:
-        """Deploy cluster using automation API."""
         try:
-            # Create workspace options
+            src_dir = os.path.abspath(
+                os.path.join(os.path.dirname(__file__), "..", "..", "..")
+            )
             workspace_opts = LocalWorkspaceOptions(
                 work_dir=self.work_dir,
                 project_settings=ProjectSettings(name="mesh-cluster", runtime="python"),
+                env_vars={"PYTHONPATH": src_dir},
             )
 
-            # Create or select stack
-            stack = await auto.create_or_select_stack(
+            stack = auto.create_or_select_stack(
                 stack_name=self.stack_name,
                 project_name="mesh-cluster",
                 program=self._pulumi_program,
                 opts=workspace_opts,
             )
 
-            # Set configuration values
             for key, value in config.items():
-                await stack.set_config(key, auto.ConfigValue(value=value))
+                stack.set_config(key, auto.ConfigValue(value=value))
 
-            # Deploy with progress tracking
+            ts_api_key = get_env(EnvVars.TAILSCALE_KEY, default="")
+            if ts_api_key:
+                stack.set_config(
+                    "tailscale:apiKey", auto.ConfigValue(value=ts_api_key, secret=True)
+                )
+            ts_tailnet = get_env(EnvVars.TAILSCALE_TAILNET, default="")
+            if ts_tailnet:
+                stack.set_config(
+                    "tailscale:tailnet", auto.ConfigValue(value=ts_tailnet)
+                )
+
             if progress_callback:
                 progress_callback(f"🚀 Starting deployment")
 
-            result = await stack.up(on_output=progress_callback)
+            result = stack.up(on_output=progress_callback)
 
-            # Extract outputs
             outputs = {key: output.value for key, output in result.outputs.items()}
+
+            duration = None
+            if result.summary.start_time and result.summary.end_time:
+                duration = (
+                    result.summary.end_time - result.summary.start_time
+                ).total_seconds()
 
             return {
                 "status": "success",
                 "outputs": outputs,
                 "summary": {
                     "resource_changes": result.summary.resource_changes,
-                    "duration_seconds": result.summary.duration_seconds,
+                    "duration_seconds": duration,
                 },
             }
 
         except Exception as e:
             return {"status": "error", "error": str(e), "outputs": {}}
 
-    async def destroy_cluster(
+    def destroy_cluster(
         self, progress_callback: Optional[Callable[[str], None]] = None
     ) -> Dict[str, Any]:
-        """Destroy cluster using automation API."""
         try:
-            workspace_opts = LocalWorkspaceOptions(work_dir=self.work_dir)
-            stack = await auto.select_stack(
-                stack_name=self.stack_name, opts=workspace_opts
+            src_dir = os.path.abspath(
+                os.path.join(os.path.dirname(__file__), "..", "..", "..")
+            )
+            workspace_opts = LocalWorkspaceOptions(
+                work_dir=self.work_dir,
+                project_settings=ProjectSettings(name="mesh-cluster", runtime="python"),
+                env_vars={"PYTHONPATH": src_dir},
+            )
+            stack = auto.create_or_select_stack(
+                stack_name=self.stack_name,
+                project_name="mesh-cluster",
+                program=self._pulumi_program,
+                opts=workspace_opts,
             )
 
             if progress_callback:
                 progress_callback(f"🗑️  Destroying {self.stack_name}")
 
-            result = await stack.destroy(on_output=progress_callback)
+            result = stack.destroy(on_output=progress_callback)
+
+            duration = None
+            if result.summary.start_time and result.summary.end_time:
+                duration = (
+                    result.summary.end_time - result.summary.start_time
+                ).total_seconds()
 
             return {
                 "status": "success",
                 "summary": {
                     "resource_changes": result.summary.resource_changes,
-                    "duration_seconds": result.summary.duration_seconds,
+                    "duration_seconds": duration,
                 },
             }
 
@@ -92,49 +120,48 @@ class CloudClusterAutomation:
             return {"status": "error", "error": str(e)}
 
     def _pulumi_program(self):
-        """Pulumi program function that defines the infrastructure."""
         import pulumi
         from mesh.infrastructure.configure_tailscale import (
             configure as tailscale_feature,
         )
         from mesh.infrastructure.provision_node.provision_node import provision_node
 
-        # Load configuration from stack config
-        provider = pulumi.Config().get("provider") or "aws"
-        region = pulumi.Config().get("region") or "us-east-1"
+        config = pulumi.Config()
+        provider = config.get("provider")
+        region = config.get("region")
 
-        # Generate Tailscale auth key
-        tailscale_auth_key = tailscale_feature.generate_auth_key()
+        if not provider:
+            raise ValueError("provider is required in Pulumi config")
+        if not region:
+            raise ValueError("region is required in Pulumi config")
 
-        # Provision leader node
+        tailscale_key_resource = tailscale_feature.create_auth_key("mesh-cluster-key")
+
         leader = provision_node(
             name="vm-leader",
             provider=provider,
             role="server",
             size=pulumi.Config().get("leader_size") or "t3.small",
-            tailscale_auth_key=tailscale_auth_key,
+            tailscale_auth_key=tailscale_key_resource.key,
             leader_ip="",
+            region=region,
         )
 
-        # Export outputs
         pulumi.export("leader_public_ip", leader["public_ip"])
         pulumi.export("leader_private_ip", leader["private_ip"])
 
 
-# Convenience functions for CLI usage
-async def deploy_cluster_from_config(
+def deploy_cluster_from_config(
     config: Dict[str, str],
     stack_name: str = "dev",
     progress_callback: Optional[Callable[[str], None]] = None,
 ) -> Dict[str, Any]:
-    """Convenience function to deploy cluster with given configuration."""
     automation = CloudClusterAutomation(stack_name=stack_name)
-    return await automation.deploy_cluster(config, progress_callback)
+    return automation.deploy_cluster(config, progress_callback)
 
 
-async def destroy_cluster_stack(
+def destroy_cluster_stack(
     stack_name: str = "dev", progress_callback: Optional[Callable[[str], None]] = None
 ) -> Dict[str, Any]:
-    """Convenience function to destroy cluster stack."""
     automation = CloudClusterAutomation(stack_name=stack_name)
-    return await automation.destroy_cluster(progress_callback)
+    return automation.destroy_cluster(progress_callback)

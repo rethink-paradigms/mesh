@@ -31,9 +31,7 @@ def test_nomad_template_traefik_tags():
         content = f.read()
 
     assert "traefik.enable=true" in content
-    assert (
-        "traefik.http.routers.${var.app_name}.rule=Host(`${var.host_rule}`)" in content
-    )
+    assert "traefik.http.routers.${var.app_name}.rule=Host(`${var.host_rule}`)" in content
 
 
 def test_nomad_template_secret_block():
@@ -47,10 +45,7 @@ def test_nomad_template_secret_block():
         content = f.read()
 
     assert 'destination = "secrets/app.env"' in content
-    assert (
-        "env" not in content.split("template {")[-1].split("}")[0]
-        or "env = true" not in content
-    )
+    assert "env" not in content.split("template {")[-1].split("}")[0] or "env = true" not in content
     assert "nomadVar" in content
     assert "SECRETS_FILE" in content
     assert "perms" in content

@@ -1,23 +1,21 @@
 # Domain: Mesh CLI
 
 **Description:**
-Command-line interface for the Distributed Mesh Platform. Provides interactive cluster provisioning, agent lifecycle management, and cluster status visualization using Rich-formatted terminal output.
+Command-line interface for the Distributed Mesh Platform. Provides interactive cluster provisioning, application deployment, and cluster status visualization using Rich-formatted terminal output.
 
 ## 🧩 Public Interface
 
 | Command | Input | Output | Description |
 |:---|:---|:---|:---|
 | `mesh init` | --demo, --provider, --workers | Cluster provisioned | Interactive cluster provisioning wizard |
-| `mesh status` | --demo, --compare, --roadmap | Cluster health display | View cluster nodes, agents, topology |
-| `mesh destroy` | --cluster, --demo | Cluster torn down | Snapshot agents, stop, terminate nodes |
-| `mesh compare` | (none) | Resource comparison table | Mesh vs Kubernetes resource comparison |
-| `mesh roadmap` | (none) | Capability timeline | Platform feature roadmap |
-| `mesh agent deploy` | name, --image, --cpu, --memory, --gpu | Agent deployed | Deploy a new AI agent container |
-| `mesh agent list` | (none) | Agent table | List all running agents |
-| `mesh agent stop` | name | Agent stopped | Stop agent with optional snapshot |
-| `mesh agent snapshot` | name, --output | Snapshot created | Capture agent filesystem state |
+| `mesh deploy` | name, --image, --tag, --port, --domain, --memory, --cpu, --count, --datacenter, --tier, --demo | Application deployed | Deploy a containerized application to the mesh |
+| `mesh status` | --demo, --compare, --roadmap | Cluster health display | View cluster nodes, apps, topology |
+| `mesh destroy` | --cluster, --demo | Cluster torn down | Terminate cluster nodes |
 | `mesh logs` | [job_name], --follow, --tail N, --alloc, --stderr | Job logs or job list | Stream/view Nomad job logs |
 | `mesh ssh` | [node_name], --user | SSH session or node list | SSH into cluster nodes via Tailscale |
+| `mesh version` | (none) | Version string | Show the mesh CLI version |
+| `mesh compare` | (none) | Resource comparison table | Mesh vs Kubernetes resource comparison |
+| `mesh roadmap` | (none) | Capability timeline | Platform feature roadmap |
 
 ## 📦 Dependencies
 
@@ -37,7 +35,7 @@ src/cli/
 ├── main.py             # Typer app entry point with all commands
 ├── commands/
 │   ├── init_cmd.py     # Interactive cluster provisioning wizard
-│   ├── agent.py        # Agent deploy/list/stop/snapshot commands
+│   ├── deploy.py       # Application deployment
 │   ├── status.py       # Cluster status display
 │   ├── logs.py         # Stream/view Nomad job logs
 │   ├── ssh.py          # SSH into cluster nodes
@@ -52,7 +50,7 @@ src/cli/
 
 - [ ] Unit tests for CLI command argument parsing
 - [ ] Integration tests for init wizard flow
-- [ ] Integration tests for agent lifecycle commands
+- [ ] Integration tests for deploy workflow
 - [ ] UI component rendering tests
 
 ## 📝 Design Decisions

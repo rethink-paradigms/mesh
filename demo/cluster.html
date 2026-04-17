@@ -1,152 +1,185 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Mesh — Cluster</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&family=IBM+Plex+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="cluster.css">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Mesh cluster visualization — view your multi-cloud topology, node health, and network latency in real time.">
+  <meta name="theme-color" content="#06060b">
+  <meta property="og:title" content="Mesh Cluster Visualization">
+  <meta property="og:description" content="Interactive cluster topology view for Mesh — multi-cloud container platform.">
+  <meta property="og:type" content="website">
+  <title>Cluster — Mesh</title>
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='20' fill='%2306060b'/><circle cx='35' cy='35' r='8' fill='%233b82f6'/><circle cx='65' cy='35' r='8' fill='%2306b6d4'/><circle cx='50' cy='65' r='8' fill='%2310b981'/><line x1='35' y1='35' x2='65' y2='35' stroke='%232a2a42' stroke-width='2'/><line x1='35' y1='35' x2='50' y2='65' stroke='%232a2a42' stroke-width='2'/><line x1='65' y1='35' x2='50' y2='65' stroke='%232a2a42' stroke-width='2'/></svg>">
+  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="cluster.css">
 </head>
 <body>
-<script>if(new URLSearchParams(window.location.search).has('demo')){var el=document.createElement('div');el.id='demoTransitionScreen';el.style.cssText='position:fixed;inset:0;z-index:10000;background:#080808;';document.body.prepend(el);}</script>
-
-    <div class="shell">
-
-        <aside class="sidebar">
-            <div class="sidebar-brand">
-                <span class="brand-mark">&#9670;</span>
-                <span class="brand-text">mesh</span>
-            </div>
-            <div class="sidebar-cluster">
-                <span class="cluster-name">agent-mesh</span>
-                <span class="cluster-loc">3 nodes · digitalocean nyc3</span>
-            </div>
-            <nav class="sidebar-nav">
-                <a href="#" class="nav-link active" data-view="agents" onclick="switchView('agents')">
-                    <span class="nav-icon">&#9654;</span>
-                    agents
-                </a>
-                <a href="#" class="nav-link" data-view="distribution" onclick="switchView('distribution')">
-                    <span class="nav-icon">&#9638;</span>
-                    distribution
-                </a>
-                <a href="#" class="nav-link" data-view="performance" onclick="switchView('performance')">
-                    <span class="nav-icon">&#9679;</span>
-                    performance
-                </a>
-                <a href="#" class="nav-link" data-view="terminal" onclick="switchView('terminal')">
-                    <span class="nav-icon">&#9608;</span>
-                    terminal
-                </a>
-            </nav>
-            <div class="sidebar-footer">
-                <a href="index.html" class="back-link">&larr; landing</a>
-                <button class="demo-btn" onclick="playGuidedDemo()">
-                    <span class="demo-btn-icon">&#9654;</span>
-                    Play Guided Demo
-                </button>
-            </div>
-        </aside>
-
-        <main class="main">
-
-            <!-- ===== AGENTS VIEW (default) ===== -->
-            <section class="view active" id="view-agents">
-                <header class="view-header">
-                    <div>
-                        <h1 class="view-title">agents</h1>
-                        <p class="view-sub">persistent, stateful, yours</p>
-                    </div>
-                    <div class="view-header-actions">
-                        <button class="btn-ghost" onclick="showToast('Snapshot queue started for all agents')">snapshot all</button>
-                        <button class="btn-accent" onclick="showToast('Agent deploy wizard — coming soon', 'info')">deploy agent</button>
-                    </div>
-                </header>
-
-                <div class="agents-summary" id="agentsSummary">
-                    <!-- JS rendered -->
-                </div>
-
-                <div class="agents-grid" id="agentsGrid">
-                    <!-- JS rendered -->
-                </div>
-            </section>
-
-            <!-- ===== DISTRIBUTION VIEW ===== -->
-            <section class="view" id="view-distribution">
-                <header class="view-header">
-                    <div>
-                        <h1 class="view-title">distribution</h1>
-                        <p class="view-sub">where your agents live, on your hardware</p>
-                    </div>
-                </header>
-
-                <div class="dist-grid" id="distGrid">
-                    <!-- JS rendered -->
-                </div>
-            </section>
-
-            <!-- ===== PERFORMANCE VIEW ===== -->
-            <section class="view" id="view-performance">
-                <header class="view-header">
-                    <div>
-                        <h1 class="view-title">performance</h1>
-                        <p class="view-sub">your system, your resources</p>
-                    </div>
-                </header>
-
-                <div class="perf-grid" id="perfGrid">
-                    <!-- JS rendered -->
-                </div>
-            </section>
-
-            <!-- ===== TERMINAL VIEW ===== -->
-            <section class="view" id="view-terminal">
-                <header class="view-header">
-                    <div>
-                        <h1 class="view-title">terminal</h1>
-                        <p class="view-sub">direct agent access</p>
-                    </div>
-                </header>
-
-                <div class="term-layout">
-                    <div class="term-agent-list" id="termAgentList">
-                        <!-- JS rendered -->
-                    </div>
-                    <div class="term-main">
-                        <div class="term-bar" id="termBar">
-                            <span class="term-bar-label" id="termBarLabel">no agent selected</span>
-                            <div class="term-bar-actions">
-                                <button class="term-action" onclick="clearTerm()" title="clear">&#10005;</button>
-                            </div>
-                        </div>
-                        <div class="term-body" id="termBody">
-                            <div class="term-placeholder">
-                                <span class="term-placeholder-mark">&#9670;</span>
-                                <span>select an agent from the left</span>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </section>
-
-        </main>
+  <nav>
+    <div class="nav-inner">
+      <a href="index.html" class="nav-brand">
+        <svg viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <circle cx="9" cy="9" r="3" fill="#3b82f6"/>
+          <circle cx="19" cy="9" r="3" fill="#06b6d4"/>
+          <circle cx="14" cy="19" r="3" fill="#10b981"/>
+          <line x1="9" y1="9" x2="19" y2="9" stroke="#2a2a42" stroke-width="1.5"/>
+          <line x1="9" y1="9" x2="14" y2="19" stroke="#2a2a42" stroke-width="1.5"/>
+          <line x1="19" y1="9" x2="14" y2="19" stroke="#2a2a42" stroke-width="1.5"/>
+        </svg>
+        <span>Mesh</span>
+      </a>
+      <ul class="nav-links">
+        <li><a href="index.html">Demo</a></li>
+        <li><a href="cluster.html" class="active">Cluster</a></li>
+        <li><a href="dashboard.html">Dashboard</a></li>
+        <li><a href="https://rethink-paradigms.github.io/mesh/" target="_blank" rel="noopener">Docs</a></li>
+        <li><a href="https://github.com/rethink-paradigms/mesh" target="_blank" rel="noopener" class="nav-cta">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
+          GitHub
+        </a></li>
+      </ul>
+      <button class="nav-mobile-toggle" aria-label="Toggle menu" aria-expanded="false">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+      </button>
     </div>
+  </nav>
 
-    <div class="toast-rack" id="toastRack"></div>
+  <main style="padding-top:96px;">
+    <div class="container">
+      <div style="margin-bottom:32px;" data-animate>
+        <a href="index.html" style="display:inline-flex;align-items:center;gap:6px;color:var(--text-muted);font-size:0.85rem;margin-bottom:16px;">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg>
+          Back to Demo Home
+        </a>
+        <span class="section-label">Cluster Topology</span>
+        <h1 class="section-title" style="font-size:2.2rem;">mesh-prod</h1>
+        <p class="section-desc">3-node production cluster spanning AWS, DigitalOcean, and Hetzner. Connected via Tailscale WireGuard mesh.</p>
+      </div>
 
-    <div class="demo-overlay" id="demoOverlay">
-        <div class="demo-overlay-inner">
-            <span class="demo-overlay-label">guided demo</span>
-            <div class="demo-overlay-bar">
-                <div class="demo-overlay-progress" id="demoProgress"></div>
-            </div>
-            <span class="demo-overlay-step" id="demoStep"></span>
+      <div class="cluster-info-bar" data-animate>
+        <div class="info-card">
+          <div class="info-card-icon" style="background:var(--accent-blue-glow);color:var(--accent-blue);">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/><circle cx="6" cy="6" r="1" fill="currentColor"/><circle cx="6" cy="18" r="1" fill="currentColor"/></svg>
+          </div>
+          <div>
+            <div class="info-card-value">4 Nodes</div>
+            <div class="info-card-label">3 ready &middot; 1 pending</div>
+          </div>
         </div>
-    </div>
+        <div class="info-card">
+          <div class="info-card-icon" style="background:rgba(16,185,129,0.1);color:var(--accent-green);">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+          </div>
+          <div>
+            <div class="info-card-value">6 Apps</div>
+            <div class="info-card-label">All running</div>
+          </div>
+        </div>
+        <div class="info-card">
+          <div class="info-card-icon" style="background:rgba(6,182,212,0.1);color:var(--accent-cyan);">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+          </div>
+          <div>
+            <div class="info-card-value">WireGuard</div>
+            <div class="info-card-label">All traffic encrypted</div>
+          </div>
+        </div>
+        <div class="info-card">
+          <div class="info-card-icon" style="background:rgba(139,92,246,0.1);color:var(--accent-purple);">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+          </div>
+          <div>
+            <div class="info-card-value">3m 42s</div>
+            <div class="info-card-label">Cluster age</div>
+          </div>
+        </div>
+      </div>
 
-    <script src="cluster.js"></script>
+      <div data-animate>
+        <div class="cluster-legend">
+          <div class="legend-item">
+            <span class="legend-dot" style="background:var(--node-leader);"></span>
+            Leader
+          </div>
+          <div class="legend-item">
+            <span class="legend-dot" style="background:var(--node-worker);"></span>
+            Worker
+          </div>
+          <div class="legend-item">
+            <span class="legend-dot" style="background:var(--node-pending);"></span>
+            Pending
+          </div>
+          <div class="legend-item">
+            <span class="legend-dot" style="background:#10b981;"></span>
+            Healthy
+          </div>
+          <div class="legend-item" style="margin-left:auto;">
+            <span style="font-family:var(--font-mono);font-size:0.75rem;color:var(--text-muted);border:1px dashed var(--border-default);padding:2px 6px;border-radius:3px;">--- link</span>
+            WireGuard tunnel
+          </div>
+        </div>
+        <div class="cluster-canvas">
+          <canvas id="clusterCanvas"></canvas>
+        </div>
+      </div>
+
+      <div class="node-list" data-animate>
+        <h3 style="font-size:1rem;font-weight:700;margin-bottom:16px;">Node Details</h3>
+        <div style="border:1px solid var(--border-subtle);border-radius:var(--radius-md);overflow:hidden;">
+          <div class="node-list-header">
+            <div>Node</div>
+            <div>Tailscale IP</div>
+            <div>Status</div>
+            <div>Apps</div>
+            <div>CPU</div>
+          </div>
+          <div id="nodeListBody"></div>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <footer>
+    <div class="footer-inner">
+      <div class="footer-brand">
+        <a href="index.html" class="nav-brand" style="margin-bottom:4px;">
+          <svg viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg" width="24" height="24">
+            <circle cx="9" cy="9" r="3" fill="#3b82f6"/><circle cx="19" cy="9" r="3" fill="#06b6d4"/><circle cx="14" cy="19" r="3" fill="#10b981"/>
+            <line x1="9" y1="9" x2="19" y2="9" stroke="#2a2a42" stroke-width="1.5"/><line x1="9" y1="9" x2="14" y2="19" stroke="#2a2a42" stroke-width="1.5"/><line x1="19" y1="9" x2="14" y2="19" stroke="#2a2a42" stroke-width="1.5"/>
+          </svg>
+          <span>Mesh</span>
+        </a>
+        <p>Deploy containers across any cloud.<br>Zero SSH. Auto-HTTPS. Multi-cloud.</p>
+      </div>
+      <div class="footer-col">
+        <h4>Demo</h4>
+        <ul>
+          <li><a href="index.html">Landing Page</a></li>
+          <li><a href="cluster.html">Cluster View</a></li>
+          <li><a href="dashboard.html">Dashboard</a></li>
+        </ul>
+      </div>
+      <div class="footer-col">
+        <h4>Resources</h4>
+        <ul>
+          <li><a href="https://rethink-paradigms.github.io/mesh/" target="_blank" rel="noopener">Documentation</a></li>
+          <li><a href="https://rethink-paradigms.github.io/mesh/architecture/overview/" target="_blank" rel="noopener">Architecture</a></li>
+        </ul>
+      </div>
+      <div class="footer-col">
+        <h4>Project</h4>
+        <ul>
+          <li><a href="https://github.com/rethink-paradigms/mesh" target="_blank" rel="noopener">GitHub</a></li>
+          <li><a href="https://github.com/rethink-paradigms/mesh/issues" target="_blank" rel="noopener">Issues</a></li>
+        </ul>
+      </div>
+    </div>
+    <div class="footer-bottom">
+      <span>&copy; 2024 Mesh Contributors. MIT License.</span>
+      <span>Powered by <a href="https://github.com/rethink-paradigms/mesh" target="_blank" rel="noopener" style="color:var(--accent-blue);">Mesh</a></span>
+    </div>
+  </footer>
+
+  <script src="script.js"></script>
+  <script src="cluster.js"></script>
 </body>
 </html>

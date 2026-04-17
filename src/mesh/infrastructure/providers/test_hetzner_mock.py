@@ -54,9 +54,7 @@ class TestHetznerDriverInitialization:
     )
     @patch.dict(
         "os.environ",
-        {
-            "HZCLOUD_API_TOKEN": "hetzner_cloud_api_token_1234567890abcdefghijklmnopqrstuvwxyz"
-        },
+        {"HZCLOUD_API_TOKEN": "hetzner_cloud_api_token_1234567890abcdefghijklmnopqrstuvwxyz"},
     )
     def test_hetzner_driver_initialization_with_token(
         self, mock_project, mock_get_stack, mock_get_driver, mock_provider
@@ -99,10 +97,7 @@ class TestHetznerDriverInitialization:
         # Hetzner driver only requires: (api_key)
         call_args = mock_driver_class.call_args[0]
         assert len(call_args) == 1
-        assert (
-            call_args[0]
-            == "hetzner_cloud_api_token_1234567890abcdefghijklmnopqrstuvwxyz"
-        )
+        assert call_args[0] == "hetzner_cloud_api_token_1234567890abcdefghijklmnopqrstuvwxyz"
 
     @patch("mesh.infrastructure.providers.libcloud_dynamic_provider.Provider")
     @patch("mesh.infrastructure.providers.libcloud_dynamic_provider.get_driver")
@@ -114,9 +109,7 @@ class TestHetznerDriverInitialization:
         "mesh.infrastructure.providers.libcloud_dynamic_provider.pulumi.get_project",
         return_value="test-project",
     )
-    @patch.dict(
-        "os.environ", {"HZCLOUD_API_TOKEN": "hetzner_test_token_for_unit_tests"}
-    )
+    @patch.dict("os.environ", {"HZCLOUD_API_TOKEN": "hetzner_test_token_for_unit_tests"})
     def test_hetzner_driver_multiple_regions(
         self, mock_project, mock_get_stack, mock_get_driver, mock_provider
     ):
@@ -180,9 +173,7 @@ class TestHetznerNodeProvisioningFlow:
     )
     @patch.dict(
         "os.environ",
-        {
-            "HZCLOUD_API_TOKEN": "hetzner_cloud_api_token_1234567890abcdefghijklmnopqrstuvwxyz"
-        },
+        {"HZCLOUD_API_TOKEN": "hetzner_cloud_api_token_1234567890abcdefghijklmnopqrstuvwxyz"},
     )
     def test_hetzner_server_creation_with_boot_script(
         self, mock_project, mock_get_stack, mock_get_driver, mock_provider
@@ -573,9 +564,9 @@ class TestHetznerSizeAndRegionSelection:
         ]
 
         for region in expected_regions:
-            assert region in hetzner_config.available_regions, (
-                f"Region {region} not found in Hetzner available regions"
-            )
+            assert (
+                region in hetzner_config.available_regions
+            ), f"Region {region} not found in Hetzner available regions"
 
         # Verify Hetzner-specific quirks
         # Hetzner uses simple datacenter codes

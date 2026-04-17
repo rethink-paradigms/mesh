@@ -23,7 +23,7 @@ from .test_utils import (
     start_nomad_client,
     verify_service_discovery,
     check_tailscale_mesh,
-    cleanup_job
+    cleanup_job,
 )
 
 __all__ = [
@@ -36,5 +36,5 @@ __all__ = [
     "start_nomad_client",
     "verify_service_discovery",
     "check_tailscale_mesh",
-    "cleanup_job"
+    "cleanup_job",
 ]

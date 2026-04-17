@@ -1,8 +1,10 @@
 """
 Tests for Feature: Manage Secrets
 """
+
 from unittest.mock import patch, MagicMock
 from manage import SecretsManager
+
 
 @patch("manage.requests.put")
 def test_sync_secrets_success(mock_put):
@@ -16,7 +18,7 @@ def test_sync_secrets_success(mock_put):
 
     manager = SecretsManager(nomad_addr="http://localhost:4646", nomad_token="secret")
     secrets = {"API_KEY": "12345"}
-    
+
     # Execute
     result = manager.sync_secrets("my-job", secrets)
 
@@ -26,8 +28,9 @@ def test_sync_secrets_success(mock_put):
         "http://localhost:4646/v1/var/nomad/jobs/my-job",
         headers={"X-Nomad-Token": "secret"},
         json={"Items": secrets},
-        timeout=5
+        timeout=5,
     )
+
 
 def test_sync_secrets_missing_nomad_addr():
     """
@@ -37,6 +40,7 @@ def test_sync_secrets_missing_nomad_addr():
     manager = SecretsManager(nomad_addr=None)
     result = manager.sync_secrets("job", {"k": "v"})
     assert result is False
+
 
 @patch("manage.requests.put")
 def test_sync_secrets_api_failure(mock_put):
@@ -50,8 +54,9 @@ def test_sync_secrets_api_failure(mock_put):
 
     manager = SecretsManager(nomad_addr="http://localhost:4646")
     result = manager.sync_secrets("job", {"k": "v"})
-    
+
     assert result is False
+
 
 @patch("manage.requests.put")
 def test_sync_secrets_connection_error(mock_put):
@@ -59,12 +64,14 @@ def test_sync_secrets_connection_error(mock_put):
     Test_SyncSecrets_ConnectionError: Verify error handling for network connection issues.
     """
     import requests
+
     mock_put.side_effect = requests.exceptions.ConnectionError("Connection refused")
 
     manager = SecretsManager(nomad_addr="http://localhost:4646")
     result = manager.sync_secrets("job", {"k": "v"})
-    
+
     assert result is False
+
 
 @patch("manage.requests.put")
 def test_sync_secrets_headers(mock_put):

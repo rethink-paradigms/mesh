@@ -43,9 +43,7 @@ class TestLiteHTTPS:
 
     def test_lite_web_service_deploy_with_domain(self):
         with patch("subprocess.run") as mock_run:
-            mock_run.return_value = MagicMock(
-                returncode=0, stdout="Job registered", stderr=""
-            )
+            mock_run.return_value = MagicMock(returncode=0, stdout="Job registered", stderr="")
             with patch.object(RouteManager, "add_route", return_value=True):
                 from mesh.workloads.deploy_lite_web_service.deploy import (
                     deploy_lite_web_service,

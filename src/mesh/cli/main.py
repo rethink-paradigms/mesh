@@ -2,7 +2,7 @@
 mesh — Infrastructure Platform CLI
 
 Deploy containerized applications across any compute, from a local
-laptop to a multi-cloud cluster. Zero SSH. Auto-HTTPS. Multi-cloud.
+laptop to a multi-cloud cluster. Zero-SSH deployment. Auto-HTTPS. Multi-cloud.
 
 Usage:
     mesh init                    Initialize a new cluster
@@ -21,23 +21,33 @@ Quick start:
 import typer
 from typing import Optional
 
+from importlib.metadata import version as pkg_version
+
+from rich.panel import Panel
+from rich.text import Text
+from rich.table import Table
+
 from mesh.cli.commands.init_cmd import run_init
 from mesh.cli.commands.status import run_status
 from mesh.cli.commands.destroy import run_destroy
 from mesh.cli.commands.logs import run_logs
 from mesh.cli.commands.ssh import run_ssh
 from mesh.cli.commands.deploy import run_deploy
+from mesh.cli.commands.doctor import run_doctor
 from mesh.cli.ui.panels import (
+    console,
     show_banner,
     show_resource_comparison,
     show_vision_roadmap,
+    show_provisioning_progress,
 )
+from mesh.cli.ui.themes import MESH_CYAN, MESH_GREEN, MESH_DIM, STATUS_ICONS
 from mesh.cli.plugins import discover_plugins
 
 # Create the main app
 app = typer.Typer(
     name="mesh",
-    help="Infrastructure Platform — Deploy containers across any cloud. Zero SSH.",
+    help="Infrastructure Platform — Deploy containers across any cloud. Zero-SSH deployment.",
     no_args_is_help=True,
     pretty_exceptions_enable=True,
     pretty_exceptions_show_locals=False,
@@ -53,7 +63,13 @@ def init(
     provider: Optional[str] = typer.Option(
         None, "--provider", "-p", help="Skip provider prompt"
     ),
-    workers: int = typer.Option(1, "--workers", "-w", help="Number of worker nodes"),
+    region: Optional[str] = typer.Option(
+        None, "--region", "-r", help="Cloud region (skip prompt)"
+    ),
+    workers: Optional[int] = typer.Option(
+        None, "--workers", "-w", help="Number of worker nodes"
+    ),
+    yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation prompt"),
 ):
     """
     Initialize a new mesh cluster.
@@ -65,8 +81,9 @@ def init(
         mesh init
         mesh init --demo
         mesh init --provider "Local (Multipass)" --workers 2
+        mesh init --provider DigitalOcean --region nyc3 --workers 1 --yes
     """
-    run_init(demo=demo, provider_name=provider, workers=workers)
+    run_init(demo=demo, provider_name=provider, region=region, workers=workers, yes=yes)
 
 
 @app.command("status")
@@ -93,18 +110,20 @@ def status(
 def destroy(
     cluster: str = typer.Option("mesh-cluster", "--cluster", "-c", help="Cluster name"),
     demo: bool = typer.Option(False, "--demo", help="Run in demo mode"),
+    yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation prompt"),
 ):
     """
     Tear down a mesh cluster.
 
     Stops all running apps, then terminates all nodes.
-    Requires confirmation.
+    Requires confirmation (or --yes flag for non-interactive use).
 
     Example:
         mesh destroy
         mesh destroy --cluster my-cluster
+        mesh destroy --yes
     """
-    run_destroy(cluster_name=cluster, demo=demo)
+    run_destroy(cluster_name=cluster, demo=demo, yes=yes)
 
 
 @app.command("logs")
@@ -120,6 +139,9 @@ def logs(
     stderr: bool = typer.Option(
         False, "--stderr", help="Show stderr instead of stdout"
     ),
+    demo: bool = typer.Option(
+        False, "--demo", help="Run in demo mode (simulated output)"
+    ),
 ):
     """
     View logs from jobs running on the mesh cluster.
@@ -133,13 +155,28 @@ def logs(
         mesh logs my-app --follow
         mesh logs my-app --tail 50 --stderr
     """
-    run_logs(job_name=job_name, follow=follow, tail=tail, alloc=alloc, stderr=stderr)
+    run_logs(
+        job_name=job_name,
+        follow=follow,
+        tail=tail,
+        alloc=alloc,
+        stderr=stderr,
+        demo=demo,
+    )
 
 
 @app.command("ssh")
 def ssh(
     node_name: Optional[str] = typer.Argument(None, help="Node name to connect to"),
-    user: str = typer.Option("ubuntu", "--user", "-u", help="SSH user"),
+    user: Optional[str] = typer.Option(
+        None, "--user", "-u", help="SSH user (auto-detected from provider)"
+    ),
+    provider: Optional[str] = typer.Option(
+        None, "--provider", "-p", help="Cloud provider (for default SSH user)"
+    ),
+    demo: bool = typer.Option(
+        False, "--demo", help="Run in demo mode (simulated output)"
+    ),
 ):
     """
     SSH into a cluster node.
@@ -151,8 +188,9 @@ def ssh(
         mesh ssh
         mesh ssh mesh-leader
         mesh ssh mesh-worker-1 --user admin
+        mesh ssh mesh-leader --provider digitalocean
     """
-    run_ssh(node_name=node_name, user=user)
+    run_ssh(node_name=node_name, user=user, demo=demo, provider=provider)
 
 
 @app.command("deploy")
@@ -161,12 +199,16 @@ def deploy(
     image: str = typer.Option(..., "--image", "-i", help="Docker image"),
     image_tag: str = typer.Option("latest", "--tag", "-t", help="Image tag"),
     port: int = typer.Option(8080, "--port", "-p", help="Container port"),
-    domain: Optional[str] = typer.Option(None, "--domain", "-d", help="Domain for HTTPS"),
+    domain: Optional[str] = typer.Option(
+        None, "--domain", "-d", help="Domain for HTTPS"
+    ),
     memory: int = typer.Option(128, "--memory", "-m", help="Memory in MB"),
     cpu: int = typer.Option(100, "--cpu", "-c", help="CPU in MHz"),
     count: int = typer.Option(1, "--count", "-n", help="Number of replicas"),
     datacenter: str = typer.Option("dc1", "--datacenter", help="Nomad datacenter"),
-    cluster_tier: Optional[str] = typer.Option(None, "--tier", help="Force cluster tier"),
+    cluster_tier: Optional[str] = typer.Option(
+        None, "--tier", help="Force cluster tier"
+    ),
     demo: bool = typer.Option(False, "--demo", hidden=True),
 ):
     """
@@ -179,10 +221,131 @@ def deploy(
         mesh deploy api --image python:3.11 --port 5000 --domain api.example.com
     """
     run_deploy(
-        name=name, image=image, image_tag=image_tag, port=port,
-        domain=domain, cpu=cpu, memory=memory, count=count,
-        datacenter=datacenter, cluster_tier=cluster_tier, demo=demo,
+        name=name,
+        image=image,
+        image_tag=image_tag,
+        port=port,
+        domain=domain,
+        cpu=cpu,
+        memory=memory,
+        count=count,
+        datacenter=datacenter,
+        cluster_tier=cluster_tier,
+        demo=demo,
     )
+
+
+@app.command("demo")
+def demo():
+    """
+    Run the full mesh experience in demo mode.
+
+    Simulates init, deploy, and status without real infrastructure.
+    A quick way to see the platform in action.
+    """
+    show_banner()
+    console.print(f"  [bold {MESH_CYAN}]Running Mesh Demo[/]")
+    console.print("  [dim]Simulated — no real infrastructure needed[/dim]")
+    console.print()
+
+    init_steps = [
+        {"name": "Checking prerequisites...", "duration": "0.4"},
+        {"name": "Generating Tailscale auth key...", "duration": "0.3"},
+        {"name": "Provisioning leader (mesh-cluster-leader)...", "duration": "1.5"},
+        {"name": "Provisioning worker (mesh-cluster-worker-1)...", "duration": "1.2"},
+        {"name": "Configuring mesh network...", "duration": "0.5"},
+        {"name": "Starting Nomad scheduler...", "duration": "0.4"},
+        {"name": "Starting Consul discovery...", "duration": "0.4"},
+        {"name": "Verifying cluster health...", "duration": "0.3"},
+    ]
+    show_provisioning_progress(init_steps, live=True)
+
+    init_body = Text()
+    init_body.append(f"\n  {STATUS_ICONS['healthy']} ", style="bold")
+    init_body.append("Cluster is ready!\n\n", style=f"bold {MESH_GREEN}")
+    init_body.append("  Cluster:  ", style="dim")
+    init_body.append("mesh-cluster\n", style=f"bold {MESH_CYAN}")
+    init_body.append("  Tier:     ", style="dim")
+    init_body.append("Local (Multipass)\n", style=f"bold {MESH_CYAN}")
+    init_body.append("  Nodes:    ", style="dim")
+    init_body.append("1 leader + 1 worker\n", style=f"bold {MESH_CYAN}")
+    init_body.append("  Provider: ", style="dim")
+    init_body.append("multipass (local)\n", style=f"bold {MESH_CYAN}")
+    console.print(Panel(init_body, border_style=MESH_GREEN, padding=(0, 1)))
+    console.print()
+
+    deploy_steps = [
+        {"name": "Detecting cluster tier...", "duration": "0.3"},
+        {"name": "Building Nomad job specification...", "duration": "0.4"},
+        {"name": "Submitting job to cluster...", "duration": "0.5"},
+        {"name": "Pulling nginx:latest...", "duration": "1.2"},
+        {"name": "Starting container on mesh-cluster-leader...", "duration": "0.6"},
+        {"name": "Verifying health check...", "duration": "0.3"},
+    ]
+    show_provisioning_progress(deploy_steps, live=True)
+
+    deploy_summary = Table(show_header=False, border_style=MESH_DIM, padding=(0, 2))
+    deploy_summary.add_column("Key", style="dim")
+    deploy_summary.add_column("Value", style=f"bold {MESH_CYAN}")
+    deploy_summary.add_row("App", "hello-mesh")
+    deploy_summary.add_row("Image", "nginx:latest")
+    deploy_summary.add_row("Port", "8080")
+    deploy_summary.add_row("CPU", "100 MHz")
+    deploy_summary.add_row("Memory", "128 MB")
+    deploy_summary.add_row("Replicas", "1")
+    deploy_summary.add_row("Node", "mesh-cluster-leader")
+    deploy_summary.add_row("Status", f"{STATUS_ICONS['running']} running")
+    console.print(
+        Panel(
+            deploy_summary,
+            title=f"[bold {MESH_CYAN}]{STATUS_ICONS['app']} Deployed hello-mesh[/]",
+            border_style=MESH_GREEN,
+            padding=(1, 2),
+        )
+    )
+    console.print()
+
+    run_status(demo=True)
+
+    next_steps = Text()
+    next_steps.append("\n  Demo complete! ", style=f"bold {MESH_GREEN}")
+    next_steps.append("Ready to try for real?\n\n", style="dim")
+    next_steps.append("  mesh init          ", style=MESH_GREEN)
+    next_steps.append("— provision a real cluster\n", style="dim")
+    next_steps.append("  mesh deploy <app>  ", style=MESH_GREEN)
+    next_steps.append("— deploy your first app\n", style="dim")
+    next_steps.append("  mesh doctor        ", style=MESH_GREEN)
+    next_steps.append("— check your environment\n", style="dim")
+    console.print(Panel(next_steps, border_style=MESH_CYAN, padding=(0, 1)))
+    console.print()
+
+
+@app.command("doctor")
+def doctor(
+    demo: bool = typer.Option(False, "--demo", help="Show simulated output"),
+):
+    """
+    Check if your environment is ready for mesh.
+
+    Verifies Python version, Docker, Pulumi, Tailscale, environment
+    variables, and network connectivity.
+    """
+    run_doctor(demo=demo)
+
+
+@app.command("version")
+def version():
+    """Show the mesh CLI version."""
+    try:
+        v = pkg_version("mesh")
+    except Exception:
+        v = "0.3.0 (dev)"
+    show_banner()
+    from mesh.cli.ui.panels import console
+    from mesh.cli.ui.themes import MESH_CYAN
+
+    console.print(f"\n  [bold {MESH_CYAN}]mesh[/] v{v}\n")
+
 
 @app.command("compare")
 def compare():

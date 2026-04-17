@@ -3,13 +3,12 @@ requires = ["setuptools>=68.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "mesh"
+name = "rethink-mesh"
 version = "0.3.0"
 description = "Lightweight infrastructure orchestration platform for multi-cloud container deployment"
 readme = "README.md"
 requires-python = ">=3.11"
-license = "MIT"
-license-files = ["LICENSE"]
+license = {text = "MIT"}
 authors = [
     {name = "Mesh Platform Contributors"}
 ]
@@ -45,7 +44,7 @@ dependencies = [
     "requests>=2.31.0",
 
     # Multi-Provider Cloud Support (NEW)
-    "apache-libcloud>=3.8.0",  # 50+ cloud provider drivers
+    "apache-libcloud>=3.8.0",  # 13+ cloud provider drivers (via apache-libcloud)
     "pyyaml>=6.0.0",           # YAML configuration for provider registry
     
     # CLI Framework (NEW - required for CLI implementation)
@@ -61,6 +60,8 @@ dev = [
     "mypy>=1.5.0",
     "isort>=5.12.0",
     "pre-commit>=3.3.0",
+    "mkdocs>=1.5.0",
+    "mkdocs-material>=9.4.0",
 ]
 
 # Enterprise features (GPU, monitoring, backups) are in the mesh-enterprise package

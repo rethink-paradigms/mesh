@@ -64,9 +64,7 @@ def get_cluster_nodes(config: Optional[ClusterConfig] = None) -> List[Dict[str, 
         leader_ip = get_multipass_ip("local-leader")
 
     if leader_ip:
-        nodes.append(
-            {"name": "leader", "ip": leader_ip, "role": "server", "status": "running"}
-        )
+        nodes.append({"name": "leader", "ip": leader_ip, "role": "server", "status": "running"})
 
     # Get worker nodes
     if config.worker_ips:
@@ -107,10 +105,7 @@ def get_cluster_nodes(config: Optional[ClusterConfig] = None) -> List[Dict[str, 
             else:
                 # Fallback: dict format (older Multipass versions)
                 for name, info in vms.get("list", {}).items():
-                    if (
-                        name.startswith("local-worker")
-                        and info.get("state") == "Running"
-                    ):
+                    if name.startswith("local-worker") and info.get("state") == "Running":
                         ipv4 = info.get("ipv4", [])
                         if ipv4:
                             nodes.append(
@@ -157,9 +152,7 @@ def get_multipass_ip(vm_name: str) -> Optional[str]:
         return None
 
 
-def deploy_job(
-    job_file: str, vars: Dict[str, str], nomad_addr: Optional[str] = None
-) -> str:
+def deploy_job(job_file: str, vars: Dict[str, str], nomad_addr: Optional[str] = None) -> str:
     """
     Deploy Nomad job and return job ID.
 
@@ -250,9 +243,7 @@ def wait_for_allocation(
     return False
 
 
-def get_allocation_nodes(
-    job_id: str, nomad_addr: Optional[str] = None
-) -> Dict[str, str]:
+def get_allocation_nodes(job_id: str, nomad_addr: Optional[str] = None) -> Dict[str, str]:
     """
     Return mapping of allocation ID to node name.
 
@@ -335,9 +326,7 @@ def start_nomad_client(node_ip: str) -> bool:
         return False
 
 
-def verify_service_discovery(
-    service_name: str, consul_addr: Optional[str] = None
-) -> List[str]:
+def verify_service_discovery(service_name: str, consul_addr: Optional[str] = None) -> List[str]:
     """
     Query Consul DNS and return list of service IPs.
 
@@ -354,9 +343,7 @@ def verify_service_discovery(
     try:
         # Query Consul API for service
         url = f"{consul_addr}/v1/catalog/service/{service_name}"
-        result = subprocess.run(
-            ["curl", "-s", url], capture_output=True, text=True, check=True
-        )
+        result = subprocess.run(["curl", "-s", url], capture_output=True, text=True, check=True)
 
         services = json.loads(result.stdout)
 
@@ -426,9 +413,7 @@ def check_traefik_routing(
     return response
 
 
-def cleanup_job(
-    job_id: str, nomad_addr: Optional[str] = None, purge: bool = True
-) -> bool:
+def cleanup_job(job_id: str, nomad_addr: Optional[str] = None, purge: bool = True) -> bool:
     """
     Stop and optionally purge a Nomad job.
 

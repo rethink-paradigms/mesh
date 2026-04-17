@@ -29,12 +29,27 @@ from mesh.infrastructure.provision_node.provision_node import provision_node
 #   pulumi config set leader_node_count 1
 #   pulumi config set worker_node_count 1
 
-provider = pulumi.config.get("provider") or "aws"
-region = pulumi.config.get("region") or "us-east-1"
-leader_size = pulumi.config.get("leader_size") or "t3.small"
-worker_size = pulumi.config.get("worker_size") or "t3.micro"
+provider = pulumi.config.get("provider")
+region = pulumi.config.get("region")
+leader_size = pulumi.config.get("leader_size")
+worker_size = pulumi.config.get("worker_size")
 leader_node_count = pulumi.config.get_int("leader_node_count") or 1
 worker_node_count = pulumi.config.get_int("worker_node_count") or 1
+
+if not provider:
+    raise ValueError(
+        "provider must be set via: pulumi config set provider <provider-id>"
+    )
+if not region:
+    raise ValueError("region must be set via: pulumi config set region <region>")
+if not leader_size:
+    raise ValueError(
+        "leader_size must be set via: pulumi config set leader_size <size-id>"
+    )
+if not worker_size:
+    raise ValueError(
+        "worker_size must be set via: pulumi config set worker_size <size-id>"
+    )
 
 # Validate provider is supported
 from mesh.infrastructure.providers import is_provider_supported

@@ -1,9 +1,5 @@
-"""
-Shared helper functions for CLI commands.
-"""
-
-import os
+from mesh.infrastructure.config.env import get_nomad_addr as _get_nomad_addr_from_env
 
 
 def get_nomad_addr() -> str:
-    return os.environ.get("NOMAD_ADDR", "") or "http://127.0.0.1:4646"
+    return _get_nomad_addr_from_env()

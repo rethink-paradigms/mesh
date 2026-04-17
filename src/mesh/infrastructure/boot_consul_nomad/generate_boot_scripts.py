@@ -89,6 +89,7 @@ def generate_shell_script(
     spot_grace_period: int = 90,
     validate: bool = True,
     cluster_tier: str = "production",
+    provider: str = "generic",
 ) -> str:
     """
     Generates the shell script content for bootstrapping a node.
@@ -105,6 +106,8 @@ def generate_shell_script(
         spot_check_interval: Polling interval for spot termination notices in seconds (default: 5).
         spot_grace_period: Grace period for workload migration in seconds (default: 90).
         validate: Whether to validate rendered template (default: True).
+        cluster_tier: Cluster tier - "lite", "standard", "ingress", "production" (default: "production").
+        provider: Cloud provider name, used for provider-specific features like spot handling (default: "generic").
 
     Returns:
         Rendered shell script as a string.
@@ -124,6 +127,7 @@ def generate_shell_script(
         CUDA_VERSION=cuda_version or "12.1",
         DRIVER_VERSION=driver_version or "535",
         ENABLE_SPOT_HANDLING="true" if enable_spot_handling else "false",
+        PROVIDER=provider,
         SPOT_CHECK_INTERVAL=str(spot_check_interval),
         SPOT_GRACE_PERIOD=str(spot_grace_period),
         CLUSTER_TIER=cluster_tier,
@@ -155,6 +159,7 @@ def generate_cloud_init_yaml(
     spot_grace_period: int = 90,
     validate: bool = True,
     cluster_tier: str = "production",
+    provider: str = "generic",
 ) -> str:
     """
     Generates the cloud-init YAML content for bootstrapping a node.
@@ -190,6 +195,7 @@ def generate_cloud_init_yaml(
         spot_grace_period,
         validate=validate,
         cluster_tier=cluster_tier,
+        provider=provider,
     )
 
     # Cloud-init structure to execute the shell script

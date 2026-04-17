@@ -54,7 +54,7 @@ def deploy_app(
     datacenter: str = "dc1",
     cluster_tier: Optional[str] = None,
     nomad_addr: Optional[str] = None,
-) -> bool:
+) -> Optional[bool]:
     tier = (
         ClusterTier(cluster_tier)
         if cluster_tier
@@ -63,7 +63,9 @@ def deploy_app(
     tier_config = TierConfig.from_tier(tier)
 
     if tier in (ClusterTier.LITE, ClusterTier.STANDARD):
-        from mesh.workloads.deploy_lite_web_service.deploy import deploy_lite_web_service
+        from mesh.workloads.deploy_lite_web_service.deploy import (
+            deploy_lite_web_service,
+        )
 
         return deploy_lite_web_service(
             app_name=app_name,
@@ -77,7 +79,34 @@ def deploy_app(
             nomad_addr=nomad_addr,
         )
     else:
-        print(f"Full-mode deployment for tier '{tier.value}' requires Traefik.")
-        print("Use deploy_web_service template with Traefik tags directly.")
-        print("Example: nomad job run web_service.nomad.hcl")
+        # INGRESS and PRODUCTION tiers require Traefik — not yet automated
+        from mesh.cli.ui.panels import console
+        from mesh.cli.ui.themes import MESH_CYAN, MESH_GREEN
+        from rich.panel import Panel
+        from rich.text import Text
+
+        body = Text()
+        body.append(
+            f"\n  ⚠️  Tier '{tier.value}' deployment is not yet automated.\n\n",
+            style="bold yellow",
+        )
+        body.append("  This tier requires Traefik ingress controller.\n\n", style="dim")
+        body.append("  To deploy manually:\n", style="bold")
+        body.append("    1. Deploy Traefik: ", style="dim")
+        body.append("nomad job run traefik.nomad.hcl\n", style=f"bold {MESH_CYAN}")
+        body.append("    2. Deploy your app: ", style="dim")
+        body.append("nomad job run web_service.nomad.hcl\n", style=f"bold {MESH_CYAN}")
+        body.append(f"\n  For now, use LITE or STANDARD tier ", style="dim")
+        body.append(
+            "(single VM or multi-VM with Caddy).\n\n", style=f"bold {MESH_GREEN}"
+        )
+
+        console.print(
+            Panel(
+                body,
+                title="[bold]Traefik Deployment Required[/]",
+                border_style="yellow",
+                padding=(0, 1),
+            )
+        )
         return False

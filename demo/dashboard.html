@@ -1,285 +1,414 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Mesh — Dashboard Demo</title>
-    <meta name="description" content="Interactive demo of the Mesh Platform dashboard — manage agents, view cluster topology, and interact with agent terminals.">
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm@5.3.0/css/xterm.css">
-    <link rel="stylesheet" href="dashboard.css">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Mesh dashboard — monitor deployments, resource usage, and cluster health across all your multi-cloud infrastructure.">
+  <meta name="theme-color" content="#06060b">
+  <meta property="og:title" content="Mesh Dashboard">
+  <meta property="og:description" content="Live dashboard view for Mesh — multi-cloud container platform.">
+  <meta property="og:type" content="website">
+  <title>Dashboard — Mesh</title>
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='20' fill='%2306060b'/><circle cx='35' cy='35' r='8' fill='%233b82f6'/><circle cx='65' cy='35' r='8' fill='%2306b6d4'/><circle cx='50' cy='65' r='8' fill='%2310b981'/><line x1='35' y1='35' x2='65' y2='35' stroke='%232a2a42' stroke-width='2'/><line x1='35' y1='35' x2='50' y2='65' stroke='%232a2a42' stroke-width='2'/><line x1='65' y1='35' x2='50' y2='65' stroke='%232a2a42' stroke-width='2'/></svg>">
+  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="dashboard.css">
 </head>
 <body>
-
-    <!-- ========== TOAST CONTAINER ========== -->
-    <div class="toast-container" id="toastContainer"></div>
-
-    <!-- ========== LOGIN VIEW ========== -->
-    <section class="view" id="view-login">
-        <div class="login-bg-grid"></div>
-        <div class="login-card">
-            <div class="login-logo">
-                <span class="login-diamond">&#9670;</span>
-            </div>
-            <h1 class="login-title">Welcome to Mesh</h1>
-            <p class="login-subtitle">Enter your invite token to connect to the cluster dashboard.</p>
-            <div class="login-form">
-                <input type="text" id="inviteToken" class="login-input" placeholder="Enter invite token..." autocomplete="off" spellcheck="false">
-                <button class="btn btn-primary btn-login" id="loginBtn" onclick="handleLogin()">Connect to Cluster</button>
-            </div>
-            <p class="login-hint">Demo token: <code>mesh-demo-2026</code></p>
-            <div class="login-loading" id="loginLoading">
-                <div class="spinner"></div>
-                <span>Connecting to cluster...</span>
-            </div>
-            <div class="login-error" id="loginError">Invalid invite token. Please try again.</div>
-        </div>
-        <a href="index.html" class="login-back">&larr; Back to Landing Page</a>
-    </section>
-
-    <!-- ========== APP SHELL (sidebar + main) ========== -->
-    <div class="app-shell" id="appShell">
-
-        <!-- Sidebar -->
-        <aside class="sidebar" id="sidebar">
-            <div class="sidebar-header">
-                <div class="sidebar-brand">
-                    <span class="nav-logo">&#9670;</span>
-                    <span class="nav-name">mesh</span>
-                </div>
-                <div class="cluster-selector" id="clusterSelector">
-                    <span class="cluster-icon">&#9881;</span>
-                    <span class="cluster-name">agent-mesh</span>
-                    <span class="cluster-provider">DigitalOcean NYC3</span>
-                </div>
-            </div>
-            <nav class="sidebar-nav">
-                <a href="#dashboard" class="nav-item active" data-view="dashboard" onclick="navigateTo('dashboard')">
-                    <span class="nav-icon">&#9635;</span>
-                    <span>Dashboard</span>
-                </a>
-                <a href="#agents" class="nav-item" data-view="agents" onclick="navigateTo('agents')">
-                    <span class="nav-icon">&#9881;</span>
-                    <span>Agents</span>
-                </a>
-                <a href="#topology" class="nav-item" data-view="topology" onclick="navigateTo('topology')">
-                    <span class="nav-icon">&#9670;</span>
-                    <span>Topology</span>
-                </a>
-                <a href="#settings" class="nav-item" data-view="settings" onclick="navigateTo('settings')">
-                    <span class="nav-icon">&#9881;</span>
-                    <span>Settings</span>
-                </a>
-            </nav>
-            <div class="sidebar-footer">
-                <div class="sidebar-user">
-                    <div class="user-avatar">S</div>
-                    <div class="user-info">
-                        <span class="user-name">Samanvaya</span>
-                        <span class="user-role">Admin</span>
-                    </div>
-                </div>
-                <a href="index.html" class="sidebar-back-link">&larr; Landing</a>
-            </div>
-        </aside>
-
-        <!-- Main Content Area -->
-        <main class="main-content" id="mainContent">
-
-            <!-- ===== DASHBOARD VIEW ===== -->
-            <section class="view-content" id="view-dashboard">
-                <div class="view-header">
-                    <h2 class="view-title">Cluster Dashboard</h2>
-                    <div class="view-actions">
-                        <button class="btn btn-sm btn-secondary" onclick="playGuidedDemo()">&#9654; Play Guided Demo</button>
-                        <button class="btn btn-sm btn-primary" onclick="showToast('Agent deployment wizard coming soon!', 'info')">+ Deploy Agent</button>
-                    </div>
-                </div>
-
-                <!-- Cluster Health Summary -->
-                <div class="health-summary">
-                    <div class="health-card">
-                        <span class="health-value green">3</span>
-                        <span class="health-label">Nodes Online</span>
-                    </div>
-                    <div class="health-card">
-                        <span class="health-value cyan">3</span>
-                        <span class="health-label">Agents Running</span>
-                    </div>
-                    <div class="health-card">
-                        <span class="health-value purple">2</span>
-                        <span class="health-label">Snapshots</span>
-                    </div>
-                    <div class="health-card">
-                        <span class="health-value">47h</span>
-                        <span class="health-label">Uptime</span>
-                    </div>
-                </div>
-
-                <!-- Node Cards -->
-                <div class="section-label">Nodes</div>
-                <div class="node-grid" id="nodeGrid">
-                    <!-- Populated by JS -->
-                </div>
-
-                <!-- Agent Cards -->
-                <div class="section-label">Agents</div>
-                <div class="agent-grid" id="agentGrid">
-                    <!-- Populated by JS -->
-                </div>
-
-                <!-- Quick Actions -->
-                <div class="quick-actions">
-                    <button class="btn btn-sm btn-secondary" onclick="showToast('Snapshot of all agents initiated...', 'success')">&#128247; Snapshot All</button>
-                    <button class="btn btn-sm btn-secondary" onclick="navigateTo('topology')">&#128274; View Topology</button>
-                    <button class="btn btn-sm btn-secondary" onclick="showToast('Cluster metrics refreshed', 'info')">&#8635; Refresh Metrics</button>
-                </div>
-            </section>
-
-            <!-- ===== AGENTS VIEW (Terminal) ===== -->
-            <section class="view-content" id="view-agents">
-                <div class="view-header">
-                    <h2 class="view-title">Agent Terminal</h2>
-                    <div class="view-actions">
-                        <button class="btn btn-sm btn-secondary" id="guidedDemoBtn" onclick="playGuidedDemo()">&#9654; Play Guided Demo</button>
-                    </div>
-                </div>
-
-                <div class="agent-layout">
-                    <!-- Agent Sidebar (metadata) -->
-                    <div class="agent-sidebar" id="agentSidebar">
-                        <div class="agent-sidebar-header">
-                            <h3>Agents</h3>
-                        </div>
-                        <div class="agent-list" id="agentList">
-                            <!-- Populated by JS -->
-                        </div>
-                    </div>
-
-                    <!-- Terminal Area -->
-                    <div class="terminal-area">
-                        <div class="terminal-toolbar">
-                            <div class="terminal-tabs" id="terminalTabs">
-                                <!-- Populated by JS -->
-                            </div>
-                            <div class="terminal-actions">
-                                <button class="toolbar-btn" onclick="clearActiveTerminal()" title="Clear">&#128465;</button>
-                                <button class="toolbar-btn" onclick="snapshotActiveAgent()" title="Snapshot">&#128247;</button>
-                                <button class="toolbar-btn" onclick="restartActiveTerminal()" title="Restart">&#8635;</button>
-                            </div>
-                        </div>
-                        <div class="terminal-container" id="terminalContainer">
-                            <!-- xterm.js instances mounted here -->
-                            <div class="terminal-placeholder" id="terminalPlaceholder">
-                                <span class="placeholder-icon">&#9670;</span>
-                                <p>Select an agent to open its terminal</p>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </section>
-
-            <!-- ===== TOPOLOGY VIEW ===== -->
-            <section class="view-content" id="view-topology">
-                <div class="view-header">
-                    <h2 class="view-title">Cluster Topology</h2>
-                </div>
-                <div class="topology-container">
-                    <div class="topology-diagram" id="topologyDiagram">
-                        <!-- Populated by JS -->
-                    </div>
-                    <div class="topology-legend">
-                        <div class="legend-item"><span class="legend-dot green"></span> Leader Node</div>
-                        <div class="legend-item"><span class="legend-dot cyan"></span> Worker Node</div>
-                        <div class="legend-item"><span class="legend-dot purple"></span> Agent</div>
-                        <div class="legend-item"><span class="legend-line"></span> Mesh Link</div>
-                    </div>
-                </div>
-            </section>
-
-            <!-- ===== SETTINGS VIEW ===== -->
-            <section class="view-content" id="view-settings">
-                <div class="view-header">
-                    <h2 class="view-title">Settings</h2>
-                </div>
-                <div class="settings-grid">
-                    <div class="settings-card">
-                        <h3>Cluster Configuration</h3>
-                        <div class="settings-row">
-                            <span class="settings-label">Cluster Name</span>
-                            <span class="settings-value">agent-mesh</span>
-                        </div>
-                        <div class="settings-row">
-                            <span class="settings-label">Provider</span>
-                            <span class="settings-value">DigitalOcean</span>
-                        </div>
-                        <div class="settings-row">
-                            <span class="settings-label">Region</span>
-                            <span class="settings-value">NYC3</span>
-                        </div>
-                        <div class="settings-row">
-                            <span class="settings-label">Tailscale Tailnet</span>
-                            <span class="settings-value">connected</span>
-                        </div>
-                        <div class="settings-row">
-                            <span class="settings-label">Nomad Version</span>
-                            <span class="settings-value">1.7.2</span>
-                        </div>
-                        <div class="settings-row">
-                            <span class="settings-label">Consul Version</span>
-                            <span class="settings-value">1.17.0</span>
-                        </div>
-                    </div>
-                    <div class="settings-card">
-                        <h3>Access &amp; Security</h3>
-                        <div class="settings-row">
-                            <span class="settings-label">Nomad ACLs</span>
-                            <span class="settings-value warn">Disabled</span>
-                        </div>
-                        <div class="settings-row">
-                            <span class="settings-label">Mesh Network</span>
-                            <span class="settings-value green">Encrypted (WireGuard)</span>
-                        </div>
-                        <div class="settings-row">
-                            <span class="settings-label">TLS</span>
-                            <span class="settings-value green">Auto (Let's Encrypt)</span>
-                        </div>
-                        <div class="settings-row">
-                            <span class="settings-label">Invite Tokens</span>
-                            <span class="settings-value">3 active</span>
-                        </div>
-                    </div>
-                    <div class="settings-card">
-                        <h3>Resource Limits</h3>
-                        <div class="settings-row">
-                            <span class="settings-label">Leader Memory</span>
-                            <span class="settings-value">2 GB</span>
-                        </div>
-                        <div class="settings-row">
-                            <span class="settings-label">Worker Memory (avg)</span>
-                            <span class="settings-value">2 GB</span>
-                        </div>
-                        <div class="settings-row">
-                            <span class="settings-label">Control Plane Overhead</span>
-                            <span class="settings-value">530 MB</span>
-                        </div>
-                        <div class="settings-row">
-                            <span class="settings-label">Max Agents per Worker</span>
-                            <span class="settings-value">5</span>
-                        </div>
-                    </div>
-                </div>
-            </section>
-
-        </main>
+  <nav>
+    <div class="nav-inner">
+      <a href="index.html" class="nav-brand">
+        <svg viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <circle cx="9" cy="9" r="3" fill="#3b82f6"/>
+          <circle cx="19" cy="9" r="3" fill="#06b6d4"/>
+          <circle cx="14" cy="19" r="3" fill="#10b981"/>
+          <line x1="9" y1="9" x2="19" y2="9" stroke="#2a2a42" stroke-width="1.5"/>
+          <line x1="9" y1="9" x2="14" y2="19" stroke="#2a2a42" stroke-width="1.5"/>
+          <line x1="19" y1="9" x2="14" y2="19" stroke="#2a2a42" stroke-width="1.5"/>
+        </svg>
+        <span>Mesh</span>
+      </a>
+      <ul class="nav-links">
+        <li><a href="index.html">Demo</a></li>
+        <li><a href="cluster.html">Cluster</a></li>
+        <li><a href="dashboard.html" class="active">Dashboard</a></li>
+        <li><a href="https://rethink-paradigms.github.io/mesh/" target="_blank" rel="noopener">Docs</a></li>
+        <li><a href="https://github.com/rethink-paradigms/mesh" target="_blank" rel="noopener" class="nav-cta">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
+          GitHub
+        </a></li>
+      </ul>
+      <button class="nav-mobile-toggle" aria-label="Toggle menu" aria-expanded="false">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+      </button>
     </div>
+  </nav>
 
-    <!-- Scripts -->
-    <script src="https://cdn.jsdelivr.net/npm/xterm@5.3.0/lib/xterm.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/xterm-addon-fit@0.8.0/lib/xterm-addon-fit.js"></script>
-    <script src="terminal-mock.js"></script>
-    <script src="dashboard.js"></script>
+  <main style="padding-top:96px;">
+    <div class="container">
+      <div style="margin-bottom:8px;" data-animate>
+        <a href="index.html" style="display:inline-flex;align-items:center;gap:6px;color:var(--text-muted);font-size:0.85rem;margin-bottom:16px;">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg>
+          Back to Demo Home
+        </a>
+        <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;">
+          <div>
+            <span class="section-label">Dashboard</span>
+            <h1 class="section-title" style="font-size:2.2rem;">mesh-prod</h1>
+          </div>
+          <div style="display:flex;align-items:center;gap:8px;">
+            <span class="badge badge-green">All Systems Operational</span>
+            <span style="font-size:0.75rem;color:var(--text-muted);font-family:var(--font-mono);">Updated 12s ago</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="cluster-info-bar" data-animate>
+        <div class="info-card">
+          <div class="info-card-icon" style="background:var(--accent-blue-glow);color:var(--accent-blue);">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/></svg>
+          </div>
+          <div>
+            <div class="info-card-value">4</div>
+            <div class="info-card-label">Nodes</div>
+          </div>
+        </div>
+        <div class="info-card">
+          <div class="info-card-icon" style="background:rgba(16,185,129,0.1);color:var(--accent-green);">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+          </div>
+          <div>
+            <div class="info-card-value">6</div>
+            <div class="info-card-label">Deployments</div>
+          </div>
+        </div>
+        <div class="info-card">
+          <div class="info-card-icon" style="background:rgba(245,158,11,0.1);color:var(--accent-yellow);">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
+          </div>
+          <div>
+            <div class="info-card-value">3</div>
+            <div class="info-card-label">Providers</div>
+          </div>
+        </div>
+        <div class="info-card">
+          <div class="info-card-icon" style="background:rgba(139,92,246,0.1);color:var(--accent-purple);">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+          </div>
+          <div>
+            <div class="info-card-value">3</div>
+            <div class="info-card-label">Regions</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="dashboard-grid" data-animate>
+        <div class="dash-card">
+          <div class="dash-card-header">
+            <span class="dash-card-title">CPU Usage</span>
+            <span class="badge badge-blue">Last 12h</span>
+          </div>
+          <div class="chart-placeholder" id="cpuChart"></div>
+          <div style="display:flex;justify-content:space-between;margin-top:12px;font-size:0.7rem;color:var(--text-muted);font-family:var(--font-mono);">
+            <span>12h ago</span><span>Now</span>
+          </div>
+        </div>
+
+        <div class="dash-card">
+          <div class="dash-card-header">
+            <span class="dash-card-title">Memory Usage</span>
+            <span class="badge badge-blue">Last 12h</span>
+          </div>
+          <div class="chart-placeholder" id="memChart"></div>
+          <div style="display:flex;justify-content:space-between;margin-top:12px;font-size:0.7rem;color:var(--text-muted);font-family:var(--font-mono);">
+            <span>12h ago</span><span>Now</span>
+          </div>
+        </div>
+
+        <div class="dash-card">
+          <div class="dash-card-header">
+            <span class="dash-card-title">Resource Breakdown</span>
+          </div>
+          <div class="metric-row">
+            <span class="metric-label">
+              <span style="color:var(--accent-blue);">&#9679;</span> Nomad
+            </span>
+            <div style="display:flex;align-items:center;">
+              <span class="metric-value">80 MB</span>
+              <div class="metric-bar"><div class="metric-bar-fill" data-width="40" style="background:var(--accent-blue);"></div></div>
+            </div>
+          </div>
+          <div class="metric-row">
+            <span class="metric-label">
+              <span style="color:var(--accent-cyan);">&#9679;</span> Tailscale
+            </span>
+            <div style="display:flex;align-items:center;">
+              <span class="metric-value">20 MB</span>
+              <div class="metric-bar"><div class="metric-bar-fill" data-width="10" style="background:var(--accent-cyan);"></div></div>
+            </div>
+          </div>
+          <div class="metric-row">
+            <span class="metric-label">
+              <span style="color:var(--accent-purple);">&#9679;</span> Consul
+            </span>
+            <div style="display:flex;align-items:center;">
+              <span class="metric-value">50 MB</span>
+              <div class="metric-bar"><div class="metric-bar-fill" data-width="25" style="background:var(--accent-purple);"></div></div>
+            </div>
+          </div>
+          <div class="metric-row">
+            <span class="metric-label">
+              <span style="color:var(--accent-yellow);">&#9679;</span> Traefik
+            </span>
+            <div style="display:flex;align-items:center;">
+              <span class="metric-value">256 MB</span>
+              <div class="metric-bar"><div class="metric-bar-fill" data-width="80" style="background:var(--accent-yellow);"></div></div>
+            </div>
+          </div>
+          <div class="metric-row">
+            <span class="metric-label">
+              <span style="color:var(--accent-green);">&#9679;</span> Docker
+            </span>
+            <div style="display:flex;align-items:center;">
+              <span class="metric-value">100 MB</span>
+              <div class="metric-bar"><div class="metric-bar-fill" data-width="50" style="background:var(--accent-green);"></div></div>
+            </div>
+          </div>
+          <div class="metric-row" style="border-bottom:none;padding-top:14px;">
+            <span class="metric-label" style="font-weight:600;color:var(--text-primary);">Total</span>
+            <span class="metric-value" style="font-size:0.95rem;">~530 MB</span>
+          </div>
+        </div>
+
+        <div class="dash-card">
+          <div class="dash-card-header">
+            <span class="dash-card-title">Cloud Providers</span>
+          </div>
+          <div class="provider-badges">
+            <div class="provider-badge">
+              <span class="provider-dot" style="background:#ff9900;"></span>
+              AWS
+              <span style="color:var(--text-muted);font-size:0.75rem;">2 nodes</span>
+            </div>
+            <div class="provider-badge">
+              <span class="provider-dot" style="background:#0069ff;"></span>
+              DigitalOcean
+              <span style="color:var(--text-muted);font-size:0.75rem;">1 node</span>
+            </div>
+            <div class="provider-badge">
+              <span class="provider-dot" style="background:#d50c2d;"></span>
+              Hetzner
+              <span style="color:var(--text-muted);font-size:0.75rem;">1 node</span>
+            </div>
+          </div>
+          <div style="margin-top:20px;">
+            <div class="metric-row">
+              <span class="metric-label">
+                <span style="color:#ff9900;">&#9679;</span> AWS us-east-1
+              </span>
+              <div style="display:flex;align-items:center;">
+                <span class="metric-value">$18.50</span>
+                <div class="metric-bar"><div class="metric-bar-fill" data-width="52" style="background:#ff9900;"></div></div>
+              </div>
+            </div>
+            <div class="metric-row">
+              <span class="metric-label">
+                <span style="color:#0069ff;">&#9679;</span> DO nyc3
+              </span>
+              <div style="display:flex;align-items:center;">
+                <span class="metric-value">$6.00</span>
+                <div class="metric-bar"><div class="metric-bar-fill" data-width="17" style="background:#0069ff;"></div></div>
+              </div>
+            </div>
+            <div class="metric-row" style="border-bottom:none;">
+              <span class="metric-label">
+                <span style="color:#d50c2d;">&#9679;</span> Hetzner fsn1
+              </span>
+              <div style="display:flex;align-items:center;">
+                <span class="metric-value">$4.50</span>
+                <div class="metric-bar"><div class="metric-bar-fill" data-width="13" style="background:#d50c2d;"></div></div>
+              </div>
+            </div>
+            <div class="metric-row" style="border-bottom:none;padding-top:14px;border-top:1px solid var(--border-subtle);">
+              <span class="metric-label" style="font-weight:600;color:var(--text-primary);">Total</span>
+              <span class="metric-value" style="font-size:0.95rem;">~$29.00/mo</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="dash-card full-width">
+          <div class="dash-card-header">
+            <span class="dash-card-title">Active Deployments</span>
+            <span class="badge badge-green">6 running</span>
+          </div>
+          <div class="deployment-list">
+            <div class="deployment-item">
+              <span class="deployment-status" style="background:var(--accent-green);"></span>
+              <div class="deployment-info">
+                <div class="deployment-name">api-server</div>
+                <div class="deployment-meta">nginx:latest &middot; leader (AWS)</div>
+              </div>
+              <div class="deployment-stats">
+                <span>CPU 12%</span>
+                <span>MEM 128MB</span>
+                <span>3m 42s</span>
+              </div>
+            </div>
+            <div class="deployment-item">
+              <span class="deployment-status" style="background:var(--accent-green);"></span>
+              <div class="deployment-info">
+                <div class="deployment-name">web-app</div>
+                <div class="deployment-meta">node:20-alpine &middot; worker-1 (DO)</div>
+              </div>
+              <div class="deployment-stats">
+                <span>CPU 8%</span>
+                <span>MEM 96MB</span>
+                <span>3m 38s</span>
+              </div>
+            </div>
+            <div class="deployment-item">
+              <span class="deployment-status" style="background:var(--accent-green);"></span>
+              <div class="deployment-info">
+                <div class="deployment-name">worker</div>
+                <div class="deployment-meta">python:3.12-slim &middot; worker-1 (DO)</div>
+              </div>
+              <div class="deployment-stats">
+                <span>CPU 45%</span>
+                <span>MEM 256MB</span>
+                <span>3m 38s</span>
+              </div>
+            </div>
+            <div class="deployment-item">
+              <span class="deployment-status" style="background:var(--accent-green);"></span>
+              <div class="deployment-info">
+                <div class="deployment-name">redis-cache</div>
+                <div class="deployment-meta">redis:7-alpine &middot; worker-2 (Hetzner)</div>
+              </div>
+              <div class="deployment-stats">
+                <span>CPU 3%</span>
+                <span>MEM 52MB</span>
+                <span>3m 35s</span>
+              </div>
+            </div>
+            <div class="deployment-item">
+              <span class="deployment-status" style="background:var(--accent-green);"></span>
+              <div class="deployment-info">
+                <div class="deployment-name">ingress</div>
+                <div class="deployment-meta">traefik:v3.0 &middot; leader (AWS)</div>
+              </div>
+              <div class="deployment-stats">
+                <span>CPU 5%</span>
+                <span>MEM 64MB</span>
+                <span>3m 42s</span>
+              </div>
+            </div>
+            <div class="deployment-item">
+              <span class="deployment-status" style="background:var(--accent-green);"></span>
+              <div class="deployment-info">
+                <div class="deployment-name">scheduler</div>
+                <div class="deployment-meta">nomad:1.8 &middot; worker-1 (DO)</div>
+              </div>
+              <div class="deployment-stats">
+                <span>CPU 7%</span>
+                <span>MEM 48MB</span>
+                <span>3m 40s</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="dash-card full-width">
+          <div class="dash-card-header">
+            <span class="dash-card-title">Activity</span>
+          </div>
+          <div class="timeline">
+            <div class="timeline-item">
+              <div class="timeline-icon" style="background:rgba(16,185,129,0.1);color:var(--accent-green);">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+              </div>
+              <div class="timeline-content">
+                <div class="timeline-title">Cluster healthy</div>
+                <div class="timeline-desc">All 4 nodes reporting ready. 6 deployments running across 3 providers.</div>
+                <div class="timeline-time">12 seconds ago</div>
+              </div>
+            </div>
+            <div class="timeline-item">
+              <div class="timeline-icon" style="background:var(--accent-blue-glow);color:var(--accent-blue);">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/></svg>
+              </div>
+              <div class="timeline-content">
+                <div class="timeline-title">Deployed scheduler</div>
+                <div class="timeline-desc">nomad:1.8 deployed to worker-1 (DigitalOcean, nyc3).</div>
+                <div class="timeline-time">2 seconds later</div>
+              </div>
+            </div>
+            <div class="timeline-item">
+              <div class="timeline-icon" style="background:rgba(6,182,212,0.1);color:var(--accent-cyan);">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+              </div>
+              <div class="timeline-content">
+                <div class="timeline-title">TLS certificate renewed</div>
+                <div class="timeline-desc">Let's Encrypt auto-renewed for *.mesh-prod.example.com via Traefik.</div>
+                <div class="timeline-time">1 hour ago</div>
+              </div>
+            </div>
+            <div class="timeline-item">
+              <div class="timeline-icon" style="background:rgba(245,158,11,0.1);color:var(--accent-yellow);">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+              </div>
+              <div class="timeline-content">
+                <div class="timeline-title">worker-3 provisioning</div>
+                <div class="timeline-desc">Node bootstrapping on AWS eu-west-1. Tailscale join pending.</div>
+                <div class="timeline-time">In progress</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <footer>
+    <div class="footer-inner">
+      <div class="footer-brand">
+        <a href="index.html" class="nav-brand" style="margin-bottom:4px;">
+          <svg viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg" width="24" height="24">
+            <circle cx="9" cy="9" r="3" fill="#3b82f6"/><circle cx="19" cy="9" r="3" fill="#06b6d4"/><circle cx="14" cy="19" r="3" fill="#10b981"/>
+            <line x1="9" y1="9" x2="19" y2="9" stroke="#2a2a42" stroke-width="1.5"/><line x1="9" y1="9" x2="14" y2="19" stroke="#2a2a42" stroke-width="1.5"/><line x1="19" y1="9" x2="14" y2="19" stroke="#2a2a42" stroke-width="1.5"/>
+          </svg>
+          <span>Mesh</span>
+        </a>
+        <p>Deploy containers across any cloud.<br>Zero SSH. Auto-HTTPS. Multi-cloud.</p>
+      </div>
+      <div class="footer-col">
+        <h4>Demo</h4>
+        <ul>
+          <li><a href="index.html">Landing Page</a></li>
+          <li><a href="cluster.html">Cluster View</a></li>
+          <li><a href="dashboard.html">Dashboard</a></li>
+        </ul>
+      </div>
+      <div class="footer-col">
+        <h4>Resources</h4>
+        <ul>
+          <li><a href="https://rethink-paradigms.github.io/mesh/" target="_blank" rel="noopener">Documentation</a></li>
+          <li><a href="https://rethink-paradigms.github.io/mesh/architecture/overview/" target="_blank" rel="noopener">Architecture</a></li>
+        </ul>
+      </div>
+      <div class="footer-col">
+        <h4>Project</h4>
+        <ul>
+          <li><a href="https://github.com/rethink-paradigms/mesh" target="_blank" rel="noopener">GitHub</a></li>
+          <li><a href="https://github.com/rethink-paradigms/mesh/issues" target="_blank" rel="noopener">Issues</a></li>
+        </ul>
+      </div>
+    </div>
+    <div class="footer-bottom">
+      <span>&copy; 2024 Mesh Contributors. MIT License.</span>
+      <span>Powered by <a href="https://github.com/rethink-paradigms/mesh" target="_blank" rel="noopener" style="color:var(--accent-blue);">Mesh</a></span>
+    </div>
+  </footer>
+
+  <script src="script.js"></script>
+  <script src="dashboard.js"></script>
 </body>
 </html>

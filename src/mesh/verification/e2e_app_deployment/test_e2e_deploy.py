@@ -14,6 +14,7 @@ import json
 LEADER_IP = os.getenv("E2E_LEADER_IP")
 TARGET_ENV = os.getenv("E2E_TARGET_ENV", "local")
 
+
 def get_leader_ip():
     """
     Retrieves the leader IP based on the target environment.
@@ -21,20 +22,25 @@ def get_leader_ip():
     """
     if LEADER_IP:
         return LEADER_IP
-    
+
     if TARGET_ENV == "local":
         try:
             # Legacy support for multipass local dev
             res = subprocess.run(
                 ["multipass", "info", "local-leader", "--format", "json"],
-                capture_output=True, text=True, check=True
+                capture_output=True,
+                text=True,
+                check=True,
             )
             return json.loads(res.stdout)["info"]["local-leader"]["ipv4"][0]
         except (subprocess.CalledProcessError, FileNotFoundError):
             pytest.skip("Multipass not found or cluster not running.")
-    
+
     # TODO: Add AWS/Pulumi stack output lookup here for cloud envs
-    pytest.fail("Could not determine Leader IP. Set E2E_LEADER_IP or ensure local cluster is running.")
+    pytest.fail(
+        "Could not determine Leader IP. Set E2E_LEADER_IP or ensure local cluster is running."
+    )
+
 
 def test_marketing_site_deployment():
     """
@@ -48,15 +54,15 @@ def test_marketing_site_deployment():
     # In a real pipeline, the app might already be deployed by a previous stage.
     # If we need to trigger deploy, we would call the src/workloads tools here.
     # For this E2E, we assume the 'marketing-site' job is intended to be running.
-    
-    url = f"http://{leader_ip}:80" 
-    headers = {"Host": "marketing-site.localhost"} # Matches Traefik rule
-    
+
+    url = f"http://{leader_ip}:80"
+    headers = {"Host": "marketing-site.localhost"}  # Matches Traefik rule
+
     print(f"⏳ Verification Loop: GET {url} with Host={headers['Host']}")
-    
+
     start_time = time.time()
-    timeout = 60 # seconds
-    
+    timeout = 60  # seconds
+
     while time.time() - start_time < timeout:
         try:
             resp = requests.get(url, headers=headers, timeout=2)
@@ -67,12 +73,14 @@ def test_marketing_site_deployment():
                     print("✅ Content verified: 'Hello World' found.")
                     return
                 else:
-                    print(f"⚠️  HTTP 200 received, but content mismatch. Body preview: {resp.text[:50]}...")
+                    print(
+                        f"⚠️  HTTP 200 received, but content mismatch. Body preview: {resp.text[:50]}..."
+                    )
             else:
                 print(f"⏳ Service returned HTTP {resp.status_code}")
         except requests.exceptions.RequestException as e:
             print(f"⏳ Connection failed: {e}")
-            
+
         time.sleep(3)
-        
+
     pytest.fail(f"Marketing site failed to pass verification within {timeout}s")

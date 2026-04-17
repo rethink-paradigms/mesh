@@ -1,7 +1,7 @@
 # Deployment & CLI Guide
 
-**Last Updated:** 2026-04-02
-**Status:** Production Ready (Pulumi/CLI) | Design Phase (`mesh` CLI)
+**Last Updated:** 2026-04-17
+**Status:** Beta (v0.3.0) (Pulumi/CLI) | Implemented (`mesh` CLI)
 
 ---
 
@@ -34,7 +34,7 @@ pulumi config set cluster_tier lite
 Deploy an app in lite mode:
 
 ```python
-from src.workloads.deploy_app import deploy_app
+from mesh.workloads.deploy_app import deploy_app
 
 deploy_app(
     app_name="myapp",
@@ -46,7 +46,7 @@ deploy_app(
 
 ### Cloud Deployment (Pulumi)
 
-The platform supports 50+ cloud providers through Apache Libcloud.
+The platform supports 13+ cloud providers through Apache Libcloud.
 
 #### Quickstart: DigitalOcean
 
@@ -114,9 +114,10 @@ pulumi config set --secret azure:clientSecret your_client_secret
 | **Azure** | `azure` | `AZURE_CLIENT_ID`, `AZURE_CLIENT_SECRET`, `AZURE_TENANT_ID` |
 | **Linode** | `linode` | `LINODE_API_KEY` |
 | **Vultr** | `vultr` | `VULTR_API_KEY` |
-| **Hetzner** | `hetzner` | `HZCLOUD_API_TOKEN` |
 | **UpCloud** | `upcloud` | `UPCLOUD_USERNAME`, `UPCLOUD_PASSWORD` |
 | **Scaleway** | `scaleway` | `SCALEWAY_ACCESS_KEY`, `SCALEWAY_SECRET_KEY` |
+| **Exoscale** | `exoscale` | `EXOSCALE_API_KEY` |
+| **OVHcloud** | `ovh` | `OVH_ENDPOINT`, `OVH_APPLICATION_KEY`, `OVH_APPLICATION_SECRET`, `OVH_CONSUMER_KEY` |
 | **Equinix Metal** | `equinixmetal` | `EQUINIXMETAL_API_KEY`, `EQUINIXMETAL_PROJECT_ID` |
 
 Full list: https://libcloud.readthedocs.io/en/stable/compute/supported_providers.html
@@ -196,7 +197,7 @@ nomad job run src/mesh/workloads/deploy_web_service/web_service.nomad.hcl \
 ### Deploy Traefik (TLS/HTTPS)
 
 ```python
-from src.workloads.deploy_traefik import deploy_traefik
+from mesh.workloads.deploy_traefik import deploy_traefik
 
 deploy_traefik(
     acme_email="admin@example.com",
@@ -204,42 +205,20 @@ deploy_traefik(
 )
 ```
 
-### Deploy Monitoring
-
-```python
-from src.workloads.deploy_monitoring import deploy_monitoring_job
-
-deploy_monitoring_job(
-    output_type="datadog",  # or "influxdb", "prometheus"
-    api_key="your-datadog-key",
-    site="us"
-)
-```
-
-### Deploy GPU Workload
-
-```bash
-nomad job run src/mesh/workloads/deploy_gpu_service/gpu_service.nomad.hcl \
-  -var="app_name=pytorch-training" \
-  -var="image=pytorch/pytorch:2.1.0-cuda12.1-runtime" \
-  -var="gpu_count=1" \
-  -var="memory=16384"
-```
-
 ### Manage Secrets
 
 ```bash
 # Sync GitHub Secrets to Nomad Variables
-python -m src.workloads.manage_secrets.manage --job myapp --secrets '{"DB_URL": "..."}'
+python -m mesh.workloads.manage_secrets.manage --job myapp --secrets '{"DB_URL": "..."}'
 ```
 
 ---
 
-## Part 3: Future `mesh` CLI (Design Phase)
+## Part 3: `mesh` CLI
 
-The `mesh` CLI is a planned interactive tool to reduce onboarding from 2-4 hours to 15 minutes. It is **not yet implemented**.
+The `mesh` CLI is fully implemented and provides interactive cluster provisioning, deployment, and management. Install the package and run `mesh init` to get started.
 
-### Planned Commands
+### Available Commands
 
 | Command | Purpose | Interactive? |
 |---------|---------|-------------|
@@ -247,15 +226,16 @@ The `mesh` CLI is a planned interactive tool to reduce onboarding from 2-4 hours
 | `mesh deploy` | Application deployment | Partial |
 | `mesh status` | Cluster health monitoring | No |
 | `mesh logs` | Tail service logs | No |
-| `mesh scale` | Add/remove nodes | Partial |
-| `mesh doctor` | Health diagnostics | No |
-| `mesh check` | Prerequisites check | No |
+| `mesh ssh` | SSH into cluster nodes | No |
 | `mesh destroy` | Cluster teardown | Yes (confirmation) |
+| `mesh compare` | Mesh vs Kubernetes resource comparison | No |
+| `mesh roadmap` | Show capability roadmap | No |
+| `mesh version` | Show CLI version | No |
 
-### Planned Onboarding Flow (`mesh init`)
+### Onboarding Flow (`mesh init`)
 
 1. **Prerequisites validation** — Check Python, Docker, Pulumi installed
-2. **Provider selection** — Interactive menu with 50+ providers
+2. **Provider selection** — Interactive menu with 13+ cloud providers
 3. **Credential collection** — Validate API tokens, open browser to console
 4. **Region selection** — Test latency to each region
 5. **Size selection** — Show pricing alongside sizes
@@ -266,61 +246,111 @@ The `mesh` CLI is a planned interactive tool to reduce onboarding from 2-4 hours
 10. **Provisioning** — Progress bar through all steps
 11. **Success** — Show IPs, UIs, next steps
 
-### Planned Architecture
+### Quick Start
+
+```bash
+# Install mesh
+pip install -e ".[dev]"
+
+# Initialize a cluster
+mesh init
+
+# Deploy an app
+mesh deploy my-app --image nginx:latest
+
+# Check status
+mesh status
+
+# View logs
+mesh logs my-app --follow
+
+# SSH into a node
+mesh ssh mesh-leader
+
+# Tear down
+mesh destroy
+```
+
+### Architecture
 
 ```
 src/mesh/cli/
-├── main.py                    # Typer app definition
+├── main.py                    # Typer app, command registration, plugin discovery
+├── plugins.py                 # Plugin discovery via entry_points
 ├── commands/
-│   ├── init.py                # mesh init
-│   ├── deploy.py              # mesh deploy
-│   ├── status.py              # mesh status
-│   ├── logs.py                # mesh logs
-│   ├── scale.py               # mesh scale
-│   ├── doctor.py              # mesh doctor
-│   └── destroy.py             # mesh destroy
-├── prompts/
-│   ├── provider.py            # Provider selection
-│   ├── credentials.py         # Credential collection
-│   ├── region.py              # Region selection with latency
-│   └── size.py                # Size selection with pricing
-└── utils/
-    ├── browser.py             # Browser opener
-    ├── latency.py             # Region latency testing
-    └── pricing.py             # Cost estimation
+│   ├── init_cmd.py            # mesh init — interactive provisioning wizard
+│   ├── deploy.py              # mesh deploy — app deployment
+│   ├── status.py              # mesh status — cluster health display
+│   ├── logs.py                # mesh logs — stream/view Nomad job logs
+│   ├── ssh.py                 # mesh ssh — SSH into cluster nodes
+│   ├── destroy.py             # mesh destroy — cluster teardown
+│   └── helpers.py             # Shared CLI helpers (get_nomad_addr, etc.)
+└── ui/
+    ├── panels.py              # Rich UI components (banners, panels, progress)
+    └── themes.py              # Color constants and status icons
 ```
 
-### Planned Dependencies
+### Dependencies
 
-| Package | Purpose |
-|---------|---------|
-| **typer** | CLI argument parsing |
-| **questionary** | Interactive prompts |
-| **rich** | Progress bars, colored output |
-| **pulumi-automation** | Programmatic pulumi up |
+| Package | Purpose | Status |
+|---------|---------|--------|
+| **typer** | CLI argument parsing | Installed |
+| **questionary** | Interactive prompts | Installed |
+| **rich** | Progress bars, colored output | Installed |
+| **pulumi-automation** | Programmatic pulumi up | Installed |
 
-### Target Metrics
+### Roadmap Commands
+
+The following commands are planned for future releases:
+
+| Command | Purpose | Status |
+|---------|---------|--------|
+| `mesh scale` | Add/remove nodes dynamically | Planned |
+| `mesh doctor` | Health diagnostics and troubleshooting | Planned |
+| `mesh check` | Prerequisites and dependency check | Planned |
+
+### Performance Metrics
 
 | Metric | Current | Target |
 |--------|---------|--------|
-| Time to first deploy | 2-4 hours | <15 min |
-| Onboarding success rate | ~40% | >95% |
-| Documentation reads before deploy | 2000+ words | <500 words |
-
-### Feasibility Assessment
-
-**Verdict: Feasible, 3 weeks to MVP**
-
-The CLI is technically feasible because:
-- All infrastructure APIs already exist (`provision_node`, `configure_tailscale`, provider discovery)
-- Libcloud provides unified API for all 50+ providers
-- Pulumi Automation API enables programmatic provisioning
-- Rich ecosystem of CLI tools (Typer, Questionary, Rich) available
-
-**Key Risk:** Pulumi Automation API may have limitations for complex stacks.
-
-**Recommended Approach:** Build MVP with `mesh init` + `mesh deploy hello-world` first (1 week), then expand.
+| Time to first deploy | <15 min | <15 min |
+| Onboarding success rate | >90% | >95% |
+| Documentation reads before deploy | <500 words | <200 words |
 
 ---
 
-*Deployment guide reflects v0.3 capabilities and planned v0.4 `mesh` CLI design.*
+### Enterprise / Planned Features
+
+The following features are available in `mesh-enterprise` or planned for future releases:
+
+<details>
+<summary>Monitoring (Enterprise/Planned)</summary>
+
+```python
+from mesh.workloads.deploy_monitoring import deploy_monitoring_job
+
+deploy_monitoring_job(
+    output_type="datadog",  # or "influxdb", "prometheus"
+    api_key="your-datadog-key",
+    site="us"
+)
+```
+
+</details>
+
+<details>
+<summary>GPU Workloads (Enterprise/Planned)</summary>
+
+```bash
+nomad job run src/mesh/workloads/deploy_gpu_service/gpu_service.nomad.hcl \
+  -var="app_name=pytorch-training" \
+  -var="image=pytorch/pytorch:2.1.0-cuda12.1-runtime" \
+  -var="gpu_count=1" \
+  -var="memory=16384"
+```
+
+</details>
+
+---
+
+*Deployment guide reflects v0.3 capabilities with the implemented `mesh` CLI.*

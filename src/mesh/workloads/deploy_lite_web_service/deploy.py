@@ -100,22 +100,12 @@ def main():
     )
     parser.add_argument("--app-name", required=True, help="Application name")
     parser.add_argument("--image", required=True, help="Docker image")
-    parser.add_argument(
-        "--image-tag", default="latest", help="Image tag (default: latest)"
-    )
-    parser.add_argument(
-        "--port", type=int, default=8080, help="Application port (default: 8080)"
-    )
+    parser.add_argument("--image-tag", default="latest", help="Image tag (default: latest)")
+    parser.add_argument("--port", type=int, default=8080, help="Application port (default: 8080)")
     parser.add_argument("--domain", default=None, help="Domain for Caddy routing")
-    parser.add_argument(
-        "--cpu", type=int, default=100, help="CPU in MHz (default: 100)"
-    )
-    parser.add_argument(
-        "--memory", type=int, default=128, help="Memory in MB (default: 128)"
-    )
-    parser.add_argument(
-        "--datacenter", default="dc1", help="Nomad datacenter (default: dc1)"
-    )
+    parser.add_argument("--cpu", type=int, default=100, help="CPU in MHz (default: 100)")
+    parser.add_argument("--memory", type=int, default=128, help="Memory in MB (default: 128)")
+    parser.add_argument("--datacenter", default="dc1", help="Nomad datacenter (default: dc1)")
     parser.add_argument("--nomad-addr", default=None, help="Nomad server address")
     parser.add_argument(
         "--caddy-admin-addr",
