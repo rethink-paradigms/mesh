@@ -69,9 +69,10 @@ their RAM cost; the platform is deliberately lightweight.
 
 - Bugs: open an issue at
   [github.com/rethink-paradigms/mesh/issues](https://github.com/rethink-paradigms/mesh/issues).
-- Security: please do not open public issues. Email the maintainers
-  privately (see `README.md`).
+- Security: please do not open public issues. Use GitHub's private
+  vulnerability reporting — see [SECURITY.md](SECURITY.md).
 
 ## Code of conduct
 
-Be kind. Assume good faith. Critique the code, not the author.
+See [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md). In short: be kind, assume good
+faith, and critique the code, not the author.

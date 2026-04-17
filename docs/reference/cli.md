@@ -1,0 +1,232 @@
+# CLI Commands Reference
+
+Complete reference for all `mesh` CLI commands.
+
+---
+
+## `mesh init`
+
+Interactive cluster provisioning wizard. Creates a new Mesh cluster on any supported provider.
+
+```bash
+mesh init [OPTIONS]
+```
+
+**Options:**
+
+| Flag | Type | Default | Description |
+|:---|:---|:---|:---|
+| `--provider` / `-p` | string | interactive | Cloud provider name (e.g., `"DigitalOcean"`, `"AWS"`, `"Local (Multipass)"`) |
+| `--workers` / `-w` | int | `1` | Number of worker nodes |
+| `--demo` | flag | false | Run in demo mode (no real infrastructure) |
+
+**Examples:**
+
+```bash
+# Interactive wizard (recommended for first use)
+mesh init
+
+# Skip wizard, provision directly
+mesh init --provider "DigitalOcean" --workers 2
+
+# Local development cluster
+mesh init --provider "Local (Multipass)" --workers 2
+
+# Demo mode (try without credentials)
+mesh init --demo
+```
+
+---
+
+## `mesh deploy`
+
+Deploy a containerized application to the cluster.
+
+```bash
+mesh deploy <name> [OPTIONS]
+```
+
+**Arguments:**
+
+| Arg | Required | Description |
+|:---|:---|:---|
+| `name` | Yes | Application name (used for routing and identification) |
+
+**Options:**
+
+| Flag | Type | Default | Description |
+|:---|:---|:---|:---|
+| `--image` / `-i` | string | required | Docker image (e.g., `nginx`, `node:20`) |
+| `--tag` / `-t` | string | `latest` | Image tag |
+| `--port` / `-p` | int | `8080` | Container port to expose |
+| `--domain` / `-d` | string | auto | Custom domain for HTTPS ingress |
+| `--cpu` / `-c` | int | `100` | CPU allocation (MHz) |
+| `--memory` / `-m` | int | `128` | Memory allocation (MB) |
+| `--count` / `-n` | int | `1` | Number of instances |
+| `--datacenter` | string | `dc1` | Nomad datacenter |
+| `--tier` | string | auto | Force cluster tier |
+| `--demo` | flag | false | Run in demo mode |
+
+**Examples:**
+
+```bash
+# Deploy nginx
+mesh deploy my-api --image nginx:latest --port 8080
+
+# Deploy with custom domain and resources
+mesh deploy web-app --image node:20 --port 3000 --domain app.example.com --cpu 200 --memory 512
+
+# Deploy multiple instances
+mesh deploy worker --image python:3.11 --count 3
+```
+
+---
+
+## `mesh status`
+
+View cluster health, nodes, and running applications.
+
+```bash
+mesh status [OPTIONS]
+```
+
+**Options:**
+
+| Flag | Type | Default | Description |
+|:---|:---|:---|:---|
+| `--demo` | flag | false | Show demo output |
+| `--compare` | flag | false | Show K8s comparison |
+| `--roadmap` | flag | false | Show capability roadmap |
+
+**Output includes:**
+
+- Cluster name and detected tier
+- Node list with IP addresses and health status
+- Running deployments with resource usage
+- Consul service health (if applicable)
+
+---
+
+## `mesh logs`
+
+Stream application logs from a deployed service.
+
+```bash
+mesh logs [job_name] [OPTIONS]
+```
+
+**Arguments:**
+
+| Arg | Required | Description |
+|:---|:---|:---|
+| `job_name` | No | Job name to fetch logs for. When omitted, lists all running jobs. |
+
+**Options:**
+
+| Flag | Type | Default | Description |
+|:---|:---|:---|:---|
+| `--follow` / `-f` | flag | false | Stream logs continuously (like `tail -f`) |
+| `--tail` / `-n` | int | `20` | Number of recent lines to show |
+| `--alloc` / `-a` | string | none | Specific allocation ID |
+| `--stderr` | flag | false | Show stderr instead of stdout |
+
+---
+
+## `mesh ssh`
+
+Connect to a cluster node via SSH (through the Tailscale mesh).
+
+```bash
+mesh ssh [node_name] [OPTIONS]
+```
+
+**Arguments:**
+
+| Arg | Required | Description |
+|:---|:---|:---|
+| `node_name` | No | Node name to connect to. When omitted, lists all available nodes. |
+
+**Options:**
+
+| Flag | Type | Default | Description |
+|:---|:---|:---|:---|
+| `--user` / `-u` | string | `ubuntu` | SSH user |
+
+---
+
+## `mesh destroy`
+
+Tear down a Mesh cluster and release all cloud resources.
+
+```bash
+mesh destroy [OPTIONS]
+```
+
+**Options:**
+
+| Flag | Type | Default | Description |
+|:---|:---|:---|:---|
+| `--cluster` / `-c` | string | `mesh-cluster` | Cluster name |
+| `--demo` | flag | false | Run in demo mode |
+
+!!! warning "Destructive"
+    This permanently deletes all VMs, data, and deployed applications. Cannot be undone.
+
+---
+
+## `mesh compare`
+
+Show resource comparison between Mesh and Kubernetes.
+
+```bash
+mesh compare
+```
+
+Displays a side-by-side comparison of RAM usage, cost, and complexity.
+
+---
+
+## `mesh roadmap`
+
+Show the capability roadmap and future vision.
+
+```bash
+mesh roadmap
+```
+
+Displays the platform feature timeline and upcoming capabilities.
+
+---
+
+## `mesh version`
+
+Show the installed Mesh version.
+
+```bash
+mesh version
+```
+
+---
+
+## Global Options
+
+These flags work with all commands:
+
+| Flag | Description |
+|:---|:---|
+| `--help` | Show command help and usage |
+| `--demo` | Run without real infrastructure (for testing and evaluation) |
+
+---
+
+## Plugin Commands
+
+Mesh supports extending the CLI via Python entry points. Enterprise and third-party plugins can add commands:
+
+```toml
+# In your plugin's pyproject.toml:
+[project.entry-points."mesh.plugins"]
+my-command = "my_package.cli:register"
+```
+
+See [CONTRIBUTING.md](https://github.com/rethink-paradigms/mesh/blob/main/CONTRIBUTING.md) for plugin development details.
