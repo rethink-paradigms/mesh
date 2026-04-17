@@ -52,9 +52,7 @@ def cluster_config():
         if config.is_local():
             # Check if Multipass is available before trying to discover cluster
             try:
-                subprocess.run(
-                    ["multipass", "--version"], capture_output=True, check=True
-                )
+                subprocess.run(["multipass", "--version"], capture_output=True, check=True)
                 # Multipass exists, try to discover cluster
                 try:
                     nodes = get_cluster_nodes(config)
@@ -100,9 +98,7 @@ def test_multi_node_app_scheduling(cluster_config, nomad_addr):
     # Skip if we don't have enough nodes (need leader + at least 1 worker)
     nodes = get_cluster_nodes(cluster_config)
     if len(nodes) < 2:
-        pytest.skip(
-            "Need at least 2 nodes (leader + worker) for multi-node scheduling test"
-        )
+        pytest.skip("Need at least 2 nodes (leader + worker) for multi-node scheduling test")
 
     # Generate unique job ID
     job_id = get_unique_job_id()
@@ -126,17 +122,17 @@ def test_multi_node_app_scheduling(cluster_config, nomad_addr):
         unique_nodes = set(alloc_to_node.values())
 
         # We expect at least 2 different nodes (realistic: 1 leader + 1+ workers)
-        assert len(unique_nodes) >= 2, (
-            f"Expected allocations on at least 2 different nodes, got {len(unique_nodes)}: {unique_nodes}"
-        )
+        assert (
+            len(unique_nodes) >= 2
+        ), f"Expected allocations on at least 2 different nodes, got {len(unique_nodes)}: {unique_nodes}"
 
         # Verify Consul service discovery
         time.sleep(5)  # Give Consul time to register services
         service_ips = verify_service_discovery("test-web-service")
 
-        assert len(service_ips) >= 2, (
-            f"Expected at least 2 service instances in Consul, got {len(service_ips)}"
-        )
+        assert (
+            len(service_ips) >= 2
+        ), f"Expected at least 2 service instances in Consul, got {len(service_ips)}"
 
     finally:
         # Cleanup
@@ -183,18 +179,16 @@ def test_worker_failure_rescheduling(cluster_config, nomad_addr):
     try:
         # Initial deployment
         deploy_job(str(job_file), vars, nomad_addr)
-        assert wait_for_allocation(
-            job_name, expected_count=2, timeout=120, nomad_addr=nomad_addr
-        )
+        assert wait_for_allocation(job_name, expected_count=2, timeout=120, nomad_addr=nomad_addr)
 
         # Get initial allocation placement
         initial_allocs = get_allocation_nodes(job_name, nomad_addr)
         assert len(initial_allocs) == 2, "Expected 2 initial allocations"
 
         # Stop Nomad client on worker
-        assert stop_nomad_client(worker_to_fail["ip"]), (
-            f"Failed to stop Nomad client on {worker_to_fail['name']}"
-        )
+        assert stop_nomad_client(
+            worker_to_fail["ip"]
+        ), f"Failed to stop Nomad client on {worker_to_fail['name']}"
 
         # Wait for Nomad to detect failure and reschedule
         time.sleep(15)  # Nomad failship detection interval
@@ -205,23 +199,21 @@ def test_worker_failure_rescheduling(cluster_config, nomad_addr):
         # Count allocations on remaining workers
         remaining_workers = [w for w in workers if w["name"] != worker_to_fail["name"]]
         allocs_on_remaining = [
-            a
-            for a in rescheduled_allocs.values()
-            if a in [w["name"] for w in remaining_workers]
+            a for a in rescheduled_allocs.values() if a in [w["name"] for w in remaining_workers]
         ]
 
         # At least 1 allocation should be on remaining worker(s)
-        assert len(allocs_on_remaining) >= 1, (
-            "Expected allocation to reschedule to remaining worker"
-        )
+        assert (
+            len(allocs_on_remaining) >= 1
+        ), "Expected allocation to reschedule to remaining worker"
 
         # Verify Consul service discovery (only healthy instances)
         time.sleep(5)
         service_ips = verify_service_discovery("test-web-service")
 
-        assert len(service_ips) >= 1, (
-            "Expected at least 1 healthy service instance after worker failure"
-        )
+        assert (
+            len(service_ips) >= 1
+        ), "Expected at least 1 healthy service instance after worker failure"
 
     finally:
         # Restart Nomad client (cleanup)
@@ -254,9 +246,9 @@ def test_cross_cloud_mesh_connectivity(cluster_config, nomad_addr):
         pytest.skip("Cross-cloud test requires E2E_CROSS_CLOUD=true")
 
     # Verify Tailscale mesh
-    assert check_tailscale_mesh(cluster_config), (
-        "Tailscale mesh not healthy - cross-cloud communication failed"
-    )
+    assert check_tailscale_mesh(
+        cluster_config
+    ), "Tailscale mesh not healthy - cross-cloud communication failed"
 
     nodes = get_cluster_nodes(cluster_config)
     if len(nodes) < 2:
@@ -273,9 +265,7 @@ def test_cross_cloud_mesh_connectivity(cluster_config, nomad_addr):
 
     try:
         deploy_job(str(job_file), vars, nomad_addr)
-        assert wait_for_allocation(
-            job_name, expected_count=1, timeout=180, nomad_addr=nomad_addr
-        )
+        assert wait_for_allocation(job_name, expected_count=1, timeout=180, nomad_addr=nomad_addr)
 
         # Verify service registration
         time.sleep(5)
@@ -321,9 +311,7 @@ def test_multi_node_service_discovery(cluster_config, nomad_addr):
 
     try:
         deploy_job(str(job_file), vars, nomad_addr)
-        assert wait_for_allocation(
-            job_name, expected_count=2, timeout=120, nomad_addr=nomad_addr
-        )
+        assert wait_for_allocation(job_name, expected_count=2, timeout=120, nomad_addr=nomad_addr)
 
         # Wait for Consul registration
         time.sleep(10)
@@ -332,17 +320,17 @@ def test_multi_node_service_discovery(cluster_config, nomad_addr):
         service_ips = verify_service_discovery("test-web-service")
 
         # Verify we got 2 instances
-        assert len(service_ips) == 2, (
-            f"Expected 2 service instances, got {len(service_ips)}: {service_ips}"
-        )
+        assert (
+            len(service_ips) == 2
+        ), f"Expected 2 service instances, got {len(service_ips)}: {service_ips}"
 
         # Verify allocations on different nodes
         alloc_to_node = get_allocation_nodes(job_name, nomad_addr)
         unique_nodes = set(alloc_to_node.values())
 
-        assert len(unique_nodes) >= 2, (
-            f"Expected service on 2 different nodes, got {len(unique_nodes)}"
-        )
+        assert (
+            len(unique_nodes) >= 2
+        ), f"Expected service on 2 different nodes, got {len(unique_nodes)}"
 
     finally:
         cleanup_job(job_name, nomad_addr, purge=True)
@@ -384,15 +372,15 @@ def test_traefik_routing_after_deployment(cluster_config, nomad_addr):
         host_header = f"test-web-service.{vars['domain']}"
         response = check_traefik_routing(leader_ip, host_header)
 
-        assert response.status_code == 200, (
-            f"Expected HTTP 200 from Traefik, got {response.status_code}"
-        )
+        assert (
+            response.status_code == 200
+        ), f"Expected HTTP 200 from Traefik, got {response.status_code}"
 
         service_ips = verify_service_discovery("test-web-service")
 
-        assert len(service_ips) >= 1, (
-            f"Expected at least 1 service instance in Consul, got {len(service_ips)}"
-        )
+        assert (
+            len(service_ips) >= 1
+        ), f"Expected at least 1 service instance in Consul, got {len(service_ips)}"
 
     finally:
         cleanup_job(job_name, nomad_addr, purge=True)

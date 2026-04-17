@@ -81,9 +81,7 @@ class TestClusterConfig:
 
     def test_parse_worker_ips_multiple(self):
         """Test parsing multiple worker IPs"""
-        with patch.dict(
-            os.environ, {"E2E_WORKER_IPS": "1.2.3.4, 5.6.7.8, 9.10.11.12"}, clear=True
-        ):
+        with patch.dict(os.environ, {"E2E_WORKER_IPS": "1.2.3.4, 5.6.7.8, 9.10.11.12"}, clear=True):
             config = ClusterConfig()
             assert config.worker_ips == ["1.2.3.4", "5.6.7.8", "9.10.11.12"]
 
@@ -119,9 +117,7 @@ class TestGetClusterNodes:
     @patch.dict(os.environ, {"E2E_TARGET_ENV": "local"}, clear=True)
     def test_get_cluster_nodes_local_discovery(self, mock_get_ip):
         """Test local cluster discovery via Multipass"""
-        mock_get_ip.side_effect = (
-            lambda name: "10.0.0.1" if name == "local-leader" else None
-        )
+        mock_get_ip.side_effect = lambda name: "10.0.0.1" if name == "local-leader" else None
 
         nodes = get_cluster_nodes()
 
@@ -167,9 +163,7 @@ class TestDeployJob:
     @patch.dict(os.environ, {"NOMAD_ADDR": "http://localhost:4646"}, clear=True)
     def test_deploy_job_success(self, mock_run):
         """Test successful job deployment"""
-        mock_run.return_value = MagicMock(
-            stdout="Job 'test-job' in state: running\n", returncode=0
-        )
+        mock_run.return_value = MagicMock(stdout="Job 'test-job' in state: running\n", returncode=0)
 
         job_id = deploy_job("/path/to/job.nomad", {"app_name": "test"})
 
@@ -188,9 +182,7 @@ class TestDeployJob:
     @patch.dict(os.environ, {}, clear=True)
     def test_deploy_job_default_nomad_addr(self, mock_run):
         """Test default Nomad address"""
-        mock_run.return_value = MagicMock(
-            stdout="Job 'test-job' in state: running\n", returncode=0
-        )
+        mock_run.return_value = MagicMock(stdout="Job 'test-job' in state: running\n", returncode=0)
 
         deploy_job("/path/to/job.nomad", {})
 
@@ -311,9 +303,7 @@ class TestCheckTailscaleMesh:
     def test_check_tailscale_mesh_insufficient_nodes(self, mock_get_nodes):
         """Test mesh check with insufficient nodes"""
         # Return only leader (insufficient for mesh)
-        mock_get_nodes.return_value = [
-            {"name": "leader", "ip": "10.0.0.1", "role": "server"}
-        ]
+        mock_get_nodes.return_value = [{"name": "leader", "ip": "10.0.0.1", "role": "server"}]
 
         result = check_tailscale_mesh()
 

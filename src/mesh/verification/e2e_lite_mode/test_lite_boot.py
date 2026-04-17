@@ -51,9 +51,7 @@ class TestLiteBoot:
         assert "/opt/caddy/data" in script
 
     def test_single_node_detected_as_lite(self):
-        nodes = [
-            NodeInfo(name="node-1", provider="aws", region="us-east-1", role="server")
-        ]
+        nodes = [NodeInfo(name="node-1", provider="aws", region="us-east-1", role="server")]
         config = detect_cluster_tier(nodes)
         assert config.tier == ClusterTier.LITE
         assert config.enable_caddy is True
