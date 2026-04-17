@@ -15,7 +15,7 @@ import os
 import sys
 
 # Add src to path for imports
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../..'))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../.."))
 
 from mesh.infrastructure.provision_node.provision_node import provision_node
 
@@ -57,7 +57,7 @@ def test_public_ip_output_resolves():
         role="client",
         size="t3.micro",
         tailscale_auth_key=pulumi.Output.secret("test-key"),
-        leader_ip="127.0.0.1"
+        leader_ip="127.0.0.1",
     )
 
     def check_public_ip(public_ip):
@@ -81,7 +81,7 @@ def test_private_ip_output_resolves():
         role="client",
         size="t3.micro",
         tailscale_auth_key=pulumi.Output.secret("test-key"),
-        leader_ip="127.0.0.1"
+        leader_ip="127.0.0.1",
     )
 
     def check_private_ip(private_ip):
@@ -105,11 +105,13 @@ def test_instance_id_output_resolves():
         role="client",
         size="t3.micro",
         tailscale_auth_key=pulumi.Output.secret("test-key"),
-        leader_ip="127.0.0.1"
+        leader_ip="127.0.0.1",
     )
 
     def check_instance_id(instance_id):
-        assert "test-instance-id_id" in instance_id, f"Expected 'test-instance-id_id' in '{instance_id}'"
+        assert (
+            "test-instance-id_id" in instance_id
+        ), f"Expected 'test-instance-id_id' in '{instance_id}'"
 
     return outputs["instance_id"].apply(check_instance_id)
 
@@ -129,7 +131,7 @@ def test_output_chaining_with_apply():
         role="client",
         size="t3.micro",
         tailscale_auth_key=pulumi.Output.secret("test-key"),
-        leader_ip="127.0.0.1"
+        leader_ip="127.0.0.1",
     )
 
     # Chain multiple .apply() operations
@@ -157,7 +159,7 @@ def test_output_all_combination():
         role="server",
         size="t3.small",
         tailscale_auth_key=pulumi.Output.secret("test-key"),
-        leader_ip="127.0.0.1"
+        leader_ip="127.0.0.1",
     )
 
     def check_all_outputs(args):
@@ -167,9 +169,7 @@ def test_output_all_combination():
         assert "test-output-all_id" in instance_id
 
     return pulumi.Output.all(
-        outputs["public_ip"],
-        outputs["private_ip"],
-        outputs["instance_id"]
+        outputs["public_ip"], outputs["private_ip"], outputs["instance_id"]
     ).apply(check_all_outputs)
 
 
@@ -188,14 +188,20 @@ def test_outputs_are_pulumi_outputs():
         role="client",
         size="t3.micro",
         tailscale_auth_key=pulumi.Output.secret("test-key"),
-        leader_ip="127.0.0.1"
+        leader_ip="127.0.0.1",
     )
 
     def check_output_types(instance_id):
         # All outputs should be Pulumi Output objects
-        assert isinstance(outputs["public_ip"], pulumi.Output), "public_ip should be a Pulumi Output"
-        assert isinstance(outputs["private_ip"], pulumi.Output), "private_ip should be a Pulumi Output"
-        assert isinstance(outputs["instance_id"], pulumi.Output), "instance_id should be a Pulumi Output"
+        assert isinstance(
+            outputs["public_ip"], pulumi.Output
+        ), "public_ip should be a Pulumi Output"
+        assert isinstance(
+            outputs["private_ip"], pulumi.Output
+        ), "private_ip should be a Pulumi Output"
+        assert isinstance(
+            outputs["instance_id"], pulumi.Output
+        ), "instance_id should be a Pulumi Output"
 
     return outputs["instance_id"].apply(check_output_types)
 
@@ -215,7 +221,7 @@ def test_output_values_accessible():
         role="client",
         size="t3.micro",
         tailscale_auth_key=pulumi.Output.secret("test-key"),
-        leader_ip="127.0.0.1"
+        leader_ip="127.0.0.1",
     )
 
     def check_keys_present(instance_id):
@@ -241,7 +247,7 @@ def test_multiple_nodes_distinct_outputs():
         role="client",
         size="t3.micro",
         tailscale_auth_key=pulumi.Output.secret("test-key"),
-        leader_ip="127.0.0.1"
+        leader_ip="127.0.0.1",
     )
 
     node2 = provision_node(
@@ -250,7 +256,7 @@ def test_multiple_nodes_distinct_outputs():
         role="client",
         size="t3.micro",
         tailscale_auth_key=pulumi.Output.secret("test-key"),
-        leader_ip="127.0.0.1"
+        leader_ip="127.0.0.1",
     )
 
     def check_distinct(args):
@@ -259,10 +265,7 @@ def test_multiple_nodes_distinct_outputs():
         assert "test-node-2_id" in node2_id
         assert node1_id != node2_id, "Instance IDs should be distinct"
 
-    return pulumi.Output.all(
-        node1["instance_id"],
-        node2["instance_id"]
-    ).apply(check_distinct)
+    return pulumi.Output.all(node1["instance_id"], node2["instance_id"]).apply(check_distinct)
 
 
 @pulumi.runtime.test
@@ -283,7 +286,7 @@ def test_output_resolution_with_gpu():
         size="g4dn.xlarge",
         tailscale_auth_key=pulumi.Output.secret("test-key"),
         leader_ip="vm-leader",
-        gpu_config=GPUConfig(enable_gpu=True)
+        gpu_config=GPUConfig(enable_gpu=True),
     )
 
     def check_gpu_outputs(args):
@@ -293,9 +296,7 @@ def test_output_resolution_with_gpu():
         assert "test-gpu-outputs_id" in instance_id
 
     return pulumi.Output.all(
-        outputs["public_ip"],
-        outputs["private_ip"],
-        outputs["instance_id"]
+        outputs["public_ip"], outputs["private_ip"], outputs["instance_id"]
     ).apply(check_gpu_outputs)
 
 
@@ -317,7 +318,7 @@ def test_output_resolution_with_spot():
         size="t3.micro",
         tailscale_auth_key=pulumi.Output.secret("test-key"),
         leader_ip="vm-leader",
-        spot_config=SpotConfig(enable_spot_handling=True)
+        spot_config=SpotConfig(enable_spot_handling=True),
     )
 
     def check_spot_outputs(args):
@@ -327,7 +328,5 @@ def test_output_resolution_with_spot():
         assert "test-spot-outputs_id" in instance_id
 
     return pulumi.Output.all(
-        outputs["public_ip"],
-        outputs["private_ip"],
-        outputs["instance_id"]
+        outputs["public_ip"], outputs["private_ip"], outputs["instance_id"]
     ).apply(check_spot_outputs)

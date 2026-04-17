@@ -67,9 +67,7 @@ class TestTierConfig:
 
 class TestDetectClusterTier:
     def test_detect_single_node_is_lite(self):
-        nodes = [
-            NodeInfo(name="node-1", provider="aws", region="us-east-1", role="server")
-        ]
+        nodes = [NodeInfo(name="node-1", provider="aws", region="us-east-1", role="server")]
         config = detect_cluster_tier(nodes)
         assert config.tier == ClusterTier.LITE
 

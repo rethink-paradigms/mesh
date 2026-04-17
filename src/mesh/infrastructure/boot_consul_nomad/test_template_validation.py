@@ -8,7 +8,7 @@ from mesh.infrastructure.boot_consul_nomad.generate_boot_scripts import (
     TemplateValidationError,
     generate_shell_script,
     generate_cloud_init_yaml,
-    _get_jinja2_env
+    _get_jinja2_env,
 )
 
 
@@ -39,11 +39,11 @@ class TestValidateRenderedTemplate:
 
     def test_invalid_template_multiple_unreplaced(self):
         """Test that multiple unreplaced variables are detected"""
-        content = '''
+        content = """
 TAILSCALE_KEY="{{ TAILSCALE_KEY }}"
 LEADER_IP="{{ LEADER_IP }}"
 ROLE="{{ ROLE }}"
-'''
+"""
         is_valid, unreplaced = validate_rendered_template(content)
         assert is_valid is False
         assert len(unreplaced) == 3
@@ -99,10 +99,7 @@ class TestGenerateShellScriptValidation:
     def test_generate_with_all_variables_validates(self):
         """Test that script generation with all variables passes validation"""
         script = generate_shell_script(
-            tailscale_key="ts-key-123",
-            leader_ip="10.0.0.1",
-            role="server",
-            validate=True
+            tailscale_key="ts-key-123", leader_ip="10.0.0.1", role="server", validate=True
         )
         assert script is not None
         assert "TAILSCALE_KEY=" in script
@@ -111,10 +108,7 @@ class TestGenerateShellScriptValidation:
     def test_generate_without_validation_skip_check(self):
         """Test that script generation with validate=False skips validation"""
         script = generate_shell_script(
-            tailscale_key="ts-key-123",
-            leader_ip="10.0.0.1",
-            role="server",
-            validate=False
+            tailscale_key="ts-key-123", leader_ip="10.0.0.1", role="server", validate=False
         )
         assert script is not None
         # Should still work because we're providing all variables
@@ -128,7 +122,7 @@ class TestGenerateShellScriptValidation:
             has_gpu=True,
             cuda_version="12.2",
             driver_version="545",
-            validate=True
+            validate=True,
         )
         assert script is not None
         assert "HAS_GPU=" in script
@@ -142,7 +136,7 @@ class TestGenerateShellScriptValidation:
             enable_spot_handling=True,
             spot_check_interval=10,
             spot_grace_period=60,
-            validate=True
+            validate=True,
         )
         assert script is not None
         assert "ENABLE_SPOT_HANDLING=" in script
@@ -158,18 +152,21 @@ class TestGetJinja2Env:
         env = _get_jinja2_env()
         # Check that undefined is StrictUndefined
         from jinja2 import StrictUndefined
+
         assert env.undefined == StrictUndefined
 
     def test_strict_mode_enabled(self):
         """Test that strict mode can be explicitly enabled"""
         env = _get_jinja2_env(strict=True)
         from jinja2 import StrictUndefined
+
         assert env.undefined == StrictUndefined
 
     def test_strict_mode_disabled(self):
         """Test that strict mode can be disabled"""
         env = _get_jinja2_env(strict=False)
         from jinja2 import Undefined
+
         assert env.undefined == Undefined
 
     def test_strict_mode_raises_on_undefined(self):
@@ -193,10 +190,7 @@ class TestGenerateCloudInitValidation:
     def test_generate_cloud_init_validates(self):
         """Test that cloud-init generation validates shell script"""
         yaml_content = generate_cloud_init_yaml(
-            tailscale_key="ts-key-123",
-            leader_ip="10.0.0.1",
-            role="server",
-            validate=True
+            tailscale_key="ts-key-123", leader_ip="10.0.0.1", role="server", validate=True
         )
         assert yaml_content is not None
         assert "#cloud-config" in yaml_content
@@ -204,10 +198,7 @@ class TestGenerateCloudInitValidation:
     def test_generate_cloud_init_without_validation(self):
         """Test that cloud-init generation can skip validation"""
         yaml_content = generate_cloud_init_yaml(
-            tailscale_key="ts-key-123",
-            leader_ip="10.0.0.1",
-            role="server",
-            validate=False
+            tailscale_key="ts-key-123", leader_ip="10.0.0.1", role="server", validate=False
         )
         assert yaml_content is not None
 
@@ -236,11 +227,11 @@ class TestValidationEdgeCases:
 
     def test_mixed_valid_and_invalid(self):
         """Test content with both valid variables and unreplaced templates"""
-        content = '''
+        content = """
 VALID_VAR="value"
 INVALID_VAR="{{ INVALID_VAR }}"
 ANOTHER_VALID="another"
-'''
+"""
         is_valid, unreplaced = validate_rendered_template(content)
         assert is_valid is False
         assert "INVALID_VAR" in unreplaced

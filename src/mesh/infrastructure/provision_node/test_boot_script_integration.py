@@ -15,7 +15,7 @@ import os
 import sys
 
 # Add src to path for imports
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../..'))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../.."))
 
 from mesh.infrastructure.boot_consul_nomad.generate_boot_scripts import generate_shell_script
 
@@ -28,9 +28,7 @@ def test_boot_script_contains_tailscale_key():
     in the generated boot script.
     """
     script = generate_shell_script(
-        tailscale_key="tskey-control-123abc",
-        leader_ip="10.0.0.1",
-        role="client"
+        tailscale_key="tskey-control-123abc", leader_ip="10.0.0.1", role="client"
     )
 
     assert 'TAILSCALE_KEY="tskey-control-123abc"' in script
@@ -43,11 +41,7 @@ def test_boot_script_contains_role_server():
     Validates that when role="server", the boot script contains
     the correct role specification.
     """
-    script = generate_shell_script(
-        tailscale_key="test-key",
-        leader_ip="127.0.0.1",
-        role="server"
-    )
+    script = generate_shell_script(tailscale_key="test-key", leader_ip="127.0.0.1", role="server")
 
     assert 'ROLE="server"' in script
 
@@ -59,11 +53,7 @@ def test_boot_script_contains_role_client():
     Validates that when role="client", the boot script contains
     the correct role specification.
     """
-    script = generate_shell_script(
-        tailscale_key="test-key",
-        leader_ip="vm-leader",
-        role="client"
-    )
+    script = generate_shell_script(tailscale_key="test-key", leader_ip="vm-leader", role="client")
 
     assert 'ROLE="client"' in script
 
@@ -76,9 +66,7 @@ def test_boot_script_contains_leader_ip():
     in the generated boot script.
     """
     script = generate_shell_script(
-        tailscale_key="test-key",
-        leader_ip="192.168.1.100",
-        role="client"
+        tailscale_key="test-key", leader_ip="192.168.1.100", role="client"
     )
 
     assert 'LEADER_IP="192.168.1.100"' in script
@@ -97,7 +85,7 @@ def test_boot_script_with_gpu():
         role="client",
         has_gpu=True,
         cuda_version="12.1",
-        driver_version="535"
+        driver_version="535",
     )
 
     # Check for HAS_GPU flag
@@ -124,7 +112,7 @@ def test_boot_script_with_spot_handling():
         role="client",
         enable_spot_handling=True,
         spot_check_interval=5,
-        spot_grace_period=90
+        spot_grace_period=90,
     )
 
     # Check for ENABLE_SPOT_HANDLING flag
@@ -149,9 +137,7 @@ def test_boot_script_full_leader():
     - Consul server mode
     """
     script = generate_shell_script(
-        tailscale_key="tskey-leader-xyz",
-        leader_ip="127.0.0.1",
-        role="server"
+        tailscale_key="tskey-leader-xyz", leader_ip="127.0.0.1", role="server"
     )
 
     # Required parameters
@@ -175,9 +161,7 @@ def test_boot_script_full_worker():
     - Consul client mode
     """
     script = generate_shell_script(
-        tailscale_key="tskey-worker-abc",
-        leader_ip="vm-leader",
-        role="client"
+        tailscale_key="tskey-worker-abc", leader_ip="vm-leader", role="client"
     )
 
     # Required parameters
@@ -205,7 +189,7 @@ def test_boot_script_with_gpu_and_spot():
         driver_version="535",
         enable_spot_handling=True,
         spot_check_interval=10,
-        spot_grace_period=120
+        spot_grace_period=120,
     )
 
     # GPU components
@@ -237,7 +221,7 @@ def test_boot_script_custom_driver_version():
         role="client",
         has_gpu=True,
         cuda_version="11.8",
-        driver_version="525"
+        driver_version="525",
     )
 
     assert 'CUDA_VERSION="11.8"' in script
@@ -257,7 +241,7 @@ def test_boot_script_custom_spot_intervals():
         role="client",
         enable_spot_handling=True,
         spot_check_interval=15,
-        spot_grace_period=150
+        spot_grace_period=150,
     )
 
     assert 'SPOT_CHECK_INTERVAL="15"' in script
@@ -276,7 +260,7 @@ def test_boot_script_without_optional_features():
         leader_ip="vm-leader",
         role="client",
         has_gpu=False,
-        enable_spot_handling=False
+        enable_spot_handling=False,
     )
 
     # Should have HAS_GPU and ENABLE_SPOT_HANDLING set to false

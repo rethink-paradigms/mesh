@@ -112,9 +112,7 @@ class TestAWSDriverInitialization:
             "AWS_SECRET_ACCESS_KEY": "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
         },
     )
-    def test_aws_driver_multiple_regions(
-        self, mock_project, mock_get_stack, mock_get_driver
-    ):
+    def test_aws_driver_multiple_regions(self, mock_project, mock_get_stack, mock_get_driver):
         """
         Test_AWSDriverInitialization_MultipleRegions: Verify that AWS driver
         can be initialized for different regions.
@@ -258,9 +256,7 @@ echo "Setting up Distributed Mesh Platform node"
             "AWS_SECRET_ACCESS_KEY": "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
         },
     )
-    def test_aws_size_selection_t3_small(
-        self, mock_project, mock_get_stack, mock_get_driver
-    ):
+    def test_aws_size_selection_t3_small(self, mock_project, mock_get_stack, mock_get_driver):
         """
         Test_AWSSizeSelection_T3Small: Verify that t3.small is correctly
         selected for the 'small' size tier.
@@ -325,9 +321,7 @@ echo "Setting up Distributed Mesh Platform node"
             "AWS_SECRET_ACCESS_KEY": "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
         },
     )
-    def test_aws_ubuntu_22_04_image_selection(
-        self, mock_project, mock_get_stack, mock_get_driver
-    ):
+    def test_aws_ubuntu_22_04_image_selection(self, mock_project, mock_get_stack, mock_get_driver):
         """
         Test_AWSUbuntu2204ImageSelection: Verify that Ubuntu 22.04 (Jammy)
         image is correctly selected on AWS.
@@ -343,14 +337,10 @@ echo "Setting up Distributed Mesh Platform node"
 
         # Mock images
         ubuntu_22_04 = Mock(spec=NodeImage)
-        ubuntu_22_04.name = (
-            "ubuntu/images/hvm-ssd/ubuntu-jammy-22.04-amd64-server-20230110"
-        )
+        ubuntu_22_04.name = "ubuntu/images/hvm-ssd/ubuntu-jammy-22.04-amd64-server-20230110"
 
         ubuntu_20_04 = Mock(spec=NodeImage)
-        ubuntu_20_04.name = (
-            "ubuntu/images/hvm-ssd/ubuntu-focal-20.04-amd64-server-20230110"
-        )
+        ubuntu_20_04.name = "ubuntu/images/hvm-ssd/ubuntu-focal-20.04-amd64-server-20230110"
 
         amazon_linux = Mock(spec=NodeImage)
         amazon_linux.name = "amazon-linux-2"
@@ -401,9 +391,7 @@ class TestAWSErrorScenarios:
         "os.environ",
         {"AWS_ACCESS_KEY_ID": "INVALID_KEY", "AWS_SECRET_ACCESS_KEY": "INVALID_SECRET"},
     )
-    def test_aws_invalid_credentials_error(
-        self, mock_project, mock_get_stack, mock_get_driver
-    ):
+    def test_aws_invalid_credentials_error(self, mock_project, mock_get_stack, mock_get_driver):
         """
         Test_AWSErrorScenarios_InvalidCredentials: Verify that invalid AWS
         credentials raise a clear error.
@@ -444,9 +432,7 @@ class TestAWSErrorScenarios:
             "AWS_SECRET_ACCESS_KEY": "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
         },
     )
-    def test_aws_invalid_region_error(
-        self, mock_project, mock_get_stack, mock_get_driver
-    ):
+    def test_aws_invalid_region_error(self, mock_project, mock_get_stack, mock_get_driver):
         """
         Test_AWSErrorScenarios_InvalidRegion: Verify that invalid AWS regions
         raise a clear error.
@@ -490,9 +476,7 @@ class TestAWSErrorScenarios:
             "AWS_SECRET_ACCESS_KEY": "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
         },
     )
-    def test_aws_instance_limit_exceeded_error(
-        self, mock_project, mock_get_stack, mock_get_driver
-    ):
+    def test_aws_instance_limit_exceeded_error(self, mock_project, mock_get_stack, mock_get_driver):
         """
         Test_AWSErrorScenarios_InstanceLimitExceeded: Verify that AWS instance
         limit errors are properly propagated.
@@ -574,9 +558,7 @@ class TestAWSSizeAndImageSelection:
             "AWS_SECRET_ACCESS_KEY": "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
         },
     )
-    def test_aws_region_availability(
-        self, mock_project, mock_get_stack, mock_get_driver
-    ):
+    def test_aws_region_availability(self, mock_project, mock_get_stack, mock_get_driver):
         """
         Test_AWSSizeAndImageSelection_RegionAvailability: Verify that AWS
         regions are correctly listed in the provider registry.
@@ -601,6 +583,6 @@ class TestAWSSizeAndImageSelection:
         ]
 
         for region in expected_regions:
-            assert region in aws_config.available_regions, (
-                f"Region {region} not found in AWS available regions"
-            )
+            assert (
+                region in aws_config.available_regions
+            ), f"Region {region} not found in AWS available regions"

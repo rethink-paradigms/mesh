@@ -8,6 +8,8 @@ import click
 import shutil
 from dotenv import load_dotenv
 
+from mesh.infrastructure.config.env import EnvVars, get_env
+
 # --- PATH SETUP ---
 # Add project root to sys.path to import from 'platform'
 # Current: ops-platform/local/cli.py
@@ -62,9 +64,8 @@ def load_secrets():
 
     load_dotenv(ENV_FILE)
     secrets = {
-        "TAILSCALE_AUTH_KEY": os.getenv("TAILSCALE_KEY"),
-        # Load other secrets as needed for syncing
-        "DATABASE_URL": os.getenv("DATABASE_URL", ""),
+        "TAILSCALE_AUTH_KEY": get_env(EnvVars.TAILSCALE_KEY),
+        "DATABASE_URL": get_env(EnvVars.DATABASE_URL, default=""),
     }
 
     if not secrets["TAILSCALE_AUTH_KEY"]:

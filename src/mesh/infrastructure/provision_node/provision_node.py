@@ -129,7 +129,7 @@ def _provision_via_libcloud(
 
     node = UniversalCloudNode(
         name,
-        provider=provider,
+        cloud_provider=provider,
         region=region,
         size_id=size_id,
         boot_script=boot_script_content_output,

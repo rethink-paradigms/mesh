@@ -7,10 +7,11 @@ import os
 import subprocess
 import json
 import yaml
-import click # Used by the original cli.py for styling output
+import click  # Used by the original cli.py for styling output
 from typing import Dict, Any, Optional, Union
 
 MULTIPASS_CMD = "multipass"
+
 
 def generate_cloud_init_yaml(boot_script_content: str) -> str:
     """
@@ -18,19 +19,17 @@ def generate_cloud_init_yaml(boot_script_content: str) -> str:
     """
     cloud_config = {
         "package_update": True,
-        "packages": ["curl", "git"], 
+        "packages": ["curl", "git"],
         "write_files": [
             {
                 "path": "/opt/ops-platform/startup.sh",
                 "permissions": "0755",
-                "content": boot_script_content
+                "content": boot_script_content,
             }
         ],
-        "runcmd": [
-            "/opt/ops-platform/startup.sh"
-        ]
+        "runcmd": ["/opt/ops-platform/startup.sh"],
     }
-    
+
     # Dump to string, then prepend #cloud-config
     yaml_content = yaml.dump(cloud_config, default_flow_style=False)
     return "#cloud-config\n" + yaml_content
@@ -38,18 +37,18 @@ def generate_cloud_init_yaml(boot_script_content: str) -> str:
 
 def provision_multipass_node(
     name: str,
-    instance_size: str, # e.g., "2CPU,1GB"
-    role: str, # "server" or "client"
-    boot_script_content: Union[str, Any], # Can be Pulumi Output in orchestration context
-    opts: Optional[Dict[str, Any]] = None 
+    instance_size: str,  # e.g., "2CPU,1GB"
+    role: str,  # "server" or "client"
+    boot_script_content: Union[str, Any],  # Can be Pulumi Output in orchestration context
+    opts: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, str]:
     """
     Provisions a node on Multipass using subprocess calls.
     """
-    
+
     # Runtime check for Pulumi Output
     # We check if it has 'apply' attribute as a duck-type check for pulumi.Output
-    if hasattr(boot_script_content, 'apply'):
+    if hasattr(boot_script_content, "apply"):
         raise TypeError(
             "Multipass adapter received a Pulumi Output. "
             "It currently requires a resolved string. "
@@ -60,9 +59,9 @@ def provision_multipass_node(
     # 1. Parse Instance Size
     cpus = "1"
     mem = "512M"
-    
+
     if "," in instance_size:
-        parts = instance_size.split(',')
+        parts = instance_size.split(",")
         for part in parts:
             part = part.strip()
             if "CPU" in part:
@@ -83,8 +82,10 @@ def provision_multipass_node(
     # 3. Check Status & Launch
     node_exists = False
     is_running = False
-    
-    res = subprocess.run([MULTIPASS_CMD, "info", name, "--format", "json"], capture_output=True, text=True)
+
+    res = subprocess.run(
+        [MULTIPASS_CMD, "info", name, "--format", "json"], capture_output=True, text=True
+    )
     if res.returncode == 0:
         try:
             info = json.loads(res.stdout)
@@ -95,20 +96,28 @@ def provision_multipass_node(
                     is_running = True
                     click.echo(f"     ✅ {name} is already running.")
                 else:
-                    click.echo(f"     🔄 {name} exists but is {node_info.get('state')}. Starting...")
+                    click.echo(
+                        f"     🔄 {name} exists but is {node_info.get('state')}. Starting..."
+                    )
                     subprocess.run([MULTIPASS_CMD, "start", name], check=True)
                     is_running = True
         except json.JSONDecodeError:
-            pass 
+            pass
 
     if not node_exists:
         click.echo(f"     🚀 Launching {name} ({cpus} CPU, {mem} RAM)...")
         cmd = [
-            MULTIPASS_CMD, "launch", "lts",
-            "--name", name,
-            "--cpus", cpus,
-            "--memory", mem,
-            "--cloud-init", temp_cloud_init_path
+            MULTIPASS_CMD,
+            "launch",
+            "lts",
+            "--name",
+            name,
+            "--cpus",
+            cpus,
+            "--memory",
+            mem,
+            "--cloud-init",
+            temp_cloud_init_path,
         ]
         try:
             subprocess.run(cmd, check=True, capture_output=True)
@@ -120,18 +129,19 @@ def provision_multipass_node(
             raise
 
     # 4. Retrieve IP Address
-    res_info = subprocess.run([MULTIPASS_CMD, "info", name, "--format", "json"], capture_output=True, text=True, check=True)
+    res_info = subprocess.run(
+        [MULTIPASS_CMD, "info", name, "--format", "json"],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
     info = json.loads(res_info.stdout)
     ipv4_list = info.get("info", {}).get(name, {}).get("ipv4", [])
-    
+
     public_ip = ipv4_list[0] if ipv4_list else "unknown"
-    
+
     # 5. Cleanup
     if os.path.exists(temp_cloud_init_path):
         os.remove(temp_cloud_init_path)
 
-    return {
-        "public_ip": public_ip,
-        "private_ip": public_ip,
-        "instance_id": name
-    }
+    return {"public_ip": public_ip, "private_ip": public_ip, "instance_id": name}

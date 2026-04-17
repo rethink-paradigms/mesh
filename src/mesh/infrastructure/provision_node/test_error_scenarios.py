@@ -15,7 +15,7 @@ import os
 import sys
 
 # Add src to path for imports
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../..'))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../.."))
 
 from mesh.infrastructure.provision_node.provision_node import provision_node
 
@@ -48,7 +48,7 @@ def test_invalid_provider_raises_error():
             role="client",
             size="t3.micro",
             tailscale_auth_key=pulumi.Output.secret("test-key"),
-            leader_ip="127.0.0.1"
+            leader_ip="127.0.0.1",
         )
 
 
@@ -66,7 +66,7 @@ def test_bare_metal_provider_not_implemented():
             role="client",
             size="t3.micro",
             tailscale_auth_key=pulumi.Output.secret("test-key"),
-            leader_ip="127.0.0.1"
+            leader_ip="127.0.0.1",
         )
 
 
@@ -83,7 +83,7 @@ def test_empty_provider_name():
             role="client",
             size="t3.micro",
             tailscale_auth_key=pulumi.Output.secret("test-key"),
-            leader_ip="127.0.0.1"
+            leader_ip="127.0.0.1",
         )
 
 
@@ -100,7 +100,7 @@ def test_none_provider():
             role="client",
             size="t3.micro",
             tailscale_auth_key=pulumi.Output.secret("test-key"),
-            leader_ip="127.0.0.1"
+            leader_ip="127.0.0.1",
         )
 
 
@@ -117,7 +117,7 @@ def test_valid_aws_provider():
         role="client",
         size="t3.micro",
         tailscale_auth_key=pulumi.Output.secret("test-key"),
-        leader_ip="127.0.0.1"
+        leader_ip="127.0.0.1",
     )
 
     # Verify we get a result back
@@ -143,7 +143,7 @@ def test_valid_multipass_provider():
         role="client",
         size="2CPU,1GB",
         tailscale_auth_key=pulumi.Output.secret("test-key"),
-        leader_ip="vm-leader"
+        leader_ip="vm-leader",
     )
 
     # Verify we get a result back (multipass returns plain strings)
@@ -164,7 +164,7 @@ def test_case_sensitive_provider():
             role="client",
             size="t3.micro",
             tailscale_auth_key=pulumi.Output.secret("test-key"),
-            leader_ip="127.0.0.1"
+            leader_ip="127.0.0.1",
         )
 
 
@@ -181,7 +181,7 @@ def test_whitespace_in_provider():
             role="client",
             size="t3.micro",
             tailscale_auth_key=pulumi.Output.secret("test-key"),
-            leader_ip="127.0.0.1"
+            leader_ip="127.0.0.1",
         )
 
 
@@ -198,7 +198,7 @@ def test_provider_with_special_chars():
             role="client",
             size="t3.micro",
             tailscale_auth_key=pulumi.Output.secret("test-key"),
-            leader_ip="127.0.0.1"
+            leader_ip="127.0.0.1",
         )
 
 
@@ -219,7 +219,7 @@ def test_gpu_config_with_server_role():
         size="g4dn.xlarge",
         tailscale_auth_key=pulumi.Output.secret("test-key"),
         leader_ip="127.0.0.1",
-        gpu_config=GPUConfig(enable_gpu=True)
+        gpu_config=GPUConfig(enable_gpu=True),
     )
 
     # Verify we get a result back
@@ -244,7 +244,7 @@ def test_spot_config_with_server_role():
         size="t3.small",
         tailscale_auth_key=pulumi.Output.secret("test-key"),
         leader_ip="127.0.0.1",
-        spot_config=SpotConfig(enable_spot_handling=True)
+        spot_config=SpotConfig(enable_spot_handling=True),
     )
 
     # Verify we get a result back
@@ -268,7 +268,7 @@ def test_empty_node_name():
         role="client",
         size="t3.micro",
         tailscale_auth_key=pulumi.Output.secret("test-key"),
-        leader_ip="127.0.0.1"
+        leader_ip="127.0.0.1",
     )
 
     # Verify we get a result back (Pulumi will handle validation later)
@@ -287,7 +287,7 @@ def test_special_chars_in_node_name():
         role="client",
         size="t3.micro",
         tailscale_auth_key=pulumi.Output.secret("test-key"),
-        leader_ip="127.0.0.1"
+        leader_ip="127.0.0.1",
     )
 
     # Verify we get a result back
@@ -308,7 +308,7 @@ def test_very_long_node_name():
         role="client",
         size="t3.micro",
         tailscale_auth_key=pulumi.Output.secret("test-key"),
-        leader_ip="127.0.0.1"
+        leader_ip="127.0.0.1",
     )
 
     # Verify we get a result back (AWS has limits, but Pulumi handles this)

@@ -7,19 +7,16 @@ Validates complete provisioning scenarios:
 - GPU worker with spot handling
 - Full stack with dependencies
 """
+
 import pytest
 import pulumi
 import os
 import sys
 
 # Add src to path for imports
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../..'))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../.."))
 
-from mesh.infrastructure.provision_node.provision_node import (
-    provision_node,
-    GPUConfig,
-    SpotConfig
-)
+from mesh.infrastructure.provision_node.provision_node import provision_node, GPUConfig, SpotConfig
 
 created_resources = {}
 
@@ -61,7 +58,7 @@ def test_leader_and_worker_provisioning():
         role="server",
         size="t3.small",
         tailscale_auth_key=pulumi.Output.secret("integration-ts-key"),
-        leader_ip="127.0.0.1"
+        leader_ip="127.0.0.1",
     )
 
     # Provision worker (client role)
@@ -71,7 +68,7 @@ def test_leader_and_worker_provisioning():
         role="client",
         size="t3.micro",
         tailscale_auth_key=pulumi.Output.secret("integration-ts-key"),
-        leader_ip="integration-leader"
+        leader_ip="integration-leader",
     )
 
     def check_both_provisioned(args):
@@ -95,10 +92,7 @@ def test_leader_and_worker_provisioning():
         assert worker_tags["Role"] == "client"
 
     return pulumi.Output.all(
-        leader["instance_id"],
-        worker["instance_id"],
-        leader["public_ip"],
-        worker["public_ip"]
+        leader["instance_id"], worker["instance_id"], leader["public_ip"], worker["public_ip"]
     ).apply(check_both_provisioned)
 
 
@@ -119,7 +113,7 @@ def test_multiple_workers_with_leader():
         role="server",
         size="t3.small",
         tailscale_auth_key=pulumi.Output.secret("multi-ts-key"),
-        leader_ip="127.0.0.1"
+        leader_ip="127.0.0.1",
     )
 
     # Provision multiple workers
@@ -129,7 +123,7 @@ def test_multiple_workers_with_leader():
         role="client",
         size="t3.micro",
         tailscale_auth_key=pulumi.Output.secret("multi-ts-key"),
-        leader_ip="multi-leader"
+        leader_ip="multi-leader",
     )
 
     worker2 = provision_node(
@@ -138,7 +132,7 @@ def test_multiple_workers_with_leader():
         role="client",
         size="t3.micro",
         tailscale_auth_key=pulumi.Output.secret("multi-ts-key"),
-        leader_ip="multi-leader"
+        leader_ip="multi-leader",
     )
 
     worker3 = provision_node(
@@ -147,7 +141,7 @@ def test_multiple_workers_with_leader():
         role="client",
         size="t3.micro",
         tailscale_auth_key=pulumi.Output.secret("multi-ts-key"),
-        leader_ip="multi-leader"
+        leader_ip="multi-leader",
     )
 
     def check_all_provisioned(args):
@@ -168,7 +162,7 @@ def test_multiple_workers_with_leader():
         leader["instance_id"],
         worker1["instance_id"],
         worker2["instance_id"],
-        worker3["instance_id"]
+        worker3["instance_id"],
     ).apply(check_all_provisioned)
 
 
@@ -189,7 +183,7 @@ def test_gpu_worker_with_spot_handling():
         role="server",
         size="t3.small",
         tailscale_auth_key=pulumi.Output.secret("gpu-spot-key"),
-        leader_ip="127.0.0.1"
+        leader_ip="127.0.0.1",
     )
 
     # Provision GPU worker with spot handling
@@ -200,16 +194,10 @@ def test_gpu_worker_with_spot_handling():
         size="g4dn.xlarge",
         tailscale_auth_key=pulumi.Output.secret("gpu-spot-key"),
         leader_ip="gpu-spot-leader",
-        gpu_config=GPUConfig(
-            enable_gpu=True,
-            cuda_version="12.1",
-            nvidia_driver_version="535"
-        ),
+        gpu_config=GPUConfig(enable_gpu=True, cuda_version="12.1", nvidia_driver_version="535"),
         spot_config=SpotConfig(
-            enable_spot_handling=True,
-            spot_check_interval=5,
-            spot_grace_period=90
-        )
+            enable_spot_handling=True, spot_check_interval=5, spot_grace_period=90
+        ),
     )
 
     def check_gpu_spot_config(worker_id):
@@ -221,8 +209,8 @@ def test_gpu_worker_with_spot_handling():
         user_data = inputs.get("userData", {})
 
         # Handle different user_data formats
-        if isinstance(user_data, dict) and 'value' in user_data:
-            user_data = user_data['value']
+        if isinstance(user_data, dict) and "value" in user_data:
+            user_data = user_data["value"]
 
         # Verify GPU support
         assert "04-install-gpu-drivers.sh" in user_data
@@ -255,7 +243,7 @@ def test_full_stack_with_dependencies():
         role="server",
         size="t3.small",
         tailscale_auth_key=pulumi.Output.secret("full-stack-key"),
-        leader_ip="127.0.0.1"
+        leader_ip="127.0.0.1",
     )
 
     # Regular worker 1
@@ -265,7 +253,7 @@ def test_full_stack_with_dependencies():
         role="client",
         size="t3.micro",
         tailscale_auth_key=pulumi.Output.secret("full-stack-key"),
-        leader_ip="full-leader"
+        leader_ip="full-leader",
     )
 
     # Regular worker 2
@@ -275,7 +263,7 @@ def test_full_stack_with_dependencies():
         role="client",
         size="t3.micro",
         tailscale_auth_key=pulumi.Output.secret("full-stack-key"),
-        leader_ip="full-leader"
+        leader_ip="full-leader",
     )
 
     # GPU worker with spot handling
@@ -287,7 +275,7 @@ def test_full_stack_with_dependencies():
         tailscale_auth_key=pulumi.Output.secret("full-stack-key"),
         leader_ip="full-leader",
         gpu_config=GPUConfig(enable_gpu=True),
-        spot_config=SpotConfig(enable_spot_handling=True)
+        spot_config=SpotConfig(enable_spot_handling=True),
     )
 
     def check_full_stack(args):
@@ -308,7 +296,7 @@ def test_full_stack_with_dependencies():
         leader["instance_id"],
         worker1["instance_id"],
         worker2["instance_id"],
-        gpu_worker["instance_id"]
+        gpu_worker["instance_id"],
     ).apply(check_full_stack)
 
 
@@ -328,7 +316,7 @@ def test_cluster_provisioning_sequence():
         role="server",
         size="t3.small",
         tailscale_auth_key=pulumi.Output.secret("seq-key"),
-        leader_ip="127.0.0.1"
+        leader_ip="127.0.0.1",
     )
 
     # Step 2: First worker
@@ -338,7 +326,7 @@ def test_cluster_provisioning_sequence():
         role="client",
         size="t3.micro",
         tailscale_auth_key=pulumi.Output.secret("seq-key"),
-        leader_ip="seq-leader"
+        leader_ip="seq-leader",
     )
 
     # Step 3: Second worker
@@ -348,7 +336,7 @@ def test_cluster_provisioning_sequence():
         role="client",
         size="t3.micro",
         tailscale_auth_key=pulumi.Output.secret("seq-key"),
-        leader_ip="seq-leader"
+        leader_ip="seq-leader",
     )
 
     def check_sequence(args):
@@ -359,9 +347,7 @@ def test_cluster_provisioning_sequence():
         assert "seq-worker-2_id" in w2_id
 
     return pulumi.Output.all(
-        leader["instance_id"],
-        worker1["instance_id"],
-        worker2["instance_id"]
+        leader["instance_id"], worker1["instance_id"], worker2["instance_id"]
     ).apply(check_sequence)
 
 
@@ -382,7 +368,7 @@ def test_cross_region_cluster_simulation():
         role="server",
         size="t3.small",
         tailscale_auth_key=pulumi.Output.secret("cross-region-key"),
-        leader_ip="127.0.0.1"
+        leader_ip="127.0.0.1",
     )
 
     region1_worker = provision_node(
@@ -391,7 +377,7 @@ def test_cross_region_cluster_simulation():
         role="client",
         size="t3.micro",
         tailscale_auth_key=pulumi.Output.secret("cross-region-key"),
-        leader_ip="region1-leader"
+        leader_ip="region1-leader",
     )
 
     def cross_region_check(args):
@@ -400,7 +386,6 @@ def test_cross_region_cluster_simulation():
         assert "region1-leader_id" in leader_id
         assert "region1-worker_id" in worker_id
 
-    return pulumi.Output.all(
-        region1_leader["instance_id"],
-        region1_worker["instance_id"]
-    ).apply(cross_region_check)
+    return pulumi.Output.all(region1_leader["instance_id"], region1_worker["instance_id"]).apply(
+        cross_region_check
+    )

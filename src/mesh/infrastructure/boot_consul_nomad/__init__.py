@@ -9,12 +9,12 @@ from .generate_boot_scripts import (
     generate_shell_script,
     generate_cloud_init_yaml,
     validate_rendered_template,
-    TemplateValidationError
+    TemplateValidationError,
 )
 
 __all__ = [
     "generate_shell_script",
     "generate_cloud_init_yaml",
     "validate_rendered_template",
-    "TemplateValidationError"
+    "TemplateValidationError",
 ]

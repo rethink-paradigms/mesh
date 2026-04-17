@@ -55,9 +55,7 @@ class TestDigitalOceanDriverInitialization:
     )
     @patch.dict(
         "os.environ",
-        {
-            "DIGITALOCEAN_API_TOKEN": "DO_FAKE_TEST_TOKEN_NOT_A_SECRET"
-        },
+        {"DIGITALOCEAN_API_TOKEN": "DO_FAKE_TEST_TOKEN_NOT_A_SECRET"},
     )
     def test_digitalocean_driver_initialization_with_token(
         self, mock_project, mock_get_stack, mock_get_driver, mock_provider
@@ -100,10 +98,7 @@ class TestDigitalOceanDriverInitialization:
         # DigitalOcean driver only requires: (api_key)
         call_args = mock_driver_class.call_args[0]
         assert len(call_args) == 1
-        assert (
-            call_args[0]
-            == "DO_FAKE_TEST_TOKEN_NOT_A_SECRET"
-        )
+        assert call_args[0] == "DO_FAKE_TEST_TOKEN_NOT_A_SECRET"
 
     @patch("mesh.infrastructure.providers.libcloud_dynamic_provider.Provider")
     @patch("mesh.infrastructure.providers.libcloud_dynamic_provider.get_driver")
@@ -115,9 +110,7 @@ class TestDigitalOceanDriverInitialization:
         "mesh.infrastructure.providers.libcloud_dynamic_provider.pulumi.get_project",
         return_value="test-project",
     )
-    @patch.dict(
-        "os.environ", {"DIGITALOCEAN_API_TOKEN": "DO_FAKE_TEST_TOKEN_NOT_A_SECRET"}
-    )
+    @patch.dict("os.environ", {"DIGITALOCEAN_API_TOKEN": "DO_FAKE_TEST_TOKEN_NOT_A_SECRET"})
     def test_digitalocean_driver_multiple_regions(
         self, mock_project, mock_get_stack, mock_get_driver, mock_provider
     ):
@@ -181,9 +174,7 @@ class TestDigitalOceanNodeProvisioningFlow:
     )
     @patch.dict(
         "os.environ",
-        {
-            "DIGITALOCEAN_API_TOKEN": "DO_FAKE_TEST_TOKEN_NOT_A_SECRET"
-        },
+        {"DIGITALOCEAN_API_TOKEN": "DO_FAKE_TEST_TOKEN_NOT_A_SECRET"},
     )
     def test_digitalocean_droplet_creation_with_boot_script(
         self, mock_project, mock_get_stack, mock_get_driver, mock_provider
@@ -435,9 +426,7 @@ class TestDigitalOceanErrorScenarios:
         return_value="test-project",
     )
     @patch.dict("os.environ", {"DIGITALOCEAN_API_TOKEN": "DO_FAKE_TEST_TOKEN_NOT_A_SECRET"})
-    def test_digitalocean_invalid_slug_error(
-        self, mock_project, mock_get_stack, mock_get_driver
-    ):
+    def test_digitalocean_invalid_slug_error(self, mock_project, mock_get_stack, mock_get_driver):
         """
         Test_DigitalOceanErrorScenarios_InvalidSlug: Verify that invalid
         DigitalOcean region slugs raise a clear error.
@@ -575,9 +564,9 @@ class TestDigitalOceanSizeAndRegionSelection:
         ]
 
         for region in expected_regions:
-            assert region in do_config.available_regions, (
-                f"Region {region} not found in DigitalOcean available regions"
-            )
+            assert (
+                region in do_config.available_regions
+            ), f"Region {region} not found in DigitalOcean available regions"
 
         # Verify DigitalOcean-specific quirks
         # DigitalOcean uses simple slugs, not complex region names

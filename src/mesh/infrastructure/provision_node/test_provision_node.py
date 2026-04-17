@@ -330,16 +330,12 @@ class TestLibcloudPathIntegration:
         assert call_args[1]["provider"] == "aws"
 
     @patch("mesh.infrastructure.provision_node.provision_node.UniversalCloudNode")
-    @patch(
-        "mesh.infrastructure.boot_consul_nomad.generate_boot_scripts.generate_shell_script"
-    )
+    @patch("mesh.infrastructure.boot_consul_nomad.generate_boot_scripts.generate_shell_script")
     @patch.dict(
         "os.environ",
         {"AWS_ACCESS_KEY_ID": "test-key", "AWS_SECRET_ACCESS_KEY": "test-secret"},
     )
-    def test_boot_script_passed_through(
-        self, mock_generate_script, mock_universal_node
-    ):
+    def test_boot_script_passed_through(self, mock_generate_script, mock_universal_node):
         """
         Test_LibcloudPathIntegration_BootScriptPassedThrough: Verify that the
         boot script is generated and passed to UniversalCloudNode.
@@ -515,9 +511,7 @@ class TestLibcloudPathIntegration:
         mock_node.instance_id = pulumi.Output.secret("i-test")
         mock_universal_node.return_value = mock_node
 
-        gpu_config = GPUConfig(
-            enable_gpu=True, cuda_version="12.1", nvidia_driver_version="535"
-        )
+        gpu_config = GPUConfig(enable_gpu=True, cuda_version="12.1", nvidia_driver_version="535")
 
         provision_node(
             name="test-gpu-node",

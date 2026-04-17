@@ -9,8 +9,9 @@ HAS_GPU="{{ HAS_GPU }}"                           # "true" or "false"
 CUDA_VERSION="{{ CUDA_VERSION }}"                 # e.g., "12.1"
 DRIVER_VERSION="{{ DRIVER_VERSION }}"             # e.g., "535"
 ENABLE_SPOT_HANDLING="{{ ENABLE_SPOT_HANDLING }}" # "true" or "false"
-SPOT_CHECK_INTERVAL="{{ SPOT_CHECK_INTERVAL }}"   # e.g., "5"
-SPOT_GRACE_PERIOD="{{ SPOT_GRACE_PERIOD }}"       # e.g., "90"
+PROVIDER="{{ PROVIDER }}"
+SPOT_CHECK_INTERVAL="{{ SPOT_CHECK_INTERVAL }}" # e.g., "5"
+SPOT_GRACE_PERIOD="{{ SPOT_GRACE_PERIOD }}"     # e.g., "90"
 CLUSTER_TIER="{{ CLUSTER_TIER }}"
 ENABLE_CADDY="{{ ENABLE_CADDY }}"
 
@@ -23,13 +24,12 @@ fi
 bash scripts/03-install-hashicorp.sh
 
 # GPU-specific setup (only if HAS_GPU == "true")
-if [ "$HAS_GPU" == "true" ]; then
-	echo ">>> [04] Installing GPU drivers..."
-	bash scripts/04-install-gpu-drivers.sh "$DRIVER_VERSION" "$CUDA_VERSION"
-
-	echo ">>> [05] Installing nomad-device-nvidia plugin..."
-	bash scripts/05-install-nvidia-plugin.sh
-fi
+# NOTE: GPU driver installation scripts (04, 05) are not yet implemented.
+# When available, uncomment:
+# if [ "$HAS_GPU" == "true" ]; then
+#     bash scripts/04-install-gpu-drivers.sh "$DRIVER_VERSION" "$CUDA_VERSION"
+#     bash scripts/05-install-nvidia-plugin.sh
+# fi
 
 if [ "$CLUSTER_TIER" != "lite" ]; then
 	bash scripts/06-configure-consul.sh "$LEADER_IP" "$ROLE"
@@ -37,19 +37,20 @@ fi
 bash scripts/07-configure-nomad.sh "$ROLE" "$HAS_GPU"
 
 # GPU verification (only if HAS_GPU == "true")
-if [ "$HAS_GPU" == "true" ]; then
-	echo ">>> [08] Verifying GPU setup..."
-	bash scripts/08-verify-gpu.sh
-fi
+# NOTE: GPU verification script (08) is not yet implemented.
+# When available, uncomment:
+# if [ "$HAS_GPU" == "true" ]; then
+#     bash scripts/08-verify-gpu.sh
+# fi
 
-# Spot instance interruption handling (only if ENABLE_SPOT_HANDLING == "true")
-if [ "$ENABLE_SPOT_HANDLING" == "true" ]; then
+# Spot instance interruption handling (AWS only, only if ENABLE_SPOT_HANDLING == "true")
+if [ "$ENABLE_SPOT_HANDLING" == "true" ] && [ "$PROVIDER" == "aws" ]; then
 	echo ">>> [09] Installing spot instance interruption handler..."
 
 	# Create spot handler systemd service
 	cat <<EOF >/etc/systemd/system/spot-handler.service
 [Unit]
-Description=AWS Spot Instance Interruption Handler
+Description=Spot Instance Interruption Handler (${PROVIDER})
 After=nomad-client.service
 Requires=nomad-client.service
 

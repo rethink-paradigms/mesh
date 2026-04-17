@@ -15,7 +15,7 @@ import os
 import sys
 
 # Add src to path for imports
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../..'))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../.."))
 
 from mesh.infrastructure.provision_node.provision_node import provision_node
 
@@ -58,7 +58,7 @@ def test_leader_has_no_dependencies():
         role="server",
         size="t3.small",
         tailscale_auth_key=pulumi.Output.secret("ts-key"),
-        leader_ip="127.0.0.1"
+        leader_ip="127.0.0.1",
     )
 
     def check_leader_created(instance_id):
@@ -85,7 +85,7 @@ def test_worker_depends_on_leader():
         role="server",
         size="t3.small",
         tailscale_auth_key=pulumi.Output.secret("ts-key"),
-        leader_ip="127.0.0.1"
+        leader_ip="127.0.0.1",
     )
 
     worker = provision_node(
@@ -94,7 +94,7 @@ def test_worker_depends_on_leader():
         role="client",
         size="t3.micro",
         tailscale_auth_key=pulumi.Output.secret("ts-key"),
-        leader_ip="vm-leader"
+        leader_ip="vm-leader",
     )
 
     def check_both_created(args):
@@ -103,10 +103,7 @@ def test_worker_depends_on_leader():
         assert "test-leader-dep_id" in leader_id
         assert "test-worker-dep_id" in worker_id
 
-    return pulumi.Output.all(
-        leader["instance_id"],
-        worker["instance_id"]
-    ).apply(check_both_created)
+    return pulumi.Output.all(leader["instance_id"], worker["instance_id"]).apply(check_both_created)
 
 
 @pulumi.runtime.test
@@ -125,7 +122,7 @@ def test_depends_on_with_none():
         size="t3.micro",
         tailscale_auth_key=pulumi.Output.secret("ts-key"),
         leader_ip="127.0.0.1",
-        depends_on_resources=None
+        depends_on_resources=None,
     )
 
     def check_node_created(instance_id):
@@ -150,7 +147,7 @@ def test_depends_on_with_empty_list():
         size="t3.micro",
         tailscale_auth_key=pulumi.Output.secret("ts-key"),
         leader_ip="127.0.0.1",
-        depends_on_resources=[]
+        depends_on_resources=[],
     )
 
     def check_node_created(instance_id):
@@ -174,7 +171,7 @@ def test_multiple_workers_depend_on_leader():
         role="server",
         size="t3.small",
         tailscale_auth_key=pulumi.Output.secret("ts-key"),
-        leader_ip="127.0.0.1"
+        leader_ip="127.0.0.1",
     )
 
     worker1 = provision_node(
@@ -183,7 +180,7 @@ def test_multiple_workers_depend_on_leader():
         role="client",
         size="t3.micro",
         tailscale_auth_key=pulumi.Output.secret("ts-key"),
-        leader_ip="vm-leader"
+        leader_ip="vm-leader",
     )
 
     worker2 = provision_node(
@@ -192,7 +189,7 @@ def test_multiple_workers_depend_on_leader():
         role="client",
         size="t3.micro",
         tailscale_auth_key=pulumi.Output.secret("ts-key"),
-        leader_ip="vm-leader"
+        leader_ip="vm-leader",
     )
 
     def check_all_created(args):
@@ -202,9 +199,7 @@ def test_multiple_workers_depend_on_leader():
         assert "test-worker-2_id" in worker2_id
 
     return pulumi.Output.all(
-        leader["instance_id"],
-        worker1["instance_id"],
-        worker2["instance_id"]
+        leader["instance_id"], worker1["instance_id"], worker2["instance_id"]
     ).apply(check_all_created)
 
 
@@ -223,7 +218,7 @@ def test_chained_dependencies():
         role="server",
         size="t3.small",
         tailscale_auth_key=pulumi.Output.secret("ts-key"),
-        leader_ip="127.0.0.1"
+        leader_ip="127.0.0.1",
     )
 
     worker1 = provision_node(
@@ -232,7 +227,7 @@ def test_chained_dependencies():
         role="client",
         size="t3.micro",
         tailscale_auth_key=pulumi.Output.secret("ts-key"),
-        leader_ip="vm-leader"
+        leader_ip="vm-leader",
     )
 
     worker2 = provision_node(
@@ -241,7 +236,7 @@ def test_chained_dependencies():
         role="client",
         size="t3.micro",
         tailscale_auth_key=pulumi.Output.secret("ts-key"),
-        leader_ip="vm-leader"
+        leader_ip="vm-leader",
     )
 
     def check_chain_created(args):
@@ -251,9 +246,7 @@ def test_chained_dependencies():
         assert "test-worker-chain-2_id" in worker2_id
 
     return pulumi.Output.all(
-        leader["instance_id"],
-        worker1["instance_id"],
-        worker2["instance_id"]
+        leader["instance_id"], worker1["instance_id"], worker2["instance_id"]
     ).apply(check_chain_created)
 
 
@@ -272,7 +265,7 @@ def test_multiple_dependencies_list():
         role="server",
         size="t3.small",
         tailscale_auth_key=pulumi.Output.secret("ts-key"),
-        leader_ip="127.0.0.1"
+        leader_ip="127.0.0.1",
     )
 
     node2 = provision_node(
@@ -281,7 +274,7 @@ def test_multiple_dependencies_list():
         role="client",
         size="t3.micro",
         tailscale_auth_key=pulumi.Output.secret("ts-key"),
-        leader_ip="127.0.0.1"
+        leader_ip="127.0.0.1",
     )
 
     node3 = provision_node(
@@ -290,7 +283,7 @@ def test_multiple_dependencies_list():
         role="client",
         size="t3.micro",
         tailscale_auth_key=pulumi.Output.secret("ts-key"),
-        leader_ip="127.0.0.1"
+        leader_ip="127.0.0.1",
     )
 
     def check_all_created(args):
@@ -300,7 +293,5 @@ def test_multiple_dependencies_list():
         assert "test-dep-node-3_id" in n3_id
 
     return pulumi.Output.all(
-        node1["instance_id"],
-        node2["instance_id"],
-        node3["instance_id"]
+        node1["instance_id"], node2["instance_id"], node3["instance_id"]
     ).apply(check_all_created)

@@ -38,10 +38,9 @@ from mesh.infrastructure.providers import get_driver, is_provider_supported
 # Size Discovery
 # =============================================================================
 
+
 def list_sizes(
-    provider_id: str,
-    region: str = None,
-    credentials: Dict[str, str] = None
+    provider_id: str, region: str = None, credentials: Dict[str, str] = None
 ) -> List[NodeSize]:
     """
     List all available instance sizes for a provider.
@@ -78,7 +77,7 @@ def list_sizes(
         all_sizes = driver.list_sizes()
 
         # Some providers support region-specific size filtering
-        if region and hasattr(driver, 'list_sizes_in_location'):
+        if region and hasattr(driver, "list_sizes_in_location"):
             try:
                 all_sizes = driver.list_sizes_in_location(region)
             except Exception:
@@ -88,16 +87,14 @@ def list_sizes(
         return all_sizes
 
     except Exception as e:
-        raise RuntimeError(
-            f"Failed to list sizes for {provider_id}: {str(e)}"
-        )
+        raise RuntimeError(f"Failed to list sizes for {provider_id}: {str(e)}")
 
 
 def get_size(
     provider_id: str,
     size_id: str,
     region: str = None,
-    credentials: Dict[str, str] = None
+    credentials: Dict[str, str] = None,
 ) -> Optional[NodeSize]:
     """
     Get a specific size by ID from a provider.
@@ -138,7 +135,7 @@ def find_size_by_specs(
     min_cpu: int = 1,
     max_cost: float = None,
     region: str = None,
-    credentials: Dict[str, str] = None
+    credentials: Dict[str, str] = None,
 ) -> Optional[NodeSize]:
     """
     Find the smallest size that meets minimum RAM and CPU requirements.
@@ -169,9 +166,7 @@ def find_size_by_specs(
 
     # Filter by requirements
     candidates = [
-        s for s in all_sizes
-        if s.ram >= min_ram_mb
-        and getattr(s, 'vcpu', 1) >= min_cpu
+        s for s in all_sizes if s.ram >= min_ram_mb and getattr(s, "vcpu", 1) >= min_cpu
     ]
 
     # Filter by cost if specified
@@ -191,9 +186,9 @@ def find_size_by_specs(
 # Region Discovery
 # =============================================================================
 
+
 def list_regions(
-    provider_id: str,
-    credentials: Dict[str, str] = None
+    provider_id: str, credentials: Dict[str, str] = None
 ) -> List[NodeLocation]:
     """
     List all available regions/locations for a provider.
@@ -229,15 +224,11 @@ def list_regions(
         return driver.list_locations()
 
     except Exception as e:
-        raise RuntimeError(
-            f"Failed to list regions for {provider_id}: {str(e)}"
-        )
+        raise RuntimeError(f"Failed to list regions for {provider_id}: {str(e)}")
 
 
 def get_region(
-    provider_id: str,
-    region_id: str,
-    credentials: Dict[str, str] = None
+    provider_id: str, region_id: str, credentials: Dict[str, str] = None
 ) -> Optional[NodeLocation]:
     """
     Get a specific region by ID from a provider.
@@ -269,9 +260,7 @@ def get_region(
 
 
 def is_region_available(
-    provider_id: str,
-    region_id: str,
-    credentials: Dict[str, str] = None
+    provider_id: str, region_id: str, credentials: Dict[str, str] = None
 ) -> bool:
     """
     Check if a region is available for a provider.
@@ -291,9 +280,9 @@ def is_region_available(
 # Image Discovery
 # =============================================================================
 
+
 def list_images(
-    provider_id: str,
-    credentials: Dict[str, str] = None
+    provider_id: str, credentials: Dict[str, str] = None
 ) -> List[NodeImage]:
     """
     List all available images for a provider.
@@ -326,16 +315,14 @@ def list_images(
         return driver.list_images()
 
     except Exception as e:
-        raise RuntimeError(
-            f"Failed to list images for {provider_id}: {str(e)}"
-        )
+        raise RuntimeError(f"Failed to list images for {provider_id}: {str(e)}")
 
 
 def find_ubuntu_image(
     provider_id: str,
     version: str = "22.04",
     arch: str = "x86_64",
-    credentials: Dict[str, str] = None
+    credentials: Dict[str, str] = None,
 ) -> Optional[NodeImage]:
     """
     Find the latest Ubuntu image for a provider.
@@ -382,9 +369,10 @@ def find_ubuntu_image(
     candidates = []
     for img in all_images:
         name_lower = img.name.lower()
+        id_lower = (img.id or "").lower()
 
-        # Check if it's Ubuntu
-        if "ubuntu" not in name_lower:
+        is_ubuntu = "ubuntu" in name_lower or name_lower.startswith(version)
+        if not is_ubuntu:
             continue
 
         # Check version
@@ -403,7 +391,7 @@ def find_ubuntu_image(
     import re
 
     def extract_date(img):
-        match = re.search(r'(\d{4})[-/]?(\d{2})[-/]?(\d{2})', img.name)
+        match = re.search(r"(\d{4})[-/]?(\d{2})[-/]?(\d{2})", img.name)
         if match:
             year, month, day = match.groups()
             return int(year), int(month), int(day)
@@ -415,9 +403,7 @@ def find_ubuntu_image(
 
 
 def get_image(
-    provider_id: str,
-    image_id: str,
-    credentials: Dict[str, str] = None
+    provider_id: str, image_id: str, credentials: Dict[str, str] = None
 ) -> Optional[NodeImage]:
     """
     Get a specific image by ID from a provider.
@@ -449,10 +435,9 @@ def get_image(
 # Summary/Overview
 # =============================================================================
 
+
 def get_provider_summary(
-    provider_id: str,
-    region: str = None,
-    credentials: Dict[str, str] = None
+    provider_id: str, region: str = None, credentials: Dict[str, str] = None
 ) -> Dict[str, Any]:
     """
     Get a summary of a provider's capabilities.

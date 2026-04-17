@@ -106,9 +106,7 @@ class TestRequiredInboundPorts:
             tcp_ports, _ = _extract_ports(ingress)
             assert 22 not in tcp_ports
             for port in [80, 443, 4646, 8500, 8300, 8301, 8302]:
-                assert port in tcp_ports, (
-                    f"Port {port} missing from security group ingress"
-                )
+                assert port in tcp_ports, f"Port {port} missing from security group ingress"
 
         return sg.id.apply(check)
 
@@ -195,9 +193,7 @@ class TestSecurityGroupTags:
         assert tags["Name"] == "my-node"
 
     def test_extra_tags_merged(self):
-        tags = get_security_group_tags(
-            "node-1", "server", {"Environment": "production"}
-        )
+        tags = get_security_group_tags("node-1", "server", {"Environment": "production"})
         assert tags["Environment"] == "production"
         assert tags["Role"] == "server"
         assert tags["Project"] == "distributed-mesh-platform"
@@ -278,8 +274,8 @@ class TestNoOverlyPermissiveRules:
                 cidrs = _get_cidr_blocks(rule)
                 for p in range(from_port, to_port + 1):
                     if p in SENSITIVE_PORTS:
-                        assert PUBLIC_CIDR not in cidrs, (
-                            f"Port {p} should not be publicly accessible"
-                        )
+                        assert (
+                            PUBLIC_CIDR not in cidrs
+                        ), f"Port {p} should not be publicly accessible"
 
         return sg.id.apply(check)

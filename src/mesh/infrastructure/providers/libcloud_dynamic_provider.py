@@ -26,14 +26,14 @@ Architecture:
         ├── instance_id: pulumi.Output[str]
         └── status: pulumi.Output[str]
 
-Example:
+ Example:
     # Import the provider
     from mesh.infrastructure.providers.libcloud_dynamic_provider import UniversalCloudNode
 
     # Provision a node on DigitalOcean
     node = UniversalCloudNode(
         "my-worker",
-        provider="digitalocean",
+        cloud_provider="digitalocean",
         region="nyc3",
         size_id="s-2vcpu-4gb",
         boot_script=boot_script_content,
@@ -58,9 +58,13 @@ To see available options for a provider:
 """
 
 import pulumi
+import time
+import logging
 from pulumi.dynamic import ResourceProvider, Resource, CreateResult, ReadResult
 from typing import Dict, Any, Optional
 from dataclasses import dataclass
+
+logger = logging.getLogger(__name__)
 
 # Apache Libcloud imports
 from libcloud.compute.base import NodeDriver
@@ -69,6 +73,7 @@ from libcloud.compute.base import NodeDriver
 from mesh.infrastructure.providers import get_driver, is_provider_supported
 from mesh.infrastructure.providers.discovery import (
     get_size,
+    get_region,
     is_region_available,
     get_image,
     find_ubuntu_image,
@@ -81,7 +86,7 @@ class UniversalCloudNodeInputs:
     Input properties for UniversalCloudNode resource.
 
     Attributes:
-        provider: Cloud provider identifier (e.g., "aws", "digitalocean", "hetzner")
+        cloud_provider: Cloud provider identifier (e.g., "aws", "digitalocean", "hetzner")
         region: Target region/zone for node provisioning (e.g., "us-east-1", "nyc3")
         size_id: Exact instance size ID from provider (e.g., "t3.medium", "s-2vcpu-4gb")
         image_id: Optional exact image ID (auto-discovers Ubuntu 22.04 if not specified)
@@ -89,7 +94,8 @@ class UniversalCloudNodeInputs:
         credentials: Optional dictionary of credentials (overrides env vars)
         node_name: Optional explicit name for the node (defaults to resource name)
     """
-    provider: str
+
+    cloud_provider: str
     region: str
     size_id: str
     boot_script: str
@@ -155,13 +161,17 @@ class UniversalCloudNodeProvider(ResourceProvider):
             ValueError: If provider invalid, credentials missing, or inputs invalid
             Exception: If Libcloud provisioning fails
         """
-        provider_id = inputs.get("provider")
+        # Support both new cloud_provider key and legacy provider key for backward compatibility
+        provider_id = inputs.get("cloud_provider") or inputs.get("provider")
         region = inputs.get("region")
         size_id = inputs.get("size_id")
         image_id = inputs.get("image_id")
         boot_script = inputs.get("boot_script")
         credentials = inputs.get("credentials") or {}
-        node_name = inputs.get("node_name") or f"mesh-node-{pulumi.get_stack()}-{pulumi.get_project()}"
+        node_name = (
+            inputs.get("node_name")
+            or f"mesh-node-{pulumi.get_stack()}-{pulumi.get_project()}"
+        )
 
         # Validate required inputs
         if not provider_id:
@@ -181,8 +191,9 @@ class UniversalCloudNodeProvider(ResourceProvider):
                 f"See: https://libcloud.readthedocs.io/en/stable/compute/supported_providers.html"
             )
 
-        # Validate region exists
-        if not is_region_available(provider_id, region):
+        # Validate region exists and resolve to NodeLocation object
+        location = get_region(provider_id, region)
+        if not location:
             raise ValueError(
                 f"Invalid region '{region}' for provider {provider_id}. "
                 f"Query list_regions('{provider_id}') to see available regions."
@@ -221,17 +232,46 @@ class UniversalCloudNodeProvider(ResourceProvider):
                 name=node_name,
                 size=size,
                 image=image,
-                location=region,
-                ex_userdata=boot_script
+                location=location,
+                ex_user_data=boot_script,
             )
         except Exception as e:
-            raise RuntimeError(
-                f"Failed to create node on {provider_id}: {str(e)}"
-            )
+            raise RuntimeError(f"Failed to create node on {provider_id}: {str(e)}")
 
-        # Extract outputs
+        # Providers like DigitalOcean assign IPs asynchronously after create returns.
         public_ip = node.public_ips[0] if node.public_ips else None
         private_ip = node.private_ips[0] if node.private_ips else None
+
+        if public_ip is None:
+            max_wait = 120
+            poll_interval = 5
+            elapsed = 0
+            logger.info(
+                "Node %s created (id=%s) but no public IP yet — polling...",
+                node_name,
+                node.id,
+            )
+            while elapsed < max_wait:
+                time.sleep(poll_interval)
+                elapsed += poll_interval
+                try:
+                    refreshed = driver.ex_get_node_details(node.id)
+                    if refreshed and refreshed.public_ips:
+                        public_ip = refreshed.public_ips[0]
+                        private_ip = (
+                            refreshed.private_ips[0]
+                            if refreshed.private_ips
+                            else private_ip
+                        )
+                        logger.info(
+                            "Node %s got public IP %s after %ds",
+                            node_name,
+                            public_ip,
+                            elapsed,
+                        )
+                        break
+                except Exception:
+                    break
 
         return CreateResult(
             id_=node.id,
@@ -243,7 +283,7 @@ class UniversalCloudNodeProvider(ResourceProvider):
                 "provider": provider_id,
                 "region": region,
                 "size_id": size_id,
-            }
+            },
         )
 
     def delete(self, id: str, inputs: Dict[str, Any]) -> None:
@@ -258,7 +298,8 @@ class UniversalCloudNodeProvider(ResourceProvider):
             ValueError: If provider invalid or credentials missing
             Exception: If Libcloud deletion fails
         """
-        provider_id = inputs.get("provider")
+        # Support both new cloud_provider key and legacy provider key for backward compatibility
+        provider_id = inputs.get("cloud_provider") or inputs.get("provider")
         region = inputs.get("region")
         credentials = inputs.get("credentials") or {}
 
@@ -291,9 +332,7 @@ class UniversalCloudNodeProvider(ResourceProvider):
                 pass
 
         except Exception as e:
-            raise RuntimeError(
-                f"Failed to delete node {id} on {provider_id}: {str(e)}"
-            )
+            raise RuntimeError(f"Failed to delete node {id} on {provider_id}: {str(e)}")
 
     def read(self, id: str, inputs: Dict[str, Any]) -> Optional[ReadResult]:
         """
@@ -310,7 +349,8 @@ class UniversalCloudNodeProvider(ResourceProvider):
             ValueError: If provider invalid or credentials missing
             Exception: If Libcloud read fails
         """
-        provider_id = inputs.get("provider")
+        # Support both new cloud_provider key and legacy provider key for backward compatibility
+        provider_id = inputs.get("cloud_provider") or inputs.get("provider")
         region = inputs.get("region")
         credentials = inputs.get("credentials") or {}
 
@@ -352,19 +392,14 @@ class UniversalCloudNodeProvider(ResourceProvider):
                     "provider": provider_id,
                     "region": region,
                     "size_id": inputs.get("size_id", "unknown"),
-                }
+                },
             )
 
         except Exception as e:
-            raise RuntimeError(
-                f"Failed to read node {id} on {provider_id}: {str(e)}"
-            )
+            raise RuntimeError(f"Failed to read node {id} on {provider_id}: {str(e)}")
 
     def _get_driver(
-        self,
-        provider_id: str,
-        region: str,
-        credentials: Dict[str, str]
+        self, provider_id: str, region: str, credentials: Dict[str, str]
     ) -> NodeDriver:
         """
         Get or create a cached Libcloud driver.
@@ -390,13 +425,12 @@ class UniversalCloudNodeProvider(ResourceProvider):
 
         # Get new driver (credentials will be auto-resolved if empty)
         try:
-            driver = get_driver(provider_id, credentials=credentials, region=region)
+            creds = credentials if credentials else None
+            driver = get_driver(provider_id, credentials=creds, region=region)
             self._drivers[cache_key] = driver
             return driver
         except ValueError as e:
-            raise ValueError(
-                f"Failed to initialize driver for {provider_id}: {str(e)}"
-            )
+            raise ValueError(f"Failed to initialize driver for {provider_id}: {str(e)}")
 
 
 class UniversalCloudNode(Resource):
@@ -407,7 +441,7 @@ class UniversalCloudNode(Resource):
     multiple cloud providers using Apache Libcloud.
 
     Properties:
-        provider: Cloud provider identifier
+        cloud_provider: Cloud provider identifier
         region: Provider region/zone
         size_id: Exact instance size ID
         image_id: Optional image ID (auto-discovers Ubuntu if not specified)
@@ -427,6 +461,37 @@ class UniversalCloudNode(Resource):
     instance_id: pulumi.Output[str]
     status: pulumi.Output[str]
 
+    def __init__(
+        self,
+        name: str,
+        cloud_provider: str = None,
+        region: str = None,
+        size_id: str = None,
+        boot_script: str = None,
+        image_id: Optional[str] = None,
+        credentials: Optional[Dict[str, str]] = None,
+        node_name: Optional[str] = None,
+        opts: Optional["pulumi.ResourceOptions"] = None,
+    ):
+        _PROVIDER_INSTANCE = UniversalCloudNodeProvider()
+        props: Dict[str, Any] = {
+            "cloud_provider": cloud_provider,
+            "region": region,
+            "size_id": size_id,
+            "boot_script": boot_script,
+            "public_ip": None,
+            "private_ip": None,
+            "instance_id": None,
+            "status": None,
+        }
+        if image_id is not None:
+            props["image_id"] = image_id
+        if credentials is not None:
+            props["credentials"] = credentials
+        if node_name is not None:
+            props["node_name"] = node_name
+        super().__init__(_PROVIDER_INSTANCE, name, props, opts)
+
 
 def provision_cloud_node(
     name: str,
@@ -436,7 +501,7 @@ def provision_cloud_node(
     boot_script: str,
     image_id: str = None,
     credentials: Dict[str, str] = None,
-    opts = None
+    opts=None,
 ) -> Dict[str, Any]:
     """
     Convenience function to provision a cloud node.
@@ -481,14 +546,14 @@ def provision_cloud_node(
     # Create the resource
     node = UniversalCloudNode(
         name,
-        provider=provider,
+        cloud_provider=provider,
         region=region,
         size_id=size_id,
         image_id=image_id,
         boot_script=boot_script,
         credentials=credentials,
         node_name=name,
-        opts=opts
+        opts=opts,
     )
 
     # Return outputs as dictionary

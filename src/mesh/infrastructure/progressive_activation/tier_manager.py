@@ -11,9 +11,7 @@ class NodeInfo:
     is_spot: bool = False
 
 
-def detect_cluster_tier(
-    nodes: List[NodeInfo], override_tier: Optional[str] = None
-) -> "TierConfig":
+def detect_cluster_tier(nodes: List[NodeInfo], override_tier: Optional[str] = None) -> "TierConfig":
     """Detect cluster tier from node topology.
 
     Logic:

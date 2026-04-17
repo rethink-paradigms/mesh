@@ -31,6 +31,8 @@ from typing import Dict, List
 from libcloud.compute.types import Provider
 from libcloud.compute.providers import get_driver as libcloud_get_driver
 
+from mesh.infrastructure.config.env import get_env
+
 
 # =============================================================================
 # Provider Enum Mappings
@@ -179,7 +181,7 @@ def get_credentials(
         # Try each alternative env var for this key
         found = False
         for env_var in alternatives:
-            value = os.getenv(env_var)
+            value = get_env(env_var)
             if value:
                 credentials[key] = value
                 found = True
