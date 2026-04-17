@@ -62,10 +62,7 @@ class RouteManager:
             filtered = [
                 r
                 for r in existing
-                if not (
-                    r.get("match")
-                    and any(domain in m.get("host", []) for m in r["match"])
-                )
+                if not (r.get("match") and any(domain in m.get("host", []) for m in r["match"]))
             ]
             self._request("PUT", routes_path, filtered)
             return True

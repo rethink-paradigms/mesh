@@ -103,12 +103,8 @@ def main():
     parser.add_argument(
         "--memory", type=int, default=25, help="Memory allocation in MB (default: 25)"
     )
-    parser.add_argument(
-        "--cpu", type=int, default=100, help="CPU allocation in MHz (default: 100)"
-    )
-    parser.add_argument(
-        "--datacenter", default="dc1", help="Nomad datacenter name (default: dc1)"
-    )
+    parser.add_argument("--cpu", type=int, default=100, help="CPU allocation in MHz (default: 100)")
+    parser.add_argument("--datacenter", default="dc1", help="Nomad datacenter name (default: dc1)")
     parser.add_argument(
         "--log-level",
         default="INFO",

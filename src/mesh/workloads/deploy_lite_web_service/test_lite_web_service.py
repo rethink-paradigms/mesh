@@ -89,9 +89,7 @@ class TestDeploy:
         )
         assert result is True
         mock_run.assert_called_once()
-        mock_manager.add_route.assert_called_once_with(
-            "test.example.com", "127.0.0.1", 8080
-        )
+        mock_manager.add_route.assert_called_once_with("test.example.com", "127.0.0.1", 8080)
 
     @patch("mesh.workloads.deploy_lite_web_service.deploy.RouteManager")
     @patch("mesh.workloads.deploy_lite_web_service.deploy.subprocess.run")
@@ -113,9 +111,7 @@ class TestDeploy:
     @patch("mesh.workloads.deploy_lite_web_service.deploy.os.path.exists")
     def test_deploy_command_failure(self, mock_exists, mock_run):
         mock_exists.return_value = True
-        mock_run.side_effect = subprocess.CalledProcessError(
-            1, "nomad", stderr="Deployment failed"
-        )
+        mock_run.side_effect = subprocess.CalledProcessError(1, "nomad", stderr="Deployment failed")
 
         from mesh.workloads.deploy_lite_web_service.deploy import deploy_lite_web_service
 
