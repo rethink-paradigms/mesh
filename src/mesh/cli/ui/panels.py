@@ -13,9 +13,16 @@ from rich.text import Text
 from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn
 
 from mesh.cli.ui.themes import (
-    MESH_THEME, BANNER, STATUS_ICONS,
-    MESH_CYAN, MESH_GREEN, MESH_PURPLE, MESH_YELLOW, MESH_RED,
-    MESH_ORANGE, MESH_DIM,
+    MESH_THEME,
+    BANNER,
+    STATUS_ICONS,
+    MESH_CYAN,
+    MESH_GREEN,
+    MESH_PURPLE,
+    MESH_YELLOW,
+    MESH_RED,
+    MESH_ORANGE,
+    MESH_DIM,
 )
 
 # Global console with theme
@@ -155,7 +162,7 @@ def show_cluster_status(
 def show_provisioning_progress(steps: List[Dict[str, str]], live: bool = True):
     """
     Display an animated provisioning progress.
-    
+
     Args:
         steps: List of dicts with 'name' and 'duration' (seconds) keys
         live: If True, animate in real-time
@@ -163,7 +170,12 @@ def show_provisioning_progress(steps: List[Dict[str, str]], live: bool = True):
     with Progress(
         SpinnerColumn(style=f"bold {MESH_CYAN}"),
         TextColumn("[progress.description]{task.description}"),
-        BarColumn(bar_width=30, style=MESH_DIM, complete_style=MESH_GREEN, finished_style=MESH_GREEN),
+        BarColumn(
+            bar_width=30,
+            style=MESH_DIM,
+            complete_style=MESH_GREEN,
+            finished_style=MESH_GREEN,
+        ),
         TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
         console=console,
     ) as progress:
@@ -172,9 +184,7 @@ def show_provisioning_progress(steps: List[Dict[str, str]], live: bool = True):
         )
 
         for step in steps:
-            step_task = progress.add_task(
-                f"  [dim]→[/dim] {step['name']}", total=100
-            )
+            step_task = progress.add_task(f"  [dim]→[/dim] {step['name']}", total=100)
 
             if live:
                 duration = float(step.get("duration", 1))
@@ -204,11 +214,20 @@ def show_resource_comparison():
     table.add_column("Mesh Platform", justify="center", style=MESH_GREEN)
     table.add_column("Free for Apps", justify="center", style=f"bold {MESH_GREEN}")
 
-    table.add_row("16 GB", "Works (1GB+ ctrl plane)", "Works (530MB ctrl plane)", "15.4 GB")
+    table.add_row(
+        "16 GB", "Works (1GB+ ctrl plane)", "Works (530MB ctrl plane)", "15.4 GB"
+    )
     table.add_row("8 GB", "Barely functional", "Works perfectly", "7.4 GB")
     table.add_row("4 GB", "[bold red]Unusable[/]", "Works", "3.4 GB")
-    table.add_row("2 GB", "[bold red]Impossible[/]", "[bold green]Leader runs here[/]", "1.4 GB")
-    table.add_row("Raspberry Pi", "[bold red]Impossible[/]", "[bold green]Worker runs here[/]", "~840 MB")
+    table.add_row(
+        "2 GB", "[bold red]Impossible[/]", "[bold green]Leader runs here[/]", "1.4 GB"
+    )
+    table.add_row(
+        "Raspberry Pi",
+        "[bold red]Impossible[/]",
+        "[bold green]Worker runs here[/]",
+        "~840 MB",
+    )
 
     console.print(table)
     console.print()
@@ -225,7 +244,7 @@ def show_vision_roadmap():
     today.add("[dim]Deploy containers on 2GB+ machines[/dim]")
     today.add("[dim]Mesh networking (encrypted, zero-config)[/dim]")
     today.add("[dim]Service discovery (apps find each other)[/dim]")
-    today.add("[dim]50+ cloud provider support[/dim]")
+    today.add("[dim]13+ cloud provider support[/dim]")
     today.add("[dim]Auto-HTTPS with Let's Encrypt[/dim]")
 
     sprint = tree.add(f"[bold {MESH_YELLOW}]🚧 This Sprint[/]")

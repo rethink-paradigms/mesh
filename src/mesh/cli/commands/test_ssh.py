@@ -115,7 +115,7 @@ class TestSshConnect:
         result = runner.invoke(app, ["ssh", "mesh-leader"])
         assert result.exit_code == 0
         cmd_called = mock_popen.call_args[0][0]
-        assert "ubuntu@100.64.0.1" in cmd_called
+        assert "root@100.64.0.1" in cmd_called
 
     @patch("mesh.cli.commands.ssh.subprocess.Popen")
     @patch("mesh.cli.commands.ssh._get_tailscale_ips", return_value={})
@@ -142,7 +142,7 @@ class TestSshConnect:
         result = runner.invoke(app, ["ssh", "mesh-leader"])
         assert result.exit_code == 0
         cmd_called = mock_popen.call_args[0][0]
-        assert "ubuntu@10.0.0.1" in cmd_called
+        assert "root@10.0.0.1" in cmd_called
 
     @patch("mesh.cli.commands.ssh.subprocess.Popen")
     @patch("mesh.cli.commands.ssh._get_tailscale_ips", return_value={})

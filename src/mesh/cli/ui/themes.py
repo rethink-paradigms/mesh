@@ -27,18 +27,20 @@ STYLE_NODE = Style(color=MESH_ORANGE, bold=True)
 STYLE_HEADER = Style(color=MESH_CYAN, bold=True)
 
 # Rich theme for Console
-MESH_THEME = Theme({
-    "info": "bold #00d4ff",
-    "success": "bold #00ff88",
-    "warning": "bold #ffd700",
-    "error": "bold #ff4444",
-    "app": "bold #b388ff",
-    "node": "bold #ff9800",
-    "dim": "#666666",
-    "header": "bold #00d4ff",
-    "mesh.brand": "bold #00d4ff",
-    "mesh.accent": "#b388ff",
-})
+MESH_THEME = Theme(
+    {
+        "info": "bold #00d4ff",
+        "success": "bold #00ff88",
+        "warning": "bold #ffd700",
+        "error": "bold #ff4444",
+        "app": "bold #b388ff",
+        "node": "bold #ff9800",
+        "dim": "#666666",
+        "header": "bold #00d4ff",
+        "mesh.brand": "bold #00d4ff",
+        "mesh.accent": "#b388ff",
+    }
+)
 
 # ASCII art banner
 BANNER = """[bold #00d4ff]

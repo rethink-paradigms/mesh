@@ -38,7 +38,8 @@ def run_deploy(
     config_text.append(f"  App:       ", style="dim")
     config_text.append(f"{name}\n", style=f"bold {MESH_CYAN}")
     config_text.append(f"  Image:     ", style="dim")
-    config_text.append(f"{image}:{image_tag}\n", style=f"{MESH_CYAN}")
+    display_image = image if ":" in image else f"{image}:{image_tag}"
+    config_text.append(f"{display_image}\n", style=f"{MESH_CYAN}")
     config_text.append(f"  Port:      ", style="dim")
     config_text.append(f"{port}\n", style=f"{MESH_CYAN}")
     config_text.append(f"  Memory:    ", style="dim")
@@ -54,6 +55,7 @@ def run_deploy(
 
     if demo:
         import time
+
         show_step(1, 4, "Detecting cluster tier...")
         time.sleep(0.3)
         show_step(2, 4, "Generating Nomad job spec...")

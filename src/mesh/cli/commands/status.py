@@ -9,12 +9,19 @@ from rich.panel import Panel
 from rich.text import Text
 
 from mesh.cli.ui.themes import (
-    MESH_GREEN, MESH_PURPLE, MESH_DIM, MESH_ORANGE,
+    MESH_GREEN,
+    MESH_PURPLE,
+    MESH_DIM,
+    MESH_ORANGE,
     MESH_YELLOW,
 )
 from mesh.cli.ui.panels import (
-    console, show_banner, show_cluster_status, show_resource_comparison,
-    show_vision_roadmap, show_info,
+    console,
+    show_banner,
+    show_cluster_status,
+    show_resource_comparison,
+    show_vision_roadmap,
+    show_info,
 )
 
 
@@ -138,38 +145,42 @@ def _get_live_status():
     """Attempt to get live cluster status from Nomad + Consul."""
     try:
         import requests
-        import os
-        
-        nomad_addr = os.environ.get("NOMAD_ADDR", "http://127.0.0.1:4646")
-        
+        from mesh.infrastructure.config.env import get_nomad_addr
+
+        nomad_addr = get_nomad_addr()
+
         # Get nodes
         nodes_resp = requests.get(f"{nomad_addr}/v1/nodes", timeout=3)
         nodes = []
         if nodes_resp.status_code == 200:
             for n in nodes_resp.json():
                 role = "server" if n.get("NodeClass") == "server" else "client"
-                nodes.append({
-                    "name": n.get("Name", "unknown"),
-                    "role": role,
-                    "status": n.get("Status", "unknown"),
-                    "ip": n.get("Address", "?"),
-                    "memory": f"{n.get('NodeResources', {}).get('Memory', {}).get('MemoryMB', '?')} MB",
-                    "cpu": f"{n.get('NodeResources', {}).get('Cpu', {}).get('CpuShares', '?')} MHz",
-                })
+                nodes.append(
+                    {
+                        "name": n.get("Name", "unknown"),
+                        "role": role,
+                        "status": n.get("Status", "unknown"),
+                        "ip": n.get("Address", "?"),
+                        "memory": f"{n.get('NodeResources', {}).get('Memory', {}).get('MemoryMB', '?')} MB",
+                        "cpu": f"{n.get('NodeResources', {}).get('Cpu', {}).get('CpuShares', '?')} MHz",
+                    }
+                )
 
         # Get jobs as apps
         jobs_resp = requests.get(f"{nomad_addr}/v1/jobs", timeout=3)
         apps = []
         if jobs_resp.status_code == 200:
             for j in jobs_resp.json():
-                apps.append({
-                    "name": j.get("Name", "unknown"),
-                    "image": "—",
-                    "node": "—",
-                    "status": j.get("Status", "unknown"),
-                    "memory": "—",
-                    "uptime": "—",
-                })
+                apps.append(
+                    {
+                        "name": j.get("Name", "unknown"),
+                        "image": "—",
+                        "node": "—",
+                        "status": j.get("Status", "unknown"),
+                        "memory": "—",
+                        "uptime": "—",
+                    }
+                )
 
         return nodes, apps
 
