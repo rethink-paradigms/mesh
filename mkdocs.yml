@@ -1,0 +1,70 @@
+site_name: Mesh
+site_description: Lightweight infrastructure orchestration for multi-cloud container deployment
+site_url: https://rethink-paradigms.github.io/mesh/
+repo_url: https://github.com/rethink-paradigms/mesh
+repo_name: rethink-paradigms/mesh
+edit_uri: edit/main/docs/
+
+theme:
+  name: material
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: black
+      accent: blue
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: black
+      accent: blue
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  font:
+    text: Inter
+    code: JetBrains Mono
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - navigation.expand
+    - navigation.top
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+    - content.tabs.link
+
+nav:
+  - Home: index.md
+  - Tutorials:
+    - 5-Minute Quickstart: tutorials/quickstart.md
+  - Guides:
+    - Deployment Guide: guides/deploy.md
+  - Architecture:
+    - Overview: architecture/overview.md
+  - Reference:
+    - CLI Commands: reference/cli.md
+    - API Reference: reference/api.md
+  - Comparisons: comparisons.md
+  - FAQ: faq.md
+
+markdown_extensions:
+  - admonition
+  - pymdownx.details
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+  - tables
+  - toc:
+      permalink: true
+  - attr_list
+  - md_in_html
+
+plugins:
+  - search
+
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/rethink-paradigms/mesh
