@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Documentation
+    url: https://github.com/rethink-paradigms/mesh/tree/main/docs
+    about: Read the project documentation.
+  - name: Discussions
+    url: https://github.com/rethink-paradigms/mesh/discussions
+    about: Ask questions, share ideas, or discuss the project with the community.
+  - name: Security Vulnerability
+    url: https://github.com/rethink-paradigms/mesh/security
+    about: Report security vulnerabilities via GitHub's private vulnerability reporting. Do not open public issues for security bugs.
