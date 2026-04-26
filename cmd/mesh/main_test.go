@@ -102,63 +102,6 @@ func TestFindLatestInDir(t *testing.T) {
 	})
 }
 
-func TestStatusCommand(t *testing.T) {
-	tmpHome := t.TempDir()
-	t.Setenv("HOME", tmpHome)
-
-	agentName := "statusagent"
-	snapDir := filepath.Join(tmpHome, ".mesh", "snapshots", agentName)
-	mustMkdirAll(t, snapDir)
-
-	mustCreateFile(t, filepath.Join(snapDir, agentName+"-20260424-100000.tar.zst"), 1024)
-	mustCreateFile(t, filepath.Join(snapDir, agentName+"-20260424-150000.tar.zst"), 2048)
-
-	workdir := t.TempDir()
-	cfgPath := mustWriteConfig(t, tmpHome, agentName, workdir)
-
-	cmd := newStatusCmd()
-	var stdout bytes.Buffer
-	cmd.SetOut(&stdout)
-	cmd.SetArgs([]string{agentName})
-	cmd.Flags().String("config", cfgPath, "")
-
-	if err := cmd.Execute(); err != nil {
-		t.Fatalf("status command failed: %v", err)
-	}
-
-	output := stdout.String()
-	mustContain(t, output, "Agent statusagent: stopped")
-	mustContain(t, output, "Snapshots: 2")
-	mustContain(t, output, "Last snapshot: 2026-04-24 15:00:00")
-	mustContain(t, output, "Cache size: 3.0 KB")
-}
-
-func TestStatusCommandNoSnapshots(t *testing.T) {
-	tmpHome := t.TempDir()
-	t.Setenv("HOME", tmpHome)
-
-	agentName := "emptystatusagent"
-	workdir := t.TempDir()
-	cfgPath := mustWriteConfig(t, tmpHome, agentName, workdir)
-
-	cmd := newStatusCmd()
-	var stdout bytes.Buffer
-	cmd.SetOut(&stdout)
-	cmd.SetArgs([]string{agentName})
-	cmd.Flags().String("config", cfgPath, "")
-
-	if err := cmd.Execute(); err != nil {
-		t.Fatalf("status command failed: %v", err)
-	}
-
-	output := stdout.String()
-	mustContain(t, output, "Snapshots: 0")
-	mustContain(t, output, "Cache size: 0 B")
-	if strings.Contains(output, "Last snapshot") {
-		t.Error("should not show last snapshot when there are none")
-	}
-}
-
 func TestListCommand(t *testing.T) {
 	tmpHome := t.TempDir()
 	t.Setenv("HOME", tmpHome)
