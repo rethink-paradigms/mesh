@@ -208,6 +208,246 @@ func TestEmptyManifest(t *testing.T) {
 	}
 }
 
+func TestManifestV2BackwardCompat(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "v1compat.json")
+
+	v1JSON := `{
+		"agent_name": "old-agent",
+		"timestamp": "2026-04-23T12:00:00Z",
+		"source_machine": "host-01",
+		"source_workdir": "/work",
+		"start_cmd": "run",
+		"stop_timeout": "30s",
+		"checksum": "abc123",
+		"size": 4096
+	}`
+
+	if err := os.WriteFile(path, []byte(v1JSON), 0644); err != nil {
+		t.Fatalf("write v1 json: %v", err)
+	}
+
+	got, err := Read(path)
+	if err != nil {
+		t.Fatalf("Read v1: %v", err)
+	}
+
+	if got.AgentName != "old-agent" {
+		t.Errorf("AgentName: got %q, want %q", got.AgentName, "old-agent")
+	}
+	if got.Size != 4096 {
+		t.Errorf("Size: got %d, want 4096", got.Size)
+	}
+	if v := ManifestVersion(got); v != 1 {
+		t.Errorf("ManifestVersion: got %d, want 1", v)
+	}
+	if got.Image != "" {
+		t.Errorf("Image should be empty for v1, got %q", got.Image)
+	}
+	if got.Env != nil {
+		t.Errorf("Env should be nil for v1, got %v", got.Env)
+	}
+}
+
+func TestManifestV2RoundTrip(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "v2.json")
+
+	original := &Manifest{
+		Version:       2,
+		AgentName:     "body-agent",
+		Timestamp:     time.Date(2026, 5, 1, 10, 0, 0, 0, time.UTC),
+		SourceMachine: "substrate-01",
+		SourceWorkdir: "/agents/body-agent",
+		StartCmd:      "mesh start",
+		StopTimeout:   "60s",
+		Checksum:      "sha256:deadbeef",
+		Size:          8192,
+		Image:         "mesh-agent:latest",
+		Platform:      "linux/amd64",
+		Adapter:       "docker",
+		Env:           map[string]string{"FOO": "bar", "BAZ": "qux"},
+		Cmd:           []string{"/bin/sh", "-c", "run-agent"},
+		BodyID:        "body-abc123",
+	}
+
+	if err := Write(path, original); err != nil {
+		t.Fatalf("Write: %v", err)
+	}
+
+	got, err := Read(path)
+	if err != nil {
+		t.Fatalf("Read: %v", err)
+	}
+
+	if got.Version != 2 {
+		t.Errorf("Version: got %d, want 2", got.Version)
+	}
+	if got.Image != original.Image {
+		t.Errorf("Image: got %q, want %q", got.Image, original.Image)
+	}
+	if got.Platform != original.Platform {
+		t.Errorf("Platform: got %q, want %q", got.Platform, original.Platform)
+	}
+	if got.Adapter != original.Adapter {
+		t.Errorf("Adapter: got %q, want %q", got.Adapter, original.Adapter)
+	}
+	if got.BodyID != original.BodyID {
+		t.Errorf("BodyID: got %q, want %q", got.BodyID, original.BodyID)
+	}
+	if len(got.Env) != len(original.Env) {
+		t.Errorf("Env length: got %d, want %d", len(got.Env), len(original.Env))
+	}
+	for k, v := range original.Env {
+		if got.Env[k] != v {
+			t.Errorf("Env[%q]: got %q, want %q", k, got.Env[k], v)
+		}
+	}
+	if len(got.Cmd) != len(original.Cmd) {
+		t.Errorf("Cmd length: got %d, want %d", len(got.Cmd), len(original.Cmd))
+	}
+	for i, v := range original.Cmd {
+		if got.Cmd[i] != v {
+			t.Errorf("Cmd[%d]: got %q, want %q", i, got.Cmd[i], v)
+		}
+	}
+}
+
+func TestManifestV2DefaultVersion(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "noversion.json")
+
+	m := &Manifest{AgentName: "no-version"}
+	if err := Write(path, m); err != nil {
+		t.Fatalf("Write: %v", err)
+	}
+
+	got, err := Read(path)
+	if err != nil {
+		t.Fatalf("Read: %v", err)
+	}
+
+	if v := ManifestVersion(got); v != 1 {
+		t.Errorf("ManifestVersion with Version=0: got %d, want 1", v)
+	}
+}
+
+func TestManifestV2ExplicitVersion(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "v2explicit.json")
+
+	m := NewV2()
+	m.AgentName = "explicit-v2"
+	if err := Write(path, m); err != nil {
+		t.Fatalf("Write: %v", err)
+	}
+
+	got, err := Read(path)
+	if err != nil {
+		t.Fatalf("Read: %v", err)
+	}
+
+	if v := ManifestVersion(got); v != 2 {
+		t.Errorf("ManifestVersion: got %d, want 2", v)
+	}
+}
+
+func TestManifestV2FileSize(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "size.json")
+
+	m := NewV2()
+	m.Size = 12345678
+	if err := Write(path, m); err != nil {
+		t.Fatalf("Write: %v", err)
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read file: %v", err)
+	}
+
+	if !strings.Contains(string(data), `"size": 12345678`) {
+		t.Errorf("JSON missing size field, got: %s", string(data))
+	}
+
+	got, err := Read(path)
+	if err != nil {
+		t.Fatalf("Read: %v", err)
+	}
+	if got.Size != 12345678 {
+		t.Errorf("Size: got %d, want 12345678", got.Size)
+	}
+}
+
+func TestManifestV2EmptyOptional(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "empty-opt.json")
+
+	m := NewV2()
+	m.AgentName = "lean"
+	if err := Write(path, m); err != nil {
+		t.Fatalf("Write: %v", err)
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read file: %v", err)
+	}
+
+	omitKeys := []string{"image", "platform", "adapter", "env", "cmd", "body_id"}
+	for _, key := range omitKeys {
+		if strings.Contains(string(data), `"`+key+`"`) {
+			t.Errorf("JSON should omit empty field %q, found in output", key)
+		}
+	}
+
+	got, err := Read(path)
+	if err != nil {
+		t.Fatalf("Read: %v", err)
+	}
+	if got.Image != "" {
+		t.Errorf("Image: got %q, want empty", got.Image)
+	}
+	if got.Env != nil {
+		t.Errorf("Env: got %v, want nil", got.Env)
+	}
+	if got.Cmd != nil {
+		t.Errorf("Cmd: got %v, want nil", got.Cmd)
+	}
+}
+
+func TestManifestV2AdapterField(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "adapter.json")
+
+	original := &Manifest{
+		Version:   2,
+		Adapter:   "docker",
+		Platform:  "linux/amd64",
+		AgentName: "docker-agent",
+	}
+
+	if err := Write(path, original); err != nil {
+		t.Fatalf("Write: %v", err)
+	}
+
+	got, err := Read(path)
+	if err != nil {
+		t.Fatalf("Read: %v", err)
+	}
+
+	if got.Adapter != "docker" {
+		t.Errorf("Adapter: got %q, want %q", got.Adapter, "docker")
+	}
+	if got.Platform != "linux/amd64" {
+		t.Errorf("Platform: got %q, want %q", got.Platform, "linux/amd64")
+	}
+	if v := ManifestVersion(got); v != 2 {
+		t.Errorf("ManifestVersion: got %d, want 2", v)
+	}
+}
+
 func TestWriteCreatesParentDirs(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "nested", "deep", "manifest.json")
