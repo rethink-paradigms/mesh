@@ -12,7 +12,11 @@ import (
 
 // Manifest describes a snapshot's metadata. Written as a .json sidecar next to
 // the .tar.zst tarball after snapshot creation completes.
+//
+// v0/v1 manifests contain only filesystem snapshot metadata.
+// v2 manifests add body-aware metadata: image, platform, adapter, env, cmd.
 type Manifest struct {
+	// v0 fields
 	AgentName     string    `json:"agent_name"`
 	Timestamp     time.Time `json:"timestamp"`
 	SourceMachine string    `json:"source_machine"`
@@ -21,6 +25,29 @@ type Manifest struct {
 	StopTimeout   string    `json:"stop_timeout"`
 	Checksum      string    `json:"checksum"`
 	Size          int64     `json:"size"`
+
+	// v2 fields — body-aware metadata
+	Version  int               `json:"manifest_version"`
+	Image    string            `json:"image,omitempty"`
+	Platform string            `json:"platform,omitempty"`
+	Adapter  string            `json:"adapter,omitempty"`
+	Env      map[string]string `json:"env,omitempty"`
+	Cmd      []string          `json:"cmd,omitempty"`
+	BodyID   string            `json:"body_id,omitempty"`
+}
+
+// ManifestVersion returns the version of a parsed manifest.
+// Returns the explicit Version field if >= 2, otherwise 1 (v0/v1 compat).
+func ManifestVersion(m *Manifest) int {
+	if m.Version >= 2 {
+		return m.Version
+	}
+	return 1
+}
+
+// NewV2 creates a v2 Manifest with the Version field set to 2.
+func NewV2() *Manifest {
+	return &Manifest{Version: 2}
 }
 
 // Write marshals the manifest to indented JSON and writes it to path.
