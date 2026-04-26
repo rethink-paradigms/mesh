@@ -67,3 +67,9 @@ consul-data/
 
 # Playwright MCP artifacts
 .playwright-mcp/
+
+# Go build artifacts
+/mesh
+/coverage.out
+*.exe
+/dist/

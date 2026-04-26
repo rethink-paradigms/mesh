@@ -1,0 +1,61 @@
+============================================================
+GrafitoDB Smoke Test — mesh-nav v2
+============================================================
+[OK] Import: grafito (GrafitoDatabase, Node, Relationship)
+
+--- Testing database creation ---
+[OK] In-memory database created
+
+--- Testing node creation (7 types) ---
+  [OK] Created node: decision (id=1, mesh_id=D1)
+  [OK] Created node: constraint (id=2, mesh_id=C1)
+  [OK] Created node: persona (id=3, mesh_id=A1)
+  [OK] Created node: question (id=4, mesh_id=Q1)
+  [OK] Created node: learning (id=5, mesh_id=L1)
+  [OK] Created node: session (id=6, mesh_id=S1)
+  [OK] Created node: gov_decision (id=7, mesh_id=DG1)
+  [OK] Created 7/7 nodes
+
+--- Testing edge creation (10 types) ---
+  [OK] Created edge: D1 -[constrains]-> C1 (id=1)
+  [OK] Created edge: D1 -[produced]-> Q1 (id=2)
+  [OK] Created edge: Q1 -[resolved_by]-> D1 (id=3)
+  [OK] Created edge: D1 -[validates_for]-> A1 (id=4)
+  [OK] Created edge: C1 -[blocks]-> D1 (id=5)
+  [OK] Created edge: D1 -[enables]-> L1 (id=6)
+  [OK] Created edge: L1 -[learned_from]-> S1 (id=7)
+  [OK] Created edge: DG1 -[supersedes]-> D1 (id=8)
+  [OK] Created edge: D1 -[related_to]-> DG1 (id=9)
+  [OK] Created edge: C1 -[conflicts_with]-> DG1 (id=10)
+  [OK] Created 10/10 edges
+
+--- Testing Cypher: query by label ---
+  [OK] MATCH (n:decision) RETURN n → 1 result(s), mesh_ids=['D1']
+
+--- Testing Cypher: query by property ---
+  [OK] MATCH (n:decision {mesh_id: 'D1'}) RETURN n → found, labels=['decision']
+
+--- Testing Cypher: query edges by type ---
+  [OK] MATCH (a)-[r:conflicts_with]->(b) RETURN a, b → C1 -> DG1
+
+--- Testing BFS traversal (depth 2+) ---
+  [OK] BFS D1→S1: 3 nodes, path=D1 → L1 → S1 (2 hops)
+  [OK] get_neighbors depth-2: D1 neighbors=['C1', 'A1', 'Q1', 'L1', 'DG1'], L1 neighbors=['S1']
+
+--- Testing node deletion (cascade to edges) ---
+  [OK] Node deleted, cascade removed edge (rel_id=11 gone)
+
+--- Testing node property update ---
+  [OK] Properties updated: title='Solo Builder Sam (Updated)', confidence=9
+
+============================================================
+PASS — All 8/8 operations validated
+  ✓ 7 node types created with labels and properties
+  ✓ 10 edge types created with types and properties
+  ✓ Cypher MATCH by label works
+  ✓ Cypher MATCH by property works
+  ✓ Cypher MATCH edges by type works
+  ✓ BFS traversal reaches depth 2+
+  ✓ Node deletion cascades to edges
+  ✓ Node properties can be updated
+PASS

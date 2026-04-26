@@ -1,0 +1,11 @@
+./.sisyphus/plans/mesh-nav.md:209:    - `discovery/decisions.md` → `discovery/state/decisions.md`
+./.sisyphus/plans/mesh-nav.md:210:    - `discovery/open-questions.md` → `discovery/state/open-questions.md`
+./.sisyphus/plans/mesh-nav.md:211:    - `discovery/personas.md` → `discovery/state/personas.md`
+./.sisyphus/plans/mesh-nav.md:212:    - `discovery/SESSION-HANDOFF.md` → `discovery/archive/SESSION-HANDOFF.md`
+./.sisyphus/plans/mesh-nav.md:213:    - `discovery/PORTING-GUIDE.md` → `discovery/archive/PORTING-GUIDE.md`
+./.sisyphus/plans/mesh-nav.md:221:  - Run `grep -rn "discovery/decisions.md\|discovery/open-questions.md\|discovery/personas.md\|discovery/SESSION-HANDOFF.md\|discovery/PORTING-GUIDE.md" --include="*.md"` to confirm zero stale references
+./.sisyphus/plans/mesh-nav.md:250:  - `discovery/SESSION-HANDOFF.md:1-279` — File being moved to archive/, understand its content before moving
+./.sisyphus/plans/mesh-nav.md:255:  - `discovery/SESSION-HANDOFF.md` — Understand this is historical journey, not current state, before archiving
+./.sisyphus/plans/mesh-nav.md:278:      1. Run `grep -rn "discovery/decisions.md\|discovery/open-questions\|discovery/personas\|discovery/SESSION-HANDOFF\|discovery/PORTING-GUIDE" --include="*.md"` → assert exit code 1 (no matches = no stale references)
+./.sisyphus/plans/mesh-nav.md:288:  - Pre-commit: `grep -rn "discovery/decisions.md" --include="*.md"` (should find zero)
+EXIT_CODE=0

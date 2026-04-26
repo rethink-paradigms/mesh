@@ -1,0 +1,2 @@
+?   	github.com/rethink-paradigms/mesh/cmd/mesh	[no test files]
+TEST EXIT CODE: 0

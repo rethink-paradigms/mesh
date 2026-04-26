@@ -1,0 +1,30 @@
+{
+  "contextFiles": [
+    "GEMINI.md",
+    "DESIGN.md"
+  ],
+  "terminal": {
+    "externalCommands": [
+      {
+        "label": "Gemini: Review code",
+        "command": "gemini -p \"Review this code for bugs, security issues, and design system violations against DESIGN.md. Be specific: name the file, the line, what's wrong, and what to fix. Format as a numbered list.\" .",
+        "group": "ai-tools"
+      },
+      {
+        "label": "Gemini: Second opinion on architecture",
+        "command": "gemini -p \"You are a senior architect reviewing this Go codebase. Evaluate the package boundaries, interface design, and error handling. Focus on: (1) does the provider interface in internal/provider/ match the substrate adapter contract from discovery/design/SYSTEM.md? (2) Are error types structured per the error taxonomy? (3) Any circular dependencies? Be direct. Name specific files and functions.\" .",
+        "group": "ai-tools"
+      },
+      {
+        "label": "Gemini: UI design review",
+        "command": "gemini -p \"Review this React/UI code against the design system in DESIGN.md. Check: typography (Instrument Serif for display, Geist Sans for body, Berkeley Mono for code), colors (#0A0A0B bg, #C8956C accent, warm grays), spacing (4px base), border-radius scale, motion patterns. Flag every violation. Be specific with file:line references.\" .",
+        "group": "ai-tools"
+      },
+      {
+        "label": "Mesh: Build & Test",
+        "command": "cd $(git rev-parse --show-toplevel) && go build ./cmd/mesh/ && go test ./...",
+        "group": "build"
+      }
+    ]
+  }
+}
