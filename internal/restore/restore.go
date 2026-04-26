@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/klauspost/compress/zstd"
+	"github.com/rethink-paradigms/mesh/internal/store"
 )
 
 // VerifyHash reads the .sha256 sidecar and compares it against the actual SHA-256
@@ -142,6 +143,16 @@ func RestoreWithOpts(ctx context.Context, snapshotPath string, targetDir string,
 	}
 
 	return nil
+}
+
+// RestoreFromStore reads snapshot metadata from Store and restores to targetDir.
+// Falls back to treating snapID as a file path if the store lookup fails (backward compat).
+func RestoreFromStore(ctx context.Context, s *store.Store, snapID, targetDir string, opts RestoreOpts) error {
+	record, err := s.GetSnapshot(ctx, snapID)
+	if err != nil {
+		return RestoreWithOpts(ctx, snapID, targetDir, opts)
+	}
+	return RestoreWithOpts(ctx, record.StoragePath, targetDir, opts)
 }
 
 func runPostRestoreHook(ctx context.Context, cmd string, dir string, timeout time.Duration) error {

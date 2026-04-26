@@ -6,6 +6,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -18,6 +19,7 @@ import (
 	"github.com/klauspost/compress/zstd"
 	configtoml "github.com/rethink-paradigms/mesh/internal/config-toml"
 	"github.com/rethink-paradigms/mesh/internal/manifest"
+	"github.com/rethink-paradigms/mesh/internal/store"
 )
 
 func TestHashRoundTrip(t *testing.T) {
@@ -839,5 +841,181 @@ func TestRunCreatesManifest(t *testing.T) {
 	}
 	if m.Size != stat.Size() {
 		t.Errorf("Size = %d, want %d", m.Size, stat.Size())
+	}
+}
+
+func openTestStore(t *testing.T) *store.Store {
+	t.Helper()
+	dbPath := filepath.Join(t.TempDir(), "test.db")
+	s, err := store.Open(dbPath)
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	t.Cleanup(func() { s.Close() })
+	return s
+}
+
+func TestRunWithOptsNoStore(t *testing.T) {
+	workdir := t.TempDir()
+	mustWriteFile(t, filepath.Join(workdir, "data.txt"), []byte("test\n"), 0o644)
+
+	cacheDir := t.TempDir()
+	cfg := &configtoml.Config{
+		Agents: []configtoml.Agent{
+			{Name: "nostore-agent", Workdir: workdir, MaxSnapshots: 10},
+		},
+	}
+
+	if err := RunWithOpts(context.Background(), cfg, "nostore-agent", cacheDir); err != nil {
+		t.Fatalf("RunWithOpts without store: %v", err)
+	}
+
+	entries, _ := os.ReadDir(cacheDir)
+	var count int
+	for _, e := range entries {
+		if strings.HasSuffix(e.Name(), ".tar.zst") {
+			count++
+		}
+	}
+	if count != 1 {
+		t.Errorf("expected 1 snapshot, got %d", count)
+	}
+}
+
+func TestRunWithOptsPersistsToStore(t *testing.T) {
+	workdir := t.TempDir()
+	mustWriteFile(t, filepath.Join(workdir, "data.txt"), []byte("store-test\n"), 0o644)
+
+	cacheDir := t.TempDir()
+	s := openTestStore(t)
+
+	cfg := &configtoml.Config{
+		Agents: []configtoml.Agent{
+			{Name: "store-agent", Workdir: workdir, MaxSnapshots: 10},
+		},
+	}
+
+	ctx := context.Background()
+	err := RunWithOpts(ctx, cfg, "store-agent", cacheDir, WithStore(s, "store-agent"))
+	if err != nil {
+		t.Fatalf("RunWithOpts with store: %v", err)
+	}
+
+	entries, _ := os.ReadDir(cacheDir)
+	var snapID string
+	for _, e := range entries {
+		if strings.HasSuffix(e.Name(), ".tar.zst") {
+			snapID = e.Name()
+		}
+	}
+	if snapID == "" {
+		t.Fatal("no snapshot created")
+	}
+
+	record, err := s.GetSnapshot(ctx, snapID)
+	if err != nil {
+		t.Fatalf("GetSnapshot: %v", err)
+	}
+
+	if record.BodyID != "store-agent" {
+		t.Errorf("BodyID = %q, want %q", record.BodyID, "store-agent")
+	}
+	if record.StoragePath == "" {
+		t.Error("StoragePath should not be empty")
+	}
+	if record.SizeBytes <= 0 {
+		t.Errorf("SizeBytes = %d, want > 0", record.SizeBytes)
+	}
+
+	var m manifest.Manifest
+	if err := json.Unmarshal([]byte(record.ManifestJSON), &m); err != nil {
+		t.Fatalf("unmarshal manifest JSON: %v", err)
+	}
+	if m.AgentName != "store-agent" {
+		t.Errorf("Manifest AgentName = %q, want %q", m.AgentName, "store-agent")
+	}
+
+	body, err := s.GetBody(ctx, "store-agent")
+	if err != nil {
+		t.Fatalf("GetBody: %v", err)
+	}
+	if body.Name != "store-agent" {
+		t.Errorf("body Name = %q, want %q", body.Name, "store-agent")
+	}
+}
+
+func TestRunWithOptsBodyIDDefaultsToAgentName(t *testing.T) {
+	workdir := t.TempDir()
+	mustWriteFile(t, filepath.Join(workdir, "data.txt"), []byte("test\n"), 0o644)
+
+	cacheDir := t.TempDir()
+	s := openTestStore(t)
+
+	cfg := &configtoml.Config{
+		Agents: []configtoml.Agent{
+			{Name: "default-body", Workdir: workdir, MaxSnapshots: 10},
+		},
+	}
+
+	ctx := context.Background()
+	err := RunWithOpts(ctx, cfg, "default-body", cacheDir, WithStore(s, ""))
+	if err != nil {
+		t.Fatalf("RunWithOpts: %v", err)
+	}
+
+	entries, _ := os.ReadDir(cacheDir)
+	var snapID string
+	for _, e := range entries {
+		if strings.HasSuffix(e.Name(), ".tar.zst") {
+			snapID = e.Name()
+		}
+	}
+
+	record, err := s.GetSnapshot(ctx, snapID)
+	if err != nil {
+		t.Fatalf("GetSnapshot: %v", err)
+	}
+	if record.BodyID != "default-body" {
+		t.Errorf("BodyID = %q, want %q (agent name)", record.BodyID, "default-body")
+	}
+}
+
+func TestRunWithOptsExistingBody(t *testing.T) {
+	workdir := t.TempDir()
+	mustWriteFile(t, filepath.Join(workdir, "data.txt"), []byte("test\n"), 0o644)
+
+	cacheDir := t.TempDir()
+	s := openTestStore(t)
+
+	ctx := context.Background()
+	if err := s.CreateBody(ctx, "existing-body", "existing-body", "Created", "", "local", ""); err != nil {
+		t.Fatalf("CreateBody: %v", err)
+	}
+
+	cfg := &configtoml.Config{
+		Agents: []configtoml.Agent{
+			{Name: "existing-body", Workdir: workdir, MaxSnapshots: 10},
+		},
+	}
+
+	err := RunWithOpts(ctx, cfg, "existing-body", cacheDir, WithStore(s, "existing-body"))
+	if err != nil {
+		t.Fatalf("RunWithOpts: %v", err)
+	}
+
+	entries, _ := os.ReadDir(cacheDir)
+	var snapID string
+	for _, e := range entries {
+		if strings.HasSuffix(e.Name(), ".tar.zst") {
+			snapID = e.Name()
+		}
+	}
+
+	record, err := s.GetSnapshot(ctx, snapID)
+	if err != nil {
+		t.Fatalf("GetSnapshot: %v", err)
+	}
+	if record.BodyID != "existing-body" {
+		t.Errorf("BodyID = %q, want %q", record.BodyID, "existing-body")
 	}
 }

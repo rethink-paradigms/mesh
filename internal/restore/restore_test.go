@@ -2,13 +2,17 @@ package restore
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/rethink-paradigms/mesh/internal/adapter"
+	"github.com/rethink-paradigms/mesh/internal/manifest"
 	"github.com/rethink-paradigms/mesh/internal/snapshot"
+	"github.com/rethink-paradigms/mesh/internal/store"
 )
 
 // mustWriteFile creates a file with content and permissions in dir.
@@ -339,5 +343,162 @@ func TestRestoreWithOptsNoHook(t *testing.T) {
 	}
 	if string(content) != "hello world\n" {
 		t.Errorf("hello.txt = %q, want %q", content, "hello world\n")
+	}
+}
+
+func openTestStore(tb testing.TB) *store.Store {
+	tb.Helper()
+	dbPath := filepath.Join(tb.TempDir(), "test.db")
+	s, err := store.Open(dbPath)
+	if err != nil {
+		tb.Fatalf("open store: %v", err)
+	}
+	tb.Cleanup(func() { s.Close() })
+	return s
+}
+
+func TestRestoreFromStore(t *testing.T) {
+	snapPath, _, _ := createSnapshotFixture(t)
+	s := openTestStore(t)
+	ctx := context.Background()
+
+	bodyID := "restore-test-body"
+	if err := s.CreateBody(ctx, bodyID, bodyID, adapter.StateCreated, "", "local", ""); err != nil {
+		t.Fatalf("CreateBody: %v", err)
+	}
+
+	stat, err := os.Stat(snapPath)
+	if err != nil {
+		t.Fatalf("stat snapshot: %v", err)
+	}
+
+	m, err := manifest.Read(manifest.ManifestPath(snapPath))
+	if err != nil {
+		m = &manifest.Manifest{AgentName: "test"}
+	}
+	manifestJSON, _ := json.Marshal(m)
+
+	snapID := filepath.Base(snapPath)
+	if err := s.CreateSnapshot(ctx, snapID, bodyID, string(manifestJSON), snapPath, stat.Size()); err != nil {
+		t.Fatalf("CreateSnapshot: %v", err)
+	}
+
+	restoreDir := filepath.Join(t.TempDir(), "restored")
+	if err := RestoreFromStore(ctx, s, snapID, restoreDir, RestoreOpts{}); err != nil {
+		t.Fatalf("RestoreFromStore: %v", err)
+	}
+
+	content, err := os.ReadFile(filepath.Join(restoreDir, "hello.txt"))
+	if err != nil {
+		t.Fatalf("read restored hello.txt: %v", err)
+	}
+	if string(content) != "hello world\n" {
+		t.Errorf("hello.txt = %q, want %q", content, "hello world\n")
+	}
+
+	linkTarget, err := os.Readlink(filepath.Join(restoreDir, "link-to-hello"))
+	if err != nil {
+		t.Fatalf("readlink: %v", err)
+	}
+	if linkTarget != "hello.txt" {
+		t.Errorf("symlink target = %q, want %q", linkTarget, "hello.txt")
+	}
+}
+
+func TestRestoreFromStoreFallbackToPath(t *testing.T) {
+	snapPath, _, _ := createSnapshotFixture(t)
+	s := openTestStore(t)
+	ctx := context.Background()
+
+	restoreDir := filepath.Join(t.TempDir(), "restored")
+	if err := RestoreFromStore(ctx, s, snapPath, restoreDir, RestoreOpts{}); err != nil {
+		t.Fatalf("RestoreFromStore fallback: %v", err)
+	}
+
+	content, err := os.ReadFile(filepath.Join(restoreDir, "hello.txt"))
+	if err != nil {
+		t.Fatalf("read restored hello.txt: %v", err)
+	}
+	if string(content) != "hello world\n" {
+		t.Errorf("hello.txt = %q, want %q", content, "hello world\n")
+	}
+}
+
+func TestRestoreFromStoreWithHook(t *testing.T) {
+	snapPath, _, _ := createSnapshotFixture(t)
+	s := openTestStore(t)
+	ctx := context.Background()
+
+	bodyID := "hook-body"
+	if err := s.CreateBody(ctx, bodyID, bodyID, adapter.StateCreated, "", "local", ""); err != nil {
+		t.Fatalf("CreateBody: %v", err)
+	}
+
+	stat, _ := os.Stat(snapPath)
+	snapID := filepath.Base(snapPath)
+	if err := s.CreateSnapshot(ctx, snapID, bodyID, "{}", snapPath, stat.Size()); err != nil {
+		t.Fatalf("CreateSnapshot: %v", err)
+	}
+
+	restoreDir := filepath.Join(t.TempDir(), "restored")
+	opts := RestoreOpts{
+		PostRestoreCmd: "touch post_hook_ran",
+		HookTimeout:    30 * time.Second,
+	}
+
+	if err := RestoreFromStore(ctx, s, snapID, restoreDir, opts); err != nil {
+		t.Fatalf("RestoreFromStore with hook: %v", err)
+	}
+
+	if _, err := os.Stat(filepath.Join(restoreDir, "post_hook_ran")); err != nil {
+		t.Errorf("post_hook_ran file not created: %v", err)
+	}
+}
+
+func TestRoundTripWithStore(t *testing.T) {
+	srcDir := t.TempDir()
+	mustWriteFile(t, srcDir, "hello.txt", "round trip content\n", 0o644)
+	mustMkdir(t, srcDir, "sub", 0o755)
+	mustWriteFile(t, srcDir, "sub/nested.txt", "nested\n", 0o600)
+
+	snapDir := t.TempDir()
+	snapPath := filepath.Join(snapDir, "roundtrip.tar.zst")
+	ctx := context.Background()
+
+	if err := snapshot.CreateSnapshot(ctx, srcDir, snapPath); err != nil {
+		t.Fatalf("CreateSnapshot: %v", err)
+	}
+
+	s := openTestStore(t)
+	bodyID := "roundtrip-body"
+	if err := s.CreateBody(ctx, bodyID, bodyID, adapter.StateCreated, "", "local", ""); err != nil {
+		t.Fatalf("CreateBody: %v", err)
+	}
+
+	stat, _ := os.Stat(snapPath)
+	snapID := filepath.Base(snapPath)
+	if err := s.CreateSnapshot(ctx, snapID, bodyID, "{}", snapPath, stat.Size()); err != nil {
+		t.Fatalf("CreateSnapshot: %v", err)
+	}
+
+	restoreDir := filepath.Join(t.TempDir(), "restored")
+	if err := RestoreFromStore(ctx, s, snapID, restoreDir, RestoreOpts{}); err != nil {
+		t.Fatalf("RestoreFromStore: %v", err)
+	}
+
+	content, err := os.ReadFile(filepath.Join(restoreDir, "hello.txt"))
+	if err != nil {
+		t.Fatalf("read restored hello.txt: %v", err)
+	}
+	if string(content) != "round trip content\n" {
+		t.Errorf("hello.txt = %q, want round trip content", content)
+	}
+
+	nested, err := os.ReadFile(filepath.Join(restoreDir, "sub", "nested.txt"))
+	if err != nil {
+		t.Fatalf("read restored nested.txt: %v", err)
+	}
+	if string(nested) != "nested\n" {
+		t.Errorf("nested.txt = %q, want nested", nested)
 	}
 }

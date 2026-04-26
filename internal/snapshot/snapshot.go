@@ -9,6 +9,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -19,8 +20,10 @@ import (
 	"time"
 
 	"github.com/klauspost/compress/zstd"
+	"github.com/rethink-paradigms/mesh/internal/adapter"
 	configtoml "github.com/rethink-paradigms/mesh/internal/config-toml"
 	"github.com/rethink-paradigms/mesh/internal/manifest"
+	"github.com/rethink-paradigms/mesh/internal/store"
 )
 
 // CreateSnapshot creates a compressed, hashed snapshot of the filesystem rooted at workdir.
@@ -365,6 +368,95 @@ func Run(ctx context.Context, cfg *configtoml.Config, agentName string, cacheDir
 			// Log but don't fail — snapshot was created successfully.
 			_ = err
 		}
+	}
+
+	return nil
+}
+
+// SnapshotOption configures snapshot behavior for RunWithOpts.
+type SnapshotOption func(*snapshotOptions)
+
+type snapshotOptions struct {
+	store  *store.Store
+	bodyID string
+}
+
+// WithStore enables Store-backed metadata persistence. The bodyID is used as
+// the foreign key reference in the snapshots table. If empty, agentName is used.
+// A placeholder body record is created if one does not already exist.
+func WithStore(s *store.Store, bodyID string) SnapshotOption {
+	return func(opts *snapshotOptions) {
+		opts.store = s
+		opts.bodyID = bodyID
+	}
+}
+
+// RunWithOpts is like Run but accepts SnapshotOption functional options.
+// When WithStore is provided, snapshot metadata is also persisted to the SQLite Store.
+func RunWithOpts(ctx context.Context, cfg *configtoml.Config, agentName string, cacheDir string, opts ...SnapshotOption) error {
+	var options snapshotOptions
+	for _, o := range opts {
+		o(&options)
+	}
+
+	if err := Run(ctx, cfg, agentName, cacheDir); err != nil {
+		return err
+	}
+
+	if options.store == nil {
+		return nil
+	}
+
+	entries, err := os.ReadDir(cacheDir)
+	if err != nil {
+		return fmt.Errorf("snapshot: read cache dir for store: %w", err)
+	}
+
+	var latest string
+	var latestName string
+	for _, e := range entries {
+		if !e.IsDir() && strings.HasPrefix(e.Name(), agentName+"-") && strings.HasSuffix(e.Name(), ".tar.zst") {
+			if e.Name() > latestName {
+				latestName = e.Name()
+				latest = filepath.Join(cacheDir, e.Name())
+			}
+		}
+	}
+	if latest == "" {
+		return fmt.Errorf("snapshot: no snapshot found in cache dir after Run")
+	}
+
+	stat, err := os.Stat(latest)
+	if err != nil {
+		return fmt.Errorf("snapshot: stat output: %w", err)
+	}
+
+	manifestPath := manifest.ManifestPath(latest)
+	m, err := manifest.Read(manifestPath)
+	if err != nil {
+		return fmt.Errorf("snapshot: read manifest for store: %w", err)
+	}
+
+	manifestJSON, err := json.Marshal(m)
+	if err != nil {
+		return fmt.Errorf("snapshot: marshal manifest: %w", err)
+	}
+
+	bodyID := options.bodyID
+	if bodyID == "" {
+		bodyID = agentName
+	}
+
+	if _, err := options.store.GetBody(ctx, bodyID); err != nil {
+		if err := options.store.CreateBody(ctx, bodyID, agentName, adapter.StateStopped, "", "local", ""); err != nil {
+			return fmt.Errorf("snapshot: ensure body in store: %w", err)
+		}
+	}
+
+	snapID := filepath.Base(latest)
+	if err := options.store.CreateSnapshot(ctx, snapID, bodyID, string(manifestJSON), latest, stat.Size()); err != nil {
+		// Log but don't fail — snapshot was already created on disk.
+		_ = err
 	}
 
 	return nil
