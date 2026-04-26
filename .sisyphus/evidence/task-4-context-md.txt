@@ -1,0 +1,98 @@
+# Mesh — Current State
+
+> Auto-generated context. For full details, see `discovery/` files.
+> Decision summaries sourced from `.mesh/governance.db`.
+
+## Phase
+Discovery & Design — building the mesh-nav governance system.
+
+## What Mesh Is
+Portable agent-body runtime. Gives an AI agent a persistent compute identity (filesystem state) that can live on any substrate and move between them. Self-hosted, user-owned, no central dependency.
+
+## Decisions (D1–D10)
+
+| ID | Summary | Status |
+|----|---------|--------|
+| D1 | Filesystem-only snapshot (no memory state) | accepted |
+| D2 | OCI image + volume tarball as portable body format | accepted |
+| D3 | Nomad as fleet scheduler (not K8s) | accepted |
+| D4 | Cold migration only — no live migration in v0 | accepted |
+| D5 | MCP + skills as primary user interface (not CLI) | accepted |
+| D6 | Provider integrations are plugins, AI-generated via Pulumi skill | accepted |
+| D7 | Agent body = container, not VM | accepted |
+| D8 | Inflatable container / PID-1 supervisor | deferred |
+| D9 | Traefik / INGRESS / PRODUCTION tiers | discarded |
+| D10 | Mesh is separate from Daytona — no integration | accepted |
+
+## Governance Decisions (D-GOV1–8)
+
+| ID | Summary | Status |
+|----|---------|--------|
+| D-GOV1 | Discovery folder is the primary artifact | accepted |
+| D-GOV2 | One skill governs the discovery system | accepted |
+| D-GOV3 | No git hooks for governance | accepted |
+| D-GOV4 | decisions.md generated from SQLite DB | accepted |
+| D-GOV5 | Session continuity via CONTEXT.md + SESSION-LOG.md | accepted |
+| D-GOV6 | mesh-nav is the final governance layer | accepted |
+| D-GOV7 | Python scripts are the API over SQLite | accepted |
+| D-GOV8 | Drift detection on invocation only | accepted |
+
+## Open Questions
+
+| ID | Summary | Status |
+|----|---------|--------|
+| Q1 | Where does a body live when idle? | unresolved |
+| Q2 | Registry — where do body snapshots live? | unresolved |
+| Q3 | Scheduler — is substrate selection core or plugin? | unresolved |
+| Q4 | Bootstrap — how does the first install mesh happen? | unresolved |
+| Q5 | Daytona OSS — coexist or diverge? | resolved |
+
+## Constraints
+
+- C1: Must run on 2GB VMs
+- C2: Must not require K8s control plane
+- C3: User owns all compute, keys, network
+- C4: No telemetry, no login, no central dependency
+- C5: Portable across substrates — no kernel/CPU coupling for core path
+- C6: Core is tiny — provider code is plugin, not core library
+
+## Personas
+
+- A1: Hermes Operator — A2: Tool Agent (Go/Rust) — A3: Ephemeral Task Runner — A4: Burst Clone — A5: Developer Agent (laptop)
+
+## Built (v0)
+
+- 7 CLI commands: snapshot, restore, clone, status, list, inspect, prune
+- TOML config, deterministic tar+zstd+SHA-256 pipeline
+- Go binary, no CGo, no system deps
+
+## Not Built Yet
+
+- MCP server + skills
+- Daemon mode
+- Container runtime integration
+- Delta/incremental snapshots
+
+## Current Focus
+
+Building mesh-nav: project operating system for discovery governance (SQLite DB + Python scripts + skill).
+
+## Key Files
+
+- `discovery/INDEX.md` — Project dashboard
+- `discovery/intent.md` — What we're building and why
+- `discovery/state/decisions.md` — Generated from DB (don't hand-edit)
+- `discovery/state/governance-decisions.md` — Governance decisions from DB
+- `.mesh/governance.db` — SQLite graph DB (34 entities)
+- `~/.agents/skills/mesh-nav/scripts/` — Python helper scripts
+- `AGENTS.md` — Agent instructions
+
+## Quick Commands
+
+```bash
+python3 ~/.agents/skills/mesh-nav/scripts/gov.py list --type decision   # List decisions
+python3 ~/.agents/skills/mesh-nav/scripts/gov.py trace D1 --depth 2     # Graph traversal
+python3 ~/.agents/skills/mesh-nav/scripts/gov.py conflicts <id>         # Check conflicts
+python3 ~/.agents/skills/mesh-nav/scripts/session.py latest              # Last session
+python3 ~/.agents/skills/mesh-nav/scripts/generate.py context-summary   # This summary
+```

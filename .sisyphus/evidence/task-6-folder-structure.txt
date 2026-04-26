@@ -1,0 +1,78 @@
+# Discovery Folder Structure
+
+> Map of all files in the discovery/ folder and related governance files.
+> Updated when discovery/ structure changes.
+
+## Top-Level Files
+
+| File | Purpose |
+|------|---------|
+| `INDEX.md` | Project dashboard — decisions made, open questions, research status |
+| `intent.md` | What we're building and why. Stable. Rarely changes. |
+| `constraints.md` | Hard boundaries (C1-C6). Non-negotiable. |
+
+## Directories
+
+### `state/` — Machine-Readable State
+
+| File | Source | Purpose |
+|------|--------|---------|
+| `decisions.md` | **Generated from DB** | Product decisions (D1+). Don't hand-edit. Regenerate with `generate.py decisions-md`. |
+| `governance-decisions.md` | **Generated from DB** | Governance decisions (D-GOV1+). Don't hand-edit. Regenerate with `generate.py governance-md`. |
+| `open-questions.md` | **Generated from DB** | Open questions (Q1+). Regenerate with `generate.py questions-md`. |
+| `personas.md` | Hand-written | Agent personas (A1-A5). Validated against designs. |
+
+### `design/` — Design Artifacts
+
+| File/Dir | Purpose |
+|----------|---------|
+| `SYSTEM.md` | System architecture design |
+| `METHODOLOGY.md` | Design methodology documentation |
+| `drafts/` | Draft design diagrams |
+| `drafts/diagram-v1.md` | Design diagram version 1 |
+| `drafts/diagram-v2.md` | Design diagram version 2 |
+| `deep/` | Deep-dive design documents |
+| `deep/interface.md` | Interface design deep-dive |
+| `deep/networking.md` | Networking design deep-dive |
+| `deep/orchestration.md` | Orchestration design deep-dive |
+| `deep/persistence.md` | Persistence design deep-dive |
+| `deep/plugin-infrastructure.md` | Plugin infrastructure design deep-dive |
+| `deep/provisioning.md` | Provisioning design deep-dive |
+
+### `research/` — Research Files
+
+| File | Topic |
+|------|-------|
+| `substrate-landscape.md` | Substrate provider comparison |
+| `snapshot-mechanics.md` | Snapshot implementation research |
+| `substrate-adapter.md` | Substrate adapter design |
+| `registry-strategy.md` | Body snapshot storage |
+| `mcp-architecture.md` | MCP server architecture |
+| `plugin-architecture.md` | Plugin system design |
+| `e2b-internals.md` | E2B platform analysis |
+| `agent-sandbox-k8s.md` | K8s agent-sandbox research |
+| `daytona-analysis.md` | Daytona platform analysis |
+
+### `archive/` — Historical (Not Current State)
+
+| File | Why Archived |
+|------|-------------|
+| `SESSION-HANDOFF.md` | Historical session journey. Replaced by SESSION-LOG.md. |
+| `PORTING-GUIDE.md` | Legacy migration guide. Superseded by current design. |
+
+## Governance Infrastructure
+
+| File | Purpose |
+|------|---------|
+| `.mesh/governance.db` | SQLite graph DB — entities, edges, sessions. Source of truth for decisions/questions/constraints. |
+| `~/.agents/skills/mesh-nav/scripts/gov.py` | Entity/edge CRUD and graph traversal |
+| `~/.agents/skills/mesh-nav/scripts/session.py` | Session logging and retrieval |
+| `~/.agents/skills/mesh-nav/scripts/generate.py` | Markdown generation from DB |
+
+## Generated Files (Don't Hand-Edit)
+
+These files are regenerated from `.mesh/governance.db`:
+
+1. `discovery/state/decisions.md` — `python3 scripts/generate.py decisions-md > discovery/state/decisions.md`
+2. `discovery/state/governance-decisions.md` — `python3 scripts/generate.py governance-md > discovery/state/governance-decisions.md`
+3. `discovery/state/open-questions.md` — `python3 scripts/generate.py questions-md > discovery/state/open-questions.md`

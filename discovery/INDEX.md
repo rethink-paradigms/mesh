@@ -54,7 +54,7 @@
 | A4 | Burst Clone (fork of persistent) | Sandbox | Snapshot parent, spawn clone, optional merge |
 | A5 | Developer Agent (local) | Local | Burst to sandbox for heavy tasks |
 
-See `personas.md` for full profiles, state patterns, and feature-needs matrix.
+See `state/personas.md` for full profiles, state patterns, and feature-needs matrix.
 
 ## Research Files
 

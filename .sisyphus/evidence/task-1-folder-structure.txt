@@ -1,0 +1,32 @@
+total 24
+drwxr-xr-x@  9 samanvayayagsen  staff   288 25 Apr 18:02 .
+drwxr-xr-x  28 samanvayayagsen  staff   896 25 Apr 18:02 ..
+drwxr-xr-x@  4 samanvayayagsen  staff   128 25 Apr 18:02 archive
+-rw-r--r--@  1 samanvayayagsen  staff  2186 23 Apr 20:31 constraints.md
+drwxr-xr-x@  6 samanvayayagsen  staff   192 23 Apr 20:31 design
+-rw-r--r--@  1 samanvayayagsen  staff  3568 25 Apr 18:03 INDEX.md
+-rw-r--r--@  1 samanvayayagsen  staff  1831 23 Apr 20:31 intent.md
+drwxr-xr-x@ 11 samanvayayagsen  staff   352 23 Apr 20:31 research
+drwxr-xr-x@  5 samanvayayagsen  staff   160 25 Apr 18:02 state
+--- discovery/state/ ---
+total 48
+drwxr-xr-x@ 5 samanvayayagsen  staff   160 25 Apr 18:02 .
+drwxr-xr-x@ 9 samanvayayagsen  staff   288 25 Apr 18:02 ..
+-rw-r--r--@ 1 samanvayayagsen  staff  9221 23 Apr 20:31 decisions.md
+-rw-r--r--@ 1 samanvayayagsen  staff  3617 23 Apr 20:31 open-questions.md
+-rw-r--r--@ 1 samanvayayagsen  staff  6582 23 Apr 20:31 personas.md
+--- discovery/archive/ ---
+total 48
+drwxr-xr-x@ 4 samanvayayagsen  staff    128 25 Apr 18:02 .
+drwxr-xr-x@ 9 samanvayayagsen  staff    288 25 Apr 18:02 ..
+-rw-r--r--@ 1 samanvayayagsen  staff   7203 23 Apr 20:31 PORTING-GUIDE.md
+-rw-r--r--@ 1 samanvayayagsen  staff  12348 23 Apr 20:31 SESSION-HANDOFF.md
+--- discovery/ top-level .md files ---
+discovery/constraints.md
+discovery/INDEX.md
+discovery/intent.md
+--- discovery/ directories ---
+discovery/archive/
+discovery/design/
+discovery/research/
+discovery/state/
