@@ -61,8 +61,10 @@ representative at an online or offline event.
 Instances of abusive, harassing, or otherwise unacceptable behavior may be
 reported to the project maintainers via GitHub:
 
+- Open an issue at [github.com/rethink-paradigms/mesh/issues](https://github.com/rethink-paradigms/mesh/issues) and mention `@maintainer`
 - Open a private discussion at [github.com/rethink-paradigms/mesh/discussions](https://github.com/rethink-paradigms/mesh/discussions)
-- Contact a maintainer directly via GitHub
+
+The GitHub Discussions tab is also monitored for conduct reports.
 
 All complaints will be reviewed and investigated fairly and promptly.
 

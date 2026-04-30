@@ -44,10 +44,10 @@ body:
       label: Environment
       description: Details about your setup.
       value: |
-        - OS:
-        - Python version:
+        - OS / Arch:
+        - Go version:
         - Mesh version:
-        - Provider (AWS, Hetzner, DigitalOcean, Local/Multipass, etc.):
+        - Substrate (Local, Fleet, Sandbox — e.g. Daytona, E2B, Fly, Modal, Cloudflare):
     validations:
       required: true
 

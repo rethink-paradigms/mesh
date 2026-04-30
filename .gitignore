@@ -35,6 +35,7 @@ consul-data/
 
 # Go build artifacts
 *.exe
+mesh
 
 # SQLite temp files
 *.db-shm

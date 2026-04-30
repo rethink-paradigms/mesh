@@ -17,8 +17,8 @@
 
 - [ ] Tests added or updated for new behavior
 - [ ] `CONTEXT.md` updated if the feature interface changed
-- [ ] `pytest src/mesh -m "not e2e"` passes locally
-- [ ] Lint passes (`black src/mesh && flake8 src/mesh`)
+- [ ] `go test ./...` passes locally
+- [ ] Lint passes (`golangci-lint run`)
 - [ ] Commit message follows [Conventional Commits](https://www.conventionalcommits.org/) (`feat(scope):`, `fix(scope):`, etc.)
 
 ## Related Issues
