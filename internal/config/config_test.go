@@ -2,6 +2,7 @@
 package config
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -32,6 +33,11 @@ store:
 docker:
   host: unix:///var/run/docker.sock
   api_version: "1.48"
+registry:
+  type: s3
+  bucket: my-bucket
+plugin:
+  dir: /tmp
 bodies:
   - name: agent1
     image: alpine:latest
@@ -107,6 +113,11 @@ bodies:
 // TestLoadDefaults loads a minimal YAML (only bodies with name+image), verifies defaults applied.
 func TestLoadDefaults(t *testing.T) {
 	content := `
+registry:
+  type: s3
+  bucket: my-bucket
+plugin:
+  dir: /tmp
 bodies:
   - name: agent1
     image: alpine:latest
@@ -296,6 +307,11 @@ func TestConfigStructTags(t *testing.T) {
 // TestBodiesEmptyList verifies empty bodies list loads without error.
 func TestBodiesEmptyList(t *testing.T) {
 	content := `
+registry:
+  type: s3
+  bucket: my-bucket
+plugin:
+  dir: /tmp
 bodies: []
 `
 	path := writeConfig(t, content)
@@ -315,6 +331,11 @@ bodies: []
 // TestLoadMultipleBodies verifies loading multiple body configs.
 func TestLoadMultipleBodies(t *testing.T) {
 	content := `
+registry:
+  type: s3
+  bucket: my-bucket
+plugin:
+  dir: /tmp
 bodies:
   - name: agent1
     image: alpine:latest
@@ -387,5 +408,296 @@ func TestValidateBodyImageEmpty(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "image must not be empty") {
 		t.Errorf("validate() error = %v, want error containing 'image must not be empty'", err)
+	}
+}
+
+// TestLoadRegistryConfig loads a config with registry section.
+func TestLoadRegistryConfig(t *testing.T) {
+	content := `
+registry:
+  type: s3
+  bucket: my-snapshots
+  region: us-east-1
+  endpoint: http://localhost:9000
+  access_key_id: AKIAIOSFODNN7EXAMPLE
+  secret_access_key: wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY
+plugin:
+  dir: /tmp
+bodies:
+  - name: agent1
+    image: alpine:latest
+`
+	path := writeConfig(t, content)
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+
+	if cfg.Registry.Type != "s3" {
+		t.Errorf("Registry.Type = %q, want %q", cfg.Registry.Type, "s3")
+	}
+	if cfg.Registry.Bucket != "my-snapshots" {
+		t.Errorf("Registry.Bucket = %q, want %q", cfg.Registry.Bucket, "my-snapshots")
+	}
+	if cfg.Registry.Region != "us-east-1" {
+		t.Errorf("Registry.Region = %q, want %q", cfg.Registry.Region, "us-east-1")
+	}
+	if cfg.Registry.Endpoint != "http://localhost:9000" {
+		t.Errorf("Registry.Endpoint = %q, want %q", cfg.Registry.Endpoint, "http://localhost:9000")
+	}
+	if cfg.Registry.AccessKeyID != "AKIAIOSFODNN7EXAMPLE" {
+		t.Errorf("Registry.AccessKeyID = %q, want %q", cfg.Registry.AccessKeyID, "AKIAIOSFODNN7EXAMPLE")
+	}
+	if cfg.Registry.SecretAccessKey != "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY" {
+		t.Errorf("Registry.SecretAccessKey = %q, want %q", cfg.Registry.SecretAccessKey, "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY")
+	}
+}
+
+// TestLoadPluginConfig loads a config with plugin section.
+func TestLoadPluginConfig(t *testing.T) {
+	// Create a temp plugin dir so validation passes
+	tmpDir := t.TempDir()
+	pluginDir := filepath.Join(tmpDir, "plugins")
+	if err := os.MkdirAll(pluginDir, 0755); err != nil {
+		t.Fatalf("mkdir plugins: %v", err)
+	}
+
+	content := fmt.Sprintf(`
+registry:
+  type: s3
+  bucket: my-bucket
+plugin:
+  dir: %s
+  enabled:
+    - docker
+    - nomad
+bodies:
+  - name: agent1
+    image: alpine:latest
+`, pluginDir)
+	path := writeConfig(t, content)
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+
+	if cfg.Plugin.Dir != pluginDir {
+		t.Errorf("Plugin.Dir = %q, want %q", cfg.Plugin.Dir, pluginDir)
+	}
+	if len(cfg.Plugin.Enabled) != 2 {
+		t.Fatalf("len(Plugin.Enabled) = %d, want 2", len(cfg.Plugin.Enabled))
+	}
+	if cfg.Plugin.Enabled[0] != "docker" {
+		t.Errorf("Plugin.Enabled[0] = %q, want %q", cfg.Plugin.Enabled[0], "docker")
+	}
+	if cfg.Plugin.Enabled[1] != "nomad" {
+		t.Errorf("Plugin.Enabled[1] = %q, want %q", cfg.Plugin.Enabled[1], "nomad")
+	}
+}
+
+// TestLoadNomadConfig loads a config with nomad section.
+func TestLoadNomadConfig(t *testing.T) {
+	content := `
+registry:
+  type: s3
+  bucket: my-bucket
+nomad:
+  address: http://nomad.example.com:4646
+  token: abc123
+  region: us-west-2
+  namespace: production
+plugin:
+  dir: /tmp
+bodies:
+  - name: agent1
+    image: alpine:latest
+`
+	path := writeConfig(t, content)
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+
+	if cfg.Nomad.Address != "http://nomad.example.com:4646" {
+		t.Errorf("Nomad.Address = %q, want %q", cfg.Nomad.Address, "http://nomad.example.com:4646")
+	}
+	if cfg.Nomad.Token != "abc123" {
+		t.Errorf("Nomad.Token = %q, want %q", cfg.Nomad.Token, "abc123")
+	}
+	if cfg.Nomad.Region != "us-west-2" {
+		t.Errorf("Nomad.Region = %q, want %q", cfg.Nomad.Region, "us-west-2")
+	}
+	if cfg.Nomad.Namespace != "production" {
+		t.Errorf("Nomad.Namespace = %q, want %q", cfg.Nomad.Namespace, "production")
+	}
+}
+
+// TestLoadBodySubstrate loads a config with body substrate field.
+func TestLoadBodySubstrate(t *testing.T) {
+	content := `
+registry:
+  type: s3
+  bucket: my-bucket
+plugin:
+  dir: /tmp
+bodies:
+  - name: agent1
+    image: alpine:latest
+    substrate: nomad
+`
+	path := writeConfig(t, content)
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+
+	if len(cfg.Bodies) != 1 {
+		t.Fatalf("len(Bodies) = %d, want 1", len(cfg.Bodies))
+	}
+	if cfg.Bodies[0].Substrate != "nomad" {
+		t.Errorf("Bodies[0].Substrate = %q, want %q", cfg.Bodies[0].Substrate, "nomad")
+	}
+}
+
+// TestLoadDefaultsNewSections verifies defaults for new sections.
+func TestLoadDefaultsNewSections(t *testing.T) {
+	content := `
+registry:
+  type: s3
+  bucket: my-bucket
+plugin:
+  dir: /tmp
+bodies:
+  - name: agent1
+    image: alpine:latest
+`
+	path := writeConfig(t, content)
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+
+	if cfg.Registry.Type != "s3" {
+		t.Errorf("Registry.Type = %q, want %q", cfg.Registry.Type, "s3")
+	}
+
+	if cfg.Nomad.Address != "http://127.0.0.1:4646" {
+		t.Errorf("Nomad.Address = %q, want %q", cfg.Nomad.Address, "http://127.0.0.1:4646")
+	}
+
+	if cfg.Bodies[0].Substrate != "docker" {
+		t.Errorf("Bodies[0].Substrate = %q, want %q", cfg.Bodies[0].Substrate, "docker")
+	}
+}
+
+// TestValidatePluginDirMissing verifies error for missing plugin dir.
+func TestValidatePluginDirMissing(t *testing.T) {
+	content := `
+plugin:
+  dir: /nonexistent/plugins/dir
+bodies:
+  - name: agent1
+    image: alpine:latest
+`
+	path := writeConfig(t, content)
+
+	_, err := Load(path)
+	if err == nil {
+		t.Fatal("Load() expected error for missing plugin dir, got nil")
+	}
+	if !strings.Contains(err.Error(), "plugin dir") {
+		t.Errorf("Load() error = %v, want error containing 'plugin dir'", err)
+	}
+}
+
+// TestValidateNomadAddressInvalid verifies error for invalid nomad address.
+func TestValidateNomadAddressInvalid(t *testing.T) {
+	tests := []struct {
+		name    string
+		address string
+	}{
+		{"empty scheme", "nomad.example.com:4646"},
+		{"invalid scheme", "ftp://nomad.example.com:4646"},
+		{"missing host", "http://"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			content := fmt.Sprintf(`
+registry:
+  type: s3
+  bucket: my-bucket
+plugin:
+  dir: /tmp
+nomad:
+  address: %s
+bodies:
+  - name: agent1
+    image: alpine:latest
+`, tt.address)
+			path := writeConfig(t, content)
+			_, err := Load(path)
+			if err == nil {
+				t.Fatal("Load() expected error for invalid nomad address, got nil")
+			}
+			if !strings.Contains(err.Error(), "nomad address") {
+				t.Errorf("Load() error = %v, want error containing 'nomad address'", err)
+			}
+		})
+	}
+}
+
+// TestValidateRegistryS3MissingBucket verifies error for s3 registry without bucket.
+func TestValidateRegistryS3MissingBucket(t *testing.T) {
+	content := `
+registry:
+  type: s3
+plugin:
+  dir: /tmp
+bodies:
+  - name: agent1
+    image: alpine:latest
+`
+	path := writeConfig(t, content)
+
+	_, err := Load(path)
+	if err == nil {
+		t.Fatal("Load() expected error for s3 registry without bucket, got nil")
+	}
+	if !strings.Contains(err.Error(), "registry bucket") {
+		t.Errorf("Load() error = %v, want error containing 'registry bucket'", err)
+	}
+}
+
+// TestConfigStructTagsNew verifies new structs have yaml tags.
+func TestConfigStructTagsNew(t *testing.T) {
+	types := []interface{}{
+		RegistryConfig{},
+		PluginConfig{},
+		NomadConfig{},
+	}
+
+	for _, typ := range types {
+		val := reflect.ValueOf(typ)
+		if val.Kind() == reflect.Ptr {
+			val = val.Elem()
+		}
+		typVal := val.Type()
+
+		for i := 0; i < typVal.NumField(); i++ {
+			field := typVal.Field(i)
+			if !field.IsExported() {
+				continue
+			}
+			tag := field.Tag.Get("yaml")
+			if tag == "" {
+				t.Errorf("Field %s.%s has no yaml tag", typVal.Name(), field.Name)
+			}
+		}
 	}
 }
