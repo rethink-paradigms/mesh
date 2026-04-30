@@ -1,19 +1,63 @@
 version: 2
 
+project_name: mesh
+
+before:
+  hooks:
+    - go mod tidy
+
 builds:
   - main: ./cmd/mesh/
     binary: mesh
     goos:
       - linux
+      - darwin
     goarch:
       - amd64
+      - arm64
     ldflags:
       - -s -w
+    env:
+      - CGO_ENABLED=0
 
 archives:
-  - format: binary
+  - formats: [binary]
+    name_template: >-
+      {{ .ProjectName }}_
+      {{- .Version }}_
+      {{- .Os }}_
+      {{- .Arch }}
+
+checksum:
+  name_template: "{{ .ProjectName }}_{{ .Version }}_checksums.txt"
+  algorithm: sha256
+
+snapshot:
+  version_template: "{{ .Version }}-next"
 
 release:
   github:
     owner: rethink-paradigms
     name: mesh
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+
+brews:
+  - name: mesh
+    repository:
+      owner: rethink-paradigms
+      name: homebrew-tap
+    directory: Formula
+    homepage: "https://github.com/rethink-paradigms/mesh"
+    description: "Portable agent-body runtime for AI agents"
+    license: "MIT"
+    skip_upload: true
+    test: |
+      system "#{bin}/mesh", "version"
+    install: |
+      bin.install "mesh"
