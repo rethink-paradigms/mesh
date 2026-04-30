@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"sync"
 
 	"github.com/google/uuid"
@@ -192,6 +193,18 @@ func (bm *BodyManager) List(ctx context.Context) ([]*Body, error) {
 	return bodies, nil
 }
 
+func (bm *BodyManager) ExportFilesystem(ctx context.Context, bodyID string) (io.ReadCloser, error) {
+	b := bm.getOrCreateBody(bodyID)
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	rc, err := bm.adapter.ExportFilesystem(ctx, b.InstanceID)
+	if err != nil {
+		return nil, fmt.Errorf("adapter export filesystem: %w", err)
+	}
+	return rc, nil
+}
+
 // Get retrieves a single body by ID from the store.
 func (bm *BodyManager) Get(ctx context.Context, bodyID string) (*Body, error) {
 	rec, err := bm.store.GetBody(ctx, bodyID)
@@ -217,4 +230,35 @@ func (bm *BodyManager) transitionPersisted(ctx context.Context, b *Body, target 
 		return err
 	}
 	return bm.store.UpdateBodyState(ctx, b.ID, target)
+}
+
+func (bm *BodyManager) TransitionBody(ctx context.Context, bodyID string, target adapter.BodyState) error {
+	rec, err := bm.store.GetBody(ctx, bodyID)
+	if err != nil {
+		return fmt.Errorf("get body %s: %w", bodyID, err)
+	}
+
+	b := bm.getOrCreateBody(rec.ID)
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	b.ID = rec.ID
+	b.Name = rec.Name
+	b.State = rec.State
+	b.InstanceID = adapter.Handle(rec.InstanceID)
+	b.Substrate = rec.Substrate
+
+	return bm.transitionPersisted(ctx, b, target)
+}
+
+func (bm *BodyManager) Exec(ctx context.Context, bodyID string, cmd []string) (adapter.ExecResult, error) {
+	b := bm.getOrCreateBody(bodyID)
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	if b.State != adapter.StateRunning {
+		return adapter.ExecResult{}, fmt.Errorf("cannot exec in body %s: state is %s (must be Running)", bodyID, b.State)
+	}
+
+	return bm.adapter.Exec(ctx, b.InstanceID, cmd)
 }
