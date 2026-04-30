@@ -1,0 +1,78 @@
+{
+  "name": "Mesh",
+  "logo": {
+    "light": "/assets/logo/mesh-logo.svg",
+    "dark": "/assets/logo/mesh-logo.svg"
+  },
+  "favicon": "/assets/logo/mesh-logo.svg",
+  "colors": {
+    "primary": "#2563eb",
+    "light": "#3b82f6",
+    "dark": "#1d4ed8",
+    "anchors": {
+      "from": "#2563eb",
+      "to": "#1d4ed8"
+    }
+  },
+  "topbarLinks": [
+    {
+      "name": "GitHub",
+      "url": "https://github.com/rethink-paradigms/mesh"
+    }
+  ],
+  "topbarCtaButton": {
+    "name": "Get Started",
+    "url": "https://github.com/rethink-paradigms/mesh#quick-start"
+  },
+  "tabs": [
+    {
+      "name": "Documentation",
+      "url": "README"
+    },
+    {
+      "name": "Architecture",
+      "url": "architecture"
+    },
+    {
+      "name": "CLI Reference",
+      "url": "cli-reference"
+    },
+    {
+      "name": "MCP API",
+      "url": "mcp-api"
+    },
+    {
+      "name": "Migration",
+      "url": "migration"
+    }
+  ],
+  "anchors": [
+    {
+      "name": "GitHub",
+      "icon": "github",
+      "url": "https://github.com/rethink-paradigms/mesh"
+    }
+  ],
+  "navigation": [
+    {
+      "group": "Get Started",
+      "pages": ["README"]
+    },
+    {
+      "group": "Reference",
+      "pages": [
+        "architecture",
+        "cli-reference",
+        "mcp-api",
+        "migration"
+      ]
+    },
+    {
+      "group": "Internal",
+      "pages": ["internal/packages"]
+    }
+  ],
+  "footerSocials": {
+    "github": "https://github.com/rethink-paradigms/mesh"
+  }
+}

@@ -1,0 +1,93 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 520" width="900" height="520">
+  <defs>
+    <style>
+      .bg { fill: #FFFFFF; }
+      .box-body { fill: #FDF8F3; stroke: #C8956C; stroke-width: 2; }
+      .box-form { fill: #FDF8F3; stroke: #C8956C; stroke-width: 2; }
+      .box-snapshot { fill: #F5F5F5; stroke: #8A8A8A; stroke-width: 1.5; }
+      .box-substrate { fill: #FAFAFA; stroke: #B0B0B0; stroke-width: 1; }
+      .text-title { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; font-size: 15px; font-weight: 600; fill: #1A1A1A; }
+      .text-subtitle { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; font-size: 11px; font-weight: 400; fill: #555555; }
+      .text-code { font-family: "SF Mono", Monaco, "Cascadia Code", "Roboto Mono", Consolas, "Courier New", monospace; font-size: 10px; font-weight: 400; fill: #444444; }
+      .text-label { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; font-size: 10px; font-weight: 500; fill: #666666; text-anchor: middle; }
+      .text-pool { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; font-size: 12px; font-weight: 600; fill: #333333; }
+      .text-pool-desc { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; font-size: 9px; font-weight: 400; fill: #777777; }
+      .arrow { fill: none; stroke: #999999; stroke-width: 1.5; marker-end: url(#arrowhead); }
+      .arrow-accent { fill: none; stroke: #C8956C; stroke-width: 2; marker-end: url(#arrowhead-accent); }
+    </style>
+    <marker id="arrowhead" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#999999"/>
+    </marker>
+    <marker id="arrowhead-accent" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#C8956C"/>
+    </marker>
+  </defs>
+
+  <!-- Background -->
+  <rect class="bg" x="0" y="0" width="900" height="520" rx="4"/>
+
+  <!-- Title -->
+  <text x="450" y="32" text-anchor="middle" class="text-title" font-size="18" font-weight="700" fill="#1A1A1A">Mesh Architecture</text>
+  <text x="450" y="50" text-anchor="middle" class="text-subtitle" font-size="11" fill="#888888">Portable agent-body runtime</text>
+
+  <!-- BODY (Left) -->
+  <rect class="box-body" x="60" y="130" width="200" height="130" rx="8"/>
+  <text x="160" y="158" text-anchor="middle" class="text-title" fill="#C8956C">Body</text>
+  <text x="160" y="176" text-anchor="middle" class="text-subtitle" font-size="10">Persistent identity + filesystem state</text>
+  <line x1="80" y1="190" x2="240" y2="190" stroke="#E8DDD0" stroke-width="1"/>
+  <text x="160" y="208" text-anchor="middle" class="text-code">OCI image + volume tarball</text>
+  <text x="160" y="222" text-anchor="middle" class="text-code">docker export | zstd</text>
+  <text x="160" y="244" text-anchor="middle" class="text-subtitle" font-size="9" fill="#999999">Persists across substrate changes</text>
+
+  <!-- SNAPSHOT (Center) -->
+  <rect class="box-snapshot" x="330" y="155" width="240" height="80" rx="6"/>
+  <text x="450" y="180" text-anchor="middle" class="text-title" font-size="13">Snapshot Pipeline</text>
+  <text x="450" y="200" text-anchor="middle" class="text-code" font-size="11">docker export | zstd | sha256sum</text>
+  <text x="450" y="218" text-anchor="middle" class="text-subtitle" font-size="9">Portable, deterministic, fully reproducible</text>
+
+  <!-- SUBSTRATE POOLS (Right) -->
+  <rect class="box-substrate" x="640" y="90" width="200" height="50" rx="6"/>
+  <text x="740" y="113" text-anchor="middle" class="text-pool">Local</text>
+  <text x="740" y="128" text-anchor="middle" class="text-pool-desc">Laptop, workstation, Raspberry Pi</text>
+
+  <rect class="box-substrate" x="640" y="155" width="200" height="50" rx="6"/>
+  <text x="740" y="178" text-anchor="middle" class="text-pool">Fleet</text>
+  <text x="740" y="193" text-anchor="middle" class="text-pool-desc">BYO VMs scheduled via Nomad</text>
+
+  <rect class="box-substrate" x="640" y="220" width="200" height="50" rx="6"/>
+  <text x="740" y="243" text-anchor="middle" class="text-pool">Sandbox</text>
+  <text x="740" y="258" text-anchor="middle" class="text-pool-desc">Daytona, E2B, Fly, Modal, Cloudflare</text>
+
+  <!-- Substrate label -->
+  <text x="740" y="75" text-anchor="middle" class="text-label" font-size="12" font-weight="700" fill="#555555">Substrate Pools</text>
+
+  <!-- FORM (Bottom) -->
+  <rect class="box-form" x="330" y="340" width="240" height="90" rx="8"/>
+  <text x="450" y="370" text-anchor="middle" class="text-title" fill="#C8956C">Form</text>
+  <text x="450" y="390" text-anchor="middle" class="text-subtitle" font-size="10">Ephemeral instantiation on a substrate</text>
+  <text x="450" y="412" text-anchor="middle" class="text-subtitle" font-size="9" fill="#999999">A body takes many forms over its lifetime</text>
+
+  <!-- ARROWS -->
+  <!-- Body -> Snapshot -->
+  <line class="arrow-accent" x1="260" y1="195" x2="325" y2="195"/>
+  <text x="292" y="188" text-anchor="middle" class="text-label" fill="#C8956C" font-size="9">snapshot</text>
+
+  <!-- Snapshot -> Form -->
+  <line class="arrow-accent" x1="450" y1="235" x2="450" y2="335"/>
+  <text x="468" y="288" text-anchor="start" class="text-label" fill="#C8956C" font-size="9">restore</text>
+
+  <!-- Substrate pools -> Form -->
+  <line class="arrow" x1="640" y1="270" x2="580" y2="340"/>
+  <line class="arrow" x1="740" y1="270" x2="740" y2="335"/>
+  <line class="arrow" x1="840" y1="270" x2="860" y2="300"/>
+  <line class="arrow" x1="860" y1="300" x2="580" y2="380"/>
+
+  <!-- Legend -->
+  <rect x="60" y="460" width="200" height="42" rx="4" fill="#FAFAFA" stroke="#E0E0E0" stroke-width="1"/>
+  <rect x="72" y="470" width="12" height="12" rx="2" fill="#FDF8F3" stroke="#C8956C" stroke-width="1.5"/>
+  <text x="90" y="480" class="text-subtitle" font-size="10">Core abstraction</text>
+  <rect x="72" y="488" width="12" height="12" rx="2" fill="#F5F5F5" stroke="#8A8A8A" stroke-width="1"/>
+  <text x="90" y="498" class="text-subtitle" font-size="10">Pipeline / process</text>
+
+  <text x="450" y="492" text-anchor="middle" class="text-subtitle" font-size="9" fill="#AAAAAA">Where a form runs is a cost/latency knob, not an architectural commitment.</text>
+</svg>
