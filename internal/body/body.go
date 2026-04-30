@@ -23,10 +23,10 @@ type Body struct {
 var validTransitions = map[adapter.BodyState][]adapter.BodyState{
 	adapter.StateCreated:   {adapter.StateStarting, adapter.StateError},
 	adapter.StateStarting:  {adapter.StateRunning, adapter.StateError},
-	adapter.StateRunning:   {adapter.StateStopping, adapter.StateMigrating, adapter.StateError},
+	adapter.StateRunning:   {adapter.StateStopping, adapter.StateMigrating, adapter.StateError, adapter.StateRunning},
 	adapter.StateStopping:  {adapter.StateStopped, adapter.StateError},
 	adapter.StateStopped:   {adapter.StateStarting, adapter.StateDestroyed},
-	adapter.StateError:     {adapter.StateStarting, adapter.StateDestroyed},
+	adapter.StateError:     {adapter.StateStarting, adapter.StateDestroyed, adapter.StateMigrating},
 	adapter.StateMigrating: {adapter.StateRunning, adapter.StateError},
 	adapter.StateDestroyed: {},
 }
