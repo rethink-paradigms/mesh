@@ -16,14 +16,14 @@ Enables: D2, D4, D3
 Blocks: live-migration paths (explicitly deferred)
 
 **Relationships:**
+- constrains → D1
 - enables → D2
 - enables → D3
 - enables → D4
-- constrains → D1
 
 ---
 
-## D10: Mesh is separate from Daytona — no integration
+## D10: Mesh is separate from Daytona — Daytona is valid substrate target via adapter, not dependency.
 
 **Status**: accepted
 **Date**: 2026-04-25T12:44:49Z
@@ -64,11 +64,11 @@ Enables: D4, substrate adapter simplicity (6 verbs only)
 Blocks: (none)
 
 **Relationships:**
+- related_to → D2
+- constrains → D2
 - enables → D2
 - enables → D4
 - enables → D2
-- related_to → D2
-- constrains → D2
 
 ---
 
@@ -88,12 +88,12 @@ Enables: edge deployment, cheap fleet nodes
 Blocks: adopting k8s-sigs/agent-sandbox directly (must reimplement concepts over Nomad)
 
 **Relationships:**
+- related_to → D3
+- related_to → D3
+- related_to → D3
+- constrains → D3
+- constrains → D3
 - enables → D3
-- related_to → D3
-- related_to → D3
-- related_to → D3
-- constrains → D3
-- constrains → D3
 
 ---
 
@@ -113,10 +113,10 @@ Enables: substrate adapter contract stays tiny (6 verbs)
 Blocks: sub-second cross-substrate migration (explicitly out of scope)
 
 **Relationships:**
-- enables → D4
-- enables → D4
 - related_to → D4
 - constrains → D4
+- enables → D4
+- enables → D4
 
 ---
 
@@ -145,15 +145,11 @@ Blocks: (none)
 **Status**: accepted
 **Date**: 2026-04-25T12:44:49Z
 
-Context: Maintaining 13+ provider integrations in core was a maintenance burden. Pulumi now has a skill that generates provider code. Users who need a provider can generate a plugin.
+Context: Maintaining 13+ provider integrations in core was a maintenance burden. v1.0 implementation uses go-plugin + gRPC + protobuf. DE4 (from v1.1 design session) specifies OpenAPI + oapi-codegen v2 + AI mapping layer as the v1.1 generation pipeline, superseding the earlier Pulumi approach.
 
-Decision: Core contains zero provider-specific code. Each provider (DigitalOcean, AWS, Daytona, etc.) is a plugin with a standard interface. Plugins can be AI-generated. Core ships with a plugin template and testing scaffold.
+Decision: Core contains zero provider-specific code. Each provider is a plugin with a standard interface. Plugins can be AI-generated. Core ships with a plugin template and testing scaffold.
 
 Rationale: Less code, fewer bugs, fewer security issues. Users own their provider code. No central maintenance burden.
-
-Conflicts with: (none)
-Enables: community growth without core maintenance scaling
-Blocks: just-works experience for all 13+ providers out of the box (users must generate/install plugins)
 
 **Relationships:**
 - related_to → D6
@@ -179,8 +175,8 @@ Enables: D2 (OCI image format), substrate adapter simplicity
 Blocks: microVM-native features (memory snapshot at VM boundary)
 
 **Relationships:**
-- enables → D2
 - related_to → D7
+- enables → D2
 
 ---
 

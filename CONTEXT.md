@@ -4,7 +4,7 @@
 > Decision summaries sourced from `.mesh/governance.db`.
 
 ## Phase
-Discovery & Design — building the mesh-nav governance system.
+v1.0 Implementation Complete — 17 packages test-passing. Governance system (mesh-nav) operational.
 
 ## What Mesh Is
 Portable agent-body runtime. Gives an AI agent a persistent compute identity (filesystem state) that can live on any substrate and move between them. Self-hosted, user-owned, no central dependency.
@@ -22,7 +22,7 @@ Portable agent-body runtime. Gives an AI agent a persistent compute identity (fi
 | D7 | Agent body = container, not VM | accepted |
 | D8 | Inflatable container / PID-1 supervisor | deferred |
 | D9 | Traefik / INGRESS / PRODUCTION tiers | discarded |
-| D10 | Mesh is separate from Daytona — no integration | accepted |
+| D10 | Mesh is separate from Daytona — Daytona is valid substrate target via adapter, not dependency | accepted |
 
 ## Governance Decisions (D-GOV1–8)
 
@@ -41,10 +41,10 @@ Portable agent-body runtime. Gives an AI agent a persistent compute identity (fi
 
 | ID | Summary | Status |
 |----|---------|--------|
-| Q1 | Where does a body live when idle? | unresolved |
-| Q2 | Registry — where do body snapshots live? | unresolved |
-| Q3 | Scheduler — is substrate selection core or plugin? | unresolved |
-| Q4 | Bootstrap — how does the first install mesh happen? | unresolved |
+| Q1 | Where does a body live when idle? | resolved |
+| Q2 | Registry — where do body snapshots live? | resolved |
+| Q3 | Scheduler — is substrate selection core or plugin? | resolved |
+| Q4 | Bootstrap — how does the first install mesh happen? | resolved |
 | Q5 | Daytona OSS — coexist or diverge? | resolved |
 
 ## Constraints
@@ -60,22 +60,27 @@ Portable agent-body runtime. Gives an AI agent a persistent compute identity (fi
 
 - A1: Hermes Operator — A2: Tool Agent (Go/Rust) — A3: Ephemeral Task Runner — A4: Burst Clone — A5: Developer Agent (laptop)
 
-## Built (v0)
+## Built (v1.0)
 
-- 7 CLI commands: snapshot, restore, clone, status, list, inspect, prune
-- TOML config, deterministic tar+zstd+SHA-256 pipeline
-- Go binary, no CGo, no system deps
+- Daemon with Docker + Nomad multi-adapter routing
+- 16 MCP tools for body CRUD and migration
+- 7-step cold migration coordinator with S3 registry
+- Plugin system (go-plugin + gRPC + protobuf)
+- CLI (mesh serve/stop/status/init)
+- Bootstrap (goreleaser, install.sh, Homebrew formula)
+- CI (GitHub Actions with integration tests)
+- 17 packages test-passing
 
-## Not Built Yet
+## Learnings
 
-- MCP server + skills
-- Daemon mode
-- Container runtime integration
-- Delta/incremental snapshots
+- L1: Docker adapter is built-in for v1.0 (pattern, confidence 5)
+- L2: v1.0 implementation complete — 17 test-passing packages (project, confidence 5)
 
 ## Current Focus
 
 mesh-nav v2 complete: GrafitoDB property graph backend (7 node types, 10 edge types), session continuity (auto-briefing + structured handoff), learnings as first-class nodes (Engram format), 105 tests passing. Regen this summary with `generate.py context-summary`.
+
+**Entity counts**: 10 decisions | 8 governance decisions | 5 questions (all resolved) | 6 constraints | 5 personas | 4 sessions | 2 learnings
 
 ## Key Files
 
