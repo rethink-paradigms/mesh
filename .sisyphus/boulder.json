@@ -36,6 +36,24 @@
       "agent": "Sisyphus-Junior",
       "category": "quick",
       "updated_at": "2026-04-30T15:24:21.848Z"
+    },
+    "todo:10": {
+      "task_key": "todo:10",
+      "task_label": "10",
+      "task_title": "Commit Cleanup + Governance + Roadmap Changes",
+      "session_id": "ses_220f8a416ffeDUV6GuO1sIz93a",
+      "agent": "Sisyphus-Junior",
+      "category": "quick",
+      "updated_at": "2026-04-30T15:37:26.866Z"
+    },
+    "final-wave:f1": {
+      "task_key": "final-wave:f1",
+      "task_label": "F1",
+      "task_title": "**Governance Content Integrity Audit** — `deep`",
+      "session_id": "ses_220ef6cfbffe4g1h0EiXZZq10j",
+      "agent": "Sisyphus-Junior",
+      "category": "quick",
+      "updated_at": "2026-04-30T15:46:13.344Z"
     }
   }
 }

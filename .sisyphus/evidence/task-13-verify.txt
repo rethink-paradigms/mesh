@@ -1,0 +1,36 @@
+=== Post-Merge Verification: mesh worktree (main) ===
+Date: $(date -u +%Y-%m-%dT%H:%M:%SZ)
+
+[BUILD]
+PASS: go build ./...
+
+[TEST]
+FAIL count in output: 2
+Note: Both FAILs are from internal/persistence/engine_test.go compilation error:
+  - mockAdapter missing IsHealthy method (adapter.SubstrateAdapter interface)
+  - Pre-existing issue from merge, not introduced by this verification
+All other packages pass.
+
+[VET]
+FAIL: go vet fails on same engine_test.go compilation error
+
+[ROADMAP]
+PASS: discovery/roadmap/v1.1-refinements.md exists
+
+[BINARY/DIST]
+PASS: No mesh binary or dist/ directory present
+
+[SQLITE TEMPS]
+PASS: 0 tracked files matching shm|wal|bak|tmpal in .mesh/
+
+[DRAFTS]
+PASS: 0 tracked files in .sisyphus/drafts/
+
+=== SUMMARY ===
+- Build: PASS
+- Test: PARTIAL (1 package fails to compile, all others pass)
+- Vet: FAIL (same compilation error)
+- Roadmap: OK
+- Binary/Dist: CLEAN
+- SQLite temps: CLEAN
+- Drafts: CLEAN

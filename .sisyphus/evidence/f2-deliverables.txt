@@ -1,0 +1,35 @@
+Deliverables Completeness Check (F2)
+====================================
+
+1. Roadmap exists: discovery/roadmap/v1.1-refinements.md
+   - File present: YES
+   - DE entries count: 25 (required >= 16)
+   - Status: OK
+
+2. Binary absent: mesh
+   - Status: ABSENT
+
+3. dist absent: dist/
+   - Status: ABSENT
+
+4. SQLite temps not tracked in .mesh/
+   - git ls-files .mesh/ | grep 'shm|wal|bak|tmpal' count: 0
+   - Status: CLEAN
+
+5. Drafts not tracked in .sisyphus/drafts/
+   - git ls-files .sisyphus/drafts/ count: 0
+   - Status: CLEAN
+
+6. Tag v1.0.0 exists
+   - git tag -l v1.0.0: v1.0.0
+   - Status: OK
+
+7. .gitignore updated for SQLite temps
+   - grep 'db-shm|db-wal' count: 2 (required >= 1)
+   - Status: OK
+
+----------------------------------------
+SUMMARY
+Roadmap [OK] | Binary [ABSENT] | dist [ABSENT] | SQLite [CLEAN] | Drafts [CLEAN] | Tag [OK] | Gitignore [OK]
+
+VERDICT: APPROVE
