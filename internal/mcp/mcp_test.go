@@ -1,22 +1,31 @@
 package mcp
 
 import (
+	"archive/tar"
 	"bufio"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/klauspost/compress/zstd"
 	"github.com/rethink-paradigms/mesh/internal/adapter"
 	"github.com/rethink-paradigms/mesh/internal/body"
+	"github.com/rethink-paradigms/mesh/internal/plugin"
 	"github.com/rethink-paradigms/mesh/internal/store"
 )
 
 type mockSubstrateAdapter struct {
-	handle adapter.Handle
+	handle      adapter.Handle
+	status      adapter.BodyStatus
+	execOutputs map[string]adapter.ExecResult
 }
 
 func (m *mockSubstrateAdapter) Create(_ context.Context, _ adapter.BodySpec) (adapter.Handle, error) {
@@ -31,9 +40,26 @@ func (m *mockSubstrateAdapter) Stop(_ context.Context, _ adapter.Handle, _ adapt
 }
 func (m *mockSubstrateAdapter) Destroy(_ context.Context, _ adapter.Handle) error { return nil }
 func (m *mockSubstrateAdapter) GetStatus(_ context.Context, _ adapter.Handle) (adapter.BodyStatus, error) {
+	if m.status.State != "" {
+		return m.status, nil
+	}
 	return adapter.BodyStatus{State: adapter.StateRunning}, nil
 }
-func (m *mockSubstrateAdapter) Exec(_ context.Context, _ adapter.Handle, _ []string) (adapter.ExecResult, error) {
+func (m *mockSubstrateAdapter) Exec(ctx context.Context, _ adapter.Handle, cmd []string) (adapter.ExecResult, error) {
+	if len(cmd) >= 2 && cmd[0] == "sleep" {
+		select {
+		case <-ctx.Done():
+			return adapter.ExecResult{}, ctx.Err()
+		case <-time.After(10 * time.Second):
+			return adapter.ExecResult{}, nil
+		}
+	}
+	key := strings.Join(cmd, " ")
+	if m.execOutputs != nil {
+		if result, ok := m.execOutputs[key]; ok {
+			return result, nil
+		}
+	}
 	return adapter.ExecResult{Stdout: "ok", ExitCode: 0}, nil
 }
 func (m *mockSubstrateAdapter) ExportFilesystem(_ context.Context, _ adapter.Handle) (io.ReadCloser, error) {
@@ -47,6 +73,14 @@ func (m *mockSubstrateAdapter) Inspect(_ context.Context, _ adapter.Handle) (ada
 }
 func (m *mockSubstrateAdapter) Capabilities() adapter.AdapterCapabilities {
 	return adapter.AdapterCapabilities{}
+}
+
+func (m *mockSubstrateAdapter) SubstrateName() string {
+	return "mock"
+}
+
+func (m *mockSubstrateAdapter) IsHealthy(_ context.Context) bool {
+	return true
 }
 
 func tempStore(t *testing.T) *store.Store {
@@ -76,7 +110,7 @@ func testBodyManager(t *testing.T, s *store.Store) *body.BodyManager {
 
 func testMigrator(t *testing.T, s *store.Store, bm *body.BodyManager) *body.MigrationCoordinator {
 	t.Helper()
-	return body.NewMigrationCoordinator(s, &mockSubstrateAdapter{}, bm)
+	return body.NewMigrationCoordinator(s, &mockSubstrateAdapter{}, bm, nil)
 }
 
 type testHarness struct {
@@ -326,7 +360,173 @@ func TestGetSnapshot(t *testing.T) {
 	}
 }
 
-func TestExecCommandNotImplemented(t *testing.T) {
+func TestExecCommandSuccess(t *testing.T) {
+	s := tempStore(t)
+	bm := testBodyManager(t, s)
+	ctx := context.Background()
+
+	created, err := bm.Create(ctx, "exec-test", adapter.BodySpec{Image: "alpine"})
+	if err != nil {
+		t.Fatalf("create body: %v", err)
+	}
+
+	h := newHarness(t, s)
+	h.srv.SetBodyManager(bm)
+	defer h.close()
+
+	h.send(t, Request{
+		JSONRPC: "2.0",
+		ID:      7,
+		Method:  "tools/call",
+		Params: rawMessage(t, map[string]interface{}{
+			"name":      "execute_command",
+			"arguments": map[string]interface{}{"body_id": created.ID, "command": []string{"echo", "hello"}},
+		}),
+	})
+
+	resp := h.readResponse(t)
+	result := resp["result"].(map[string]interface{})
+	content := result["content"].([]interface{})
+	text := content[0].(map[string]interface{})["text"].(string)
+
+	var execResp map[string]interface{}
+	if err := json.Unmarshal([]byte(text), &execResp); err != nil {
+		t.Fatalf("unmarshal exec response: %v", err)
+	}
+	if execResp["stdout"] != "ok" {
+		t.Fatalf("stdout = %v, want 'ok'", execResp["stdout"])
+	}
+	if execResp["exit_code"] != float64(0) {
+		t.Fatalf("exit_code = %v, want 0", execResp["exit_code"])
+	}
+}
+
+func TestExecCommandNotRunning(t *testing.T) {
+	s := tempStore(t)
+	bm := testBodyManager(t, s)
+	ctx := context.Background()
+
+	created, err := bm.Create(ctx, "exec-stopped", adapter.BodySpec{Image: "alpine"})
+	if err != nil {
+		t.Fatalf("create body: %v", err)
+	}
+	if err := bm.Stop(ctx, created.ID, adapter.StopOpts{}); err != nil {
+		t.Fatalf("stop body: %v", err)
+	}
+
+	h := newHarness(t, s)
+	h.srv.SetBodyManager(bm)
+	defer h.close()
+
+	h.send(t, Request{
+		JSONRPC: "2.0",
+		ID:      7,
+		Method:  "tools/call",
+		Params: rawMessage(t, map[string]interface{}{
+			"name":      "execute_command",
+			"arguments": map[string]interface{}{"body_id": created.ID, "command": []string{"echo", "hello"}},
+		}),
+	})
+
+	resp := h.readResponse(t)
+	rpcErr := resp["error"].(map[string]interface{})
+	msg := rpcErr["message"].(string)
+	if !strings.Contains(msg, "not running") {
+		t.Fatalf("error message = %q, want 'not running'", msg)
+	}
+}
+
+func TestExecCommandTimeout(t *testing.T) {
+	s := tempStore(t)
+	bm := testBodyManager(t, s)
+	ctx := context.Background()
+
+	created, err := bm.Create(ctx, "exec-timeout", adapter.BodySpec{Image: "alpine"})
+	if err != nil {
+		t.Fatalf("create body: %v", err)
+	}
+
+	h := newHarness(t, s)
+	h.srv.SetBodyManager(bm)
+	defer h.close()
+
+	h.send(t, Request{
+		JSONRPC: "2.0",
+		ID:      7,
+		Method:  "tools/call",
+		Params: rawMessage(t, map[string]interface{}{
+			"name":      "execute_command",
+			"arguments": map[string]interface{}{"body_id": created.ID, "command": []string{"sleep", "10"}, "timeout_seconds": 1},
+		}),
+	})
+
+	resp := h.readResponse(t)
+	rpcErr := resp["error"].(map[string]interface{})
+	msg := rpcErr["message"].(string)
+	if !strings.Contains(msg, "timeout") {
+		t.Fatalf("error message = %q, want 'timeout'", msg)
+	}
+}
+
+func TestExecCommandEmptyCommand(t *testing.T) {
+	s := tempStore(t)
+	bm := testBodyManager(t, s)
+	ctx := context.Background()
+
+	created, err := bm.Create(ctx, "exec-empty", adapter.BodySpec{Image: "alpine"})
+	if err != nil {
+		t.Fatalf("create body: %v", err)
+	}
+
+	h := newHarness(t, s)
+	h.srv.SetBodyManager(bm)
+	defer h.close()
+
+	h.send(t, Request{
+		JSONRPC: "2.0",
+		ID:      7,
+		Method:  "tools/call",
+		Params: rawMessage(t, map[string]interface{}{
+			"name":      "execute_command",
+			"arguments": map[string]interface{}{"body_id": created.ID, "command": []string{}},
+		}),
+	})
+
+	resp := h.readResponse(t)
+	rpcErr := resp["error"].(map[string]interface{})
+	msg := rpcErr["message"].(string)
+	if !strings.Contains(msg, "command are required") {
+		t.Fatalf("error message = %q, want 'command are required'", msg)
+	}
+}
+
+func TestExecCommandBodyNotFound(t *testing.T) {
+	s := tempStore(t)
+	bm := testBodyManager(t, s)
+
+	h := newHarness(t, s)
+	h.srv.SetBodyManager(bm)
+	defer h.close()
+
+	h.send(t, Request{
+		JSONRPC: "2.0",
+		ID:      7,
+		Method:  "tools/call",
+		Params: rawMessage(t, map[string]interface{}{
+			"name":      "execute_command",
+			"arguments": map[string]interface{}{"body_id": "nonexistent", "command": []string{"echo", "hello"}},
+		}),
+	})
+
+	resp := h.readResponse(t)
+	rpcErr := resp["error"].(map[string]interface{})
+	msg := rpcErr["message"].(string)
+	if !strings.Contains(msg, "not found") {
+		t.Fatalf("error message = %q, want 'not found'", msg)
+	}
+}
+
+func TestExecCommandNoBodyManager(t *testing.T) {
 	s := tempStore(t)
 	h := newHarness(t, s)
 	defer h.close()
@@ -335,7 +535,7 @@ func TestExecCommandNotImplemented(t *testing.T) {
 		JSONRPC: "2.0",
 		ID:      7,
 		Method:  "tools/call",
-		Params:  rawMessage(t, map[string]interface{}{
+		Params: rawMessage(t, map[string]interface{}{
 			"name":      "execute_command",
 			"arguments": map[string]interface{}{"body_id": "b1", "command": []string{"ls"}},
 		}),
@@ -344,8 +544,8 @@ func TestExecCommandNotImplemented(t *testing.T) {
 	resp := h.readResponse(t)
 	rpcErr := resp["error"].(map[string]interface{})
 	msg := rpcErr["message"].(string)
-	if !strings.Contains(msg, "not yet implemented") {
-		t.Fatalf("error message = %q, want 'not yet implemented'", msg)
+	if !strings.Contains(msg, "body manager not available") {
+		t.Fatalf("error message = %q, want 'body manager not available'", msg)
 	}
 }
 
@@ -649,6 +849,234 @@ func TestMigrateBodyNoMigrator(t *testing.T) {
 	}
 }
 
+func TestStartBody(t *testing.T) {
+	s := tempStore(t)
+	bm := testBodyManager(t, s)
+	ctx := context.Background()
+
+	created, err := bm.Create(ctx, "to-start", adapter.BodySpec{Image: "alpine"})
+	if err != nil {
+		t.Fatalf("create body: %v", err)
+	}
+	if err := bm.Stop(ctx, created.ID, adapter.StopOpts{}); err != nil {
+		t.Fatalf("stop body: %v", err)
+	}
+
+	h := newHarness(t, s)
+	h.srv.SetBodyManager(bm)
+	defer h.close()
+
+	h.send(t, Request{
+		JSONRPC: "2.0",
+		ID:      30,
+		Method:  "tools/call",
+		Params:  rawMessage(t, map[string]interface{}{"name": "start_body", "arguments": map[string]interface{}{"body_id": created.ID}}),
+	})
+
+	resp := h.readResponse(t)
+	if resp["error"] != nil {
+		rpcErr := resp["error"].(map[string]interface{})
+		t.Fatalf("unexpected error: code=%v msg=%v", rpcErr["code"], rpcErr["message"])
+	}
+	result := resp["result"].(map[string]interface{})
+	content := result["content"].([]interface{})
+	text := content[0].(map[string]interface{})["text"].(string)
+
+	var startResp map[string]interface{}
+	if err := json.Unmarshal([]byte(text), &startResp); err != nil {
+		t.Fatalf("unmarshal start response: %v", err)
+	}
+	if startResp["state"] != "Running" {
+		t.Fatalf("state = %v, want Running", startResp["state"])
+	}
+	if startResp["id"] != created.ID {
+		t.Fatalf("id = %v, want %s", startResp["id"], created.ID)
+	}
+}
+
+func TestStopBody(t *testing.T) {
+	s := tempStore(t)
+	bm := testBodyManager(t, s)
+	ctx := context.Background()
+
+	created, err := bm.Create(ctx, "to-stop", adapter.BodySpec{Image: "alpine"})
+	if err != nil {
+		t.Fatalf("create body: %v", err)
+	}
+
+	h := newHarness(t, s)
+	h.srv.SetBodyManager(bm)
+	defer h.close()
+
+	h.send(t, Request{
+		JSONRPC: "2.0",
+		ID:      31,
+		Method:  "tools/call",
+		Params:  rawMessage(t, map[string]interface{}{"name": "stop_body", "arguments": map[string]interface{}{"body_id": created.ID}}),
+	})
+
+	resp := h.readResponse(t)
+	result := resp["result"].(map[string]interface{})
+	content := result["content"].([]interface{})
+	text := content[0].(map[string]interface{})["text"].(string)
+
+	var stopResp map[string]interface{}
+	if err := json.Unmarshal([]byte(text), &stopResp); err != nil {
+		t.Fatalf("unmarshal stop response: %v", err)
+	}
+	if stopResp["state"] != "Stopped" {
+		t.Fatalf("state = %v, want Stopped", stopResp["state"])
+	}
+	if stopResp["id"] != created.ID {
+		t.Fatalf("id = %v, want %s", stopResp["id"], created.ID)
+	}
+}
+
+func TestStartBodyAlreadyRunning(t *testing.T) {
+	s := tempStore(t)
+	bm := testBodyManager(t, s)
+	ctx := context.Background()
+
+	created, err := bm.Create(ctx, "already-running", adapter.BodySpec{Image: "alpine"})
+	if err != nil {
+		t.Fatalf("create body: %v", err)
+	}
+
+	h := newHarness(t, s)
+	h.srv.SetBodyManager(bm)
+	defer h.close()
+
+	h.send(t, Request{
+		JSONRPC: "2.0",
+		ID:      32,
+		Method:  "tools/call",
+		Params:  rawMessage(t, map[string]interface{}{"name": "start_body", "arguments": map[string]interface{}{"body_id": created.ID}}),
+	})
+
+	resp := h.readResponse(t)
+	rpcErr := resp["error"].(map[string]interface{})
+	msg := rpcErr["message"].(string)
+	if !strings.Contains(msg, "cannot start body in state") {
+		t.Fatalf("error message = %q, want 'cannot start body in state'", msg)
+	}
+}
+
+func TestStopBodyAlreadyStopped(t *testing.T) {
+	s := tempStore(t)
+	bm := testBodyManager(t, s)
+	ctx := context.Background()
+
+	created, err := bm.Create(ctx, "already-stopped", adapter.BodySpec{Image: "alpine"})
+	if err != nil {
+		t.Fatalf("create body: %v", err)
+	}
+	if err := bm.Stop(ctx, created.ID, adapter.StopOpts{}); err != nil {
+		t.Fatalf("stop body: %v", err)
+	}
+
+	h := newHarness(t, s)
+	h.srv.SetBodyManager(bm)
+	defer h.close()
+
+	h.send(t, Request{
+		JSONRPC: "2.0",
+		ID:      33,
+		Method:  "tools/call",
+		Params:  rawMessage(t, map[string]interface{}{"name": "stop_body", "arguments": map[string]interface{}{"body_id": created.ID}}),
+	})
+
+	resp := h.readResponse(t)
+	rpcErr := resp["error"].(map[string]interface{})
+	msg := rpcErr["message"].(string)
+	if !strings.Contains(msg, "invalid transition") {
+		t.Fatalf("error message = %q, want 'invalid transition'", msg)
+	}
+}
+
+func TestStartBodyNoBodyManager(t *testing.T) {
+	s := tempStore(t)
+	h := newHarness(t, s)
+	defer h.close()
+
+	h.send(t, Request{
+		JSONRPC: "2.0",
+		ID:      34,
+		Method:  "tools/call",
+		Params:  rawMessage(t, map[string]interface{}{"name": "start_body", "arguments": map[string]interface{}{"body_id": "b1"}}),
+	})
+
+	resp := h.readResponse(t)
+	rpcErr := resp["error"].(map[string]interface{})
+	msg := rpcErr["message"].(string)
+	if !strings.Contains(msg, "body manager not available") {
+		t.Fatalf("error message = %q, want 'body manager not available'", msg)
+	}
+}
+
+func TestStopBodyNoBodyManager(t *testing.T) {
+	s := tempStore(t)
+	h := newHarness(t, s)
+	defer h.close()
+
+	h.send(t, Request{
+		JSONRPC: "2.0",
+		ID:      35,
+		Method:  "tools/call",
+		Params:  rawMessage(t, map[string]interface{}{"name": "stop_body", "arguments": map[string]interface{}{"body_id": "b1"}}),
+	})
+
+	resp := h.readResponse(t)
+	rpcErr := resp["error"].(map[string]interface{})
+	msg := rpcErr["message"].(string)
+	if !strings.Contains(msg, "body manager not available") {
+		t.Fatalf("error message = %q, want 'body manager not available'", msg)
+	}
+}
+
+func TestStartBodyMissingID(t *testing.T) {
+	s := tempStore(t)
+	bm := testBodyManager(t, s)
+	h := newHarness(t, s)
+	h.srv.SetBodyManager(bm)
+	defer h.close()
+
+	h.send(t, Request{
+		JSONRPC: "2.0",
+		ID:      36,
+		Method:  "tools/call",
+		Params:  rawMessage(t, map[string]interface{}{"name": "start_body", "arguments": map[string]interface{}{}}),
+	})
+
+	resp := h.readResponse(t)
+	rpcErr := resp["error"].(map[string]interface{})
+	msg := rpcErr["message"].(string)
+	if !strings.Contains(msg, "body_id") {
+		t.Fatalf("error message = %q, want mention of body_id", msg)
+	}
+}
+
+func TestStopBodyMissingID(t *testing.T) {
+	s := tempStore(t)
+	bm := testBodyManager(t, s)
+	h := newHarness(t, s)
+	h.srv.SetBodyManager(bm)
+	defer h.close()
+
+	h.send(t, Request{
+		JSONRPC: "2.0",
+		ID:      37,
+		Method:  "tools/call",
+		Params:  rawMessage(t, map[string]interface{}{"name": "stop_body", "arguments": map[string]interface{}{}}),
+	})
+
+	resp := h.readResponse(t)
+	rpcErr := resp["error"].(map[string]interface{})
+	msg := rpcErr["message"].(string)
+	if !strings.Contains(msg, "body_id") {
+		t.Fatalf("error message = %q, want mention of body_id", msg)
+	}
+}
+
 func TestMigrateBodyMissingParams(t *testing.T) {
 	s := tempStore(t)
 	bm := testBodyManager(t, s)
@@ -692,6 +1120,672 @@ func TestDeleteBodyMissingID(t *testing.T) {
 	msg := rpcErr["message"].(string)
 	if !strings.Contains(msg, "id") {
 		t.Fatalf("error message = %q, want mention of id", msg)
+	}
+}
+
+func TestCreateSnapshot(t *testing.T) {
+	s := tempStore(t)
+	bm := testBodyManager(t, s)
+	ctx := context.Background()
+
+	created, err := bm.Create(ctx, "snap-test", adapter.BodySpec{Image: "alpine"})
+	if err != nil {
+		t.Fatalf("create body: %v", err)
+	}
+
+	h := newHarness(t, s)
+	h.srv.SetBodyManager(bm)
+	defer h.close()
+
+	h.send(t, Request{
+		JSONRPC: "2.0",
+		ID:      30,
+		Method:  "tools/call",
+		Params:  rawMessage(t, map[string]interface{}{"name": "create_snapshot", "arguments": map[string]interface{}{"body_id": created.ID, "label": "test-snap"}}),
+	})
+
+	resp := h.readResponse(t)
+	result := resp["result"].(map[string]interface{})
+	content := result["content"].([]interface{})
+	text := content[0].(map[string]interface{})["text"].(string)
+
+	var snapResp map[string]interface{}
+	if err := json.Unmarshal([]byte(text), &snapResp); err != nil {
+		t.Fatalf("unmarshal snapshot response: %v", err)
+	}
+	if snapResp["body_id"] != created.ID {
+		t.Fatalf("body_id = %v, want %s", snapResp["body_id"], created.ID)
+	}
+	if snapResp["sha256"] == "" {
+		t.Fatal("expected non-empty sha256")
+	}
+	if snapResp["size_bytes"].(float64) == 0 {
+		t.Fatal("expected non-zero size_bytes")
+	}
+}
+
+func TestCreateSnapshotBodyNotFound(t *testing.T) {
+	s := tempStore(t)
+	bm := testBodyManager(t, s)
+
+	h := newHarness(t, s)
+	h.srv.SetBodyManager(bm)
+	defer h.close()
+
+	h.send(t, Request{
+		JSONRPC: "2.0",
+		ID:      31,
+		Method:  "tools/call",
+		Params:  rawMessage(t, map[string]interface{}{"name": "create_snapshot", "arguments": map[string]interface{}{"body_id": "nonexistent"}}),
+	})
+
+	resp := h.readResponse(t)
+	rpcErr := resp["error"].(map[string]interface{})
+	msg := rpcErr["message"].(string)
+	if !strings.Contains(msg, "not found") {
+		t.Fatalf("error message = %q, want 'not found'", msg)
+	}
+}
+
+func TestCreateSnapshotBodyNotRunning(t *testing.T) {
+	s := tempStore(t)
+	bm := testBodyManager(t, s)
+	ctx := context.Background()
+
+	created, err := bm.Create(ctx, "stopped-body", adapter.BodySpec{Image: "alpine"})
+	if err != nil {
+		t.Fatalf("create body: %v", err)
+	}
+	_ = bm.Stop(ctx, created.ID, adapter.StopOpts{})
+
+	h := newHarness(t, s)
+	h.srv.SetBodyManager(bm)
+	defer h.close()
+
+	h.send(t, Request{
+		JSONRPC: "2.0",
+		ID:      32,
+		Method:  "tools/call",
+		Params:  rawMessage(t, map[string]interface{}{"name": "create_snapshot", "arguments": map[string]interface{}{"body_id": created.ID}}),
+	})
+
+	resp := h.readResponse(t)
+	rpcErr := resp["error"].(map[string]interface{})
+	msg := rpcErr["message"].(string)
+	if !strings.Contains(msg, "not running") {
+		t.Fatalf("error message = %q, want 'not running'", msg)
+	}
+}
+
+func TestCreateSnapshotNoBodyManager(t *testing.T) {
+	s := tempStore(t)
+	h := newHarness(t, s)
+	defer h.close()
+
+	h.send(t, Request{
+		JSONRPC: "2.0",
+		ID:      33,
+		Method:  "tools/call",
+		Params:  rawMessage(t, map[string]interface{}{"name": "create_snapshot", "arguments": map[string]interface{}{"body_id": "b1"}}),
+	})
+
+	resp := h.readResponse(t)
+	rpcErr := resp["error"].(map[string]interface{})
+	msg := rpcErr["message"].(string)
+	if !strings.Contains(msg, "body manager not available") {
+		t.Fatalf("error message = %q, want 'body manager not available'", msg)
+	}
+}
+
+func TestListSnapshots(t *testing.T) {
+	s := tempStore(t)
+	ctx := context.Background()
+	s.CreateBody(ctx, "b1", "body1", adapter.StateRunning, `{}`, "docker", "inst-1")
+	s.CreateSnapshot(ctx, "snap1", "b1", `{"checksum":"abc"}`, "/tmp/snap1.tar.zst", 1024)
+	s.CreateSnapshot(ctx, "snap2", "b1", `{"checksum":"def"}`, "/tmp/snap2.tar.zst", 2048)
+
+	h := newHarness(t, s)
+	defer h.close()
+
+	h.send(t, Request{
+		JSONRPC: "2.0",
+		ID:      34,
+		Method:  "tools/call",
+		Params:  rawMessage(t, map[string]interface{}{"name": "list_snapshots", "arguments": map[string]interface{}{"body_id": "b1"}}),
+	})
+
+	resp := h.readResponse(t)
+	result := resp["result"].(map[string]interface{})
+	content := result["content"].([]interface{})
+	text := content[0].(map[string]interface{})["text"].(string)
+
+	var snaps []interface{}
+	if err := json.Unmarshal([]byte(text), &snaps); err != nil {
+		t.Fatalf("unmarshal snapshots: %v", err)
+	}
+	if len(snaps) != 2 {
+		t.Fatalf("len(snaps) = %d, want 2", len(snaps))
+	}
+}
+
+func TestListSnapshotsAllBodies(t *testing.T) {
+	s := tempStore(t)
+	ctx := context.Background()
+	s.CreateBody(ctx, "b1", "body1", adapter.StateRunning, `{}`, "docker", "inst-1")
+	s.CreateBody(ctx, "b2", "body2", adapter.StateRunning, `{}`, "docker", "inst-2")
+	s.CreateSnapshot(ctx, "snap1", "b1", `{"checksum":"abc"}`, "/tmp/snap1.tar.zst", 1024)
+	s.CreateSnapshot(ctx, "snap2", "b2", `{"checksum":"def"}`, "/tmp/snap2.tar.zst", 2048)
+
+	h := newHarness(t, s)
+	defer h.close()
+
+	h.send(t, Request{
+		JSONRPC: "2.0",
+		ID:      35,
+		Method:  "tools/call",
+		Params:  rawMessage(t, map[string]interface{}{"name": "list_snapshots", "arguments": map[string]interface{}{}}),
+	})
+
+	resp := h.readResponse(t)
+	result := resp["result"].(map[string]interface{})
+	content := result["content"].([]interface{})
+	text := content[0].(map[string]interface{})["text"].(string)
+
+	var snaps []interface{}
+	if err := json.Unmarshal([]byte(text), &snaps); err != nil {
+		t.Fatalf("unmarshal snapshots: %v", err)
+	}
+	if len(snaps) != 2 {
+		t.Fatalf("len(snaps) = %d, want 2", len(snaps))
+	}
+}
+
+func TestRestoreBody(t *testing.T) {
+	s := tempStore(t)
+	bm := testBodyManager(t, s)
+	ctx := context.Background()
+
+	created, err := bm.Create(ctx, "restore-test", adapter.BodySpec{Image: "alpine"})
+	if err != nil {
+		t.Fatalf("create body: %v", err)
+	}
+
+	snapID := "restore-snap-1"
+	storagePath := "/tmp/mesh-test-snap.tar.zst"
+
+	tmpDir, err := os.MkdirTemp("", "mesh-restore-test-*")
+	if err != nil {
+		t.Fatalf("create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+	os.WriteFile(filepath.Join(tmpDir, "test.txt"), []byte("hello world"), 0o644)
+
+	outFile, err := os.Create(storagePath)
+	if err != nil {
+		t.Fatalf("create test snapshot file: %v", err)
+	}
+
+	hasher := sha256.New()
+	mw := io.MultiWriter(outFile, hasher)
+	zw, err := zstd.NewWriter(mw)
+	if err != nil {
+		t.Fatalf("create zstd writer: %v", err)
+	}
+
+	tw := tar.NewWriter(zw)
+	info, _ := os.Stat(filepath.Join(tmpDir, "test.txt"))
+	header, _ := tar.FileInfoHeader(info, "")
+	header.Name = "test.txt"
+	tw.WriteHeader(header)
+	f, _ := os.Open(filepath.Join(tmpDir, "test.txt"))
+	io.Copy(tw, f)
+	f.Close()
+	tw.Close()
+	zw.Close()
+	outFile.Close()
+
+	digest := hex.EncodeToString(hasher.Sum(nil))
+	os.WriteFile(storagePath+".sha256", []byte(digest+"\n"), 0o644)
+
+	stat, _ := os.Stat(storagePath)
+	manifestJSON := fmt.Sprintf(`{"checksum":"%s","size":%d}`, digest, stat.Size())
+	s.CreateSnapshot(ctx, snapID, created.ID, manifestJSON, storagePath, stat.Size())
+
+	h := newHarness(t, s)
+	h.srv.SetBodyManager(bm)
+	defer h.close()
+
+	h.send(t, Request{
+		JSONRPC: "2.0",
+		ID:      36,
+		Method:  "tools/call",
+		Params:  rawMessage(t, map[string]interface{}{"name": "restore_body", "arguments": map[string]interface{}{"snapshot_id": snapID}}),
+	})
+
+	resp := h.readResponse(t)
+	result := resp["result"].(map[string]interface{})
+	contentResult := result["content"].([]interface{})
+	text := contentResult[0].(map[string]interface{})["text"].(string)
+
+	var restoreResp map[string]interface{}
+	if err := json.Unmarshal([]byte(text), &restoreResp); err != nil {
+		t.Fatalf("unmarshal restore response: %v", err)
+	}
+	if restoreResp["restored"] != true {
+		t.Fatalf("restored = %v, want true", restoreResp["restored"])
+	}
+	if restoreResp["snapshot_id"] != snapID {
+		t.Fatalf("snapshot_id = %v, want %s", restoreResp["snapshot_id"], snapID)
+	}
+	if restoreResp["body_id"] != created.ID {
+		t.Fatalf("body_id = %v, want %s", restoreResp["body_id"], created.ID)
+	}
+
+	os.Remove(storagePath)
+	os.Remove(storagePath + ".sha256")
+}
+
+func TestRestoreBodyNoBodyManager(t *testing.T) {
+	s := tempStore(t)
+	ctx := context.Background()
+	s.CreateBody(ctx, "b1", "body1", adapter.StateRunning, `{}`, "docker", "inst-1")
+	s.CreateSnapshot(ctx, "snap1", "b1", `{"checksum":"abc"}`, "/tmp/snap1.tar.zst", 1024)
+
+	h := newHarness(t, s)
+	defer h.close()
+
+	h.send(t, Request{
+		JSONRPC: "2.0",
+		ID:      37,
+		Method:  "tools/call",
+		Params:  rawMessage(t, map[string]interface{}{"name": "restore_body", "arguments": map[string]interface{}{"snapshot_id": "snap1"}}),
+	})
+
+	resp := h.readResponse(t)
+	rpcErr := resp["error"].(map[string]interface{})
+	msg := rpcErr["message"].(string)
+	if !strings.Contains(msg, "body manager not available") {
+		t.Fatalf("error message = %q, want 'body manager not available'", msg)
+	}
+}
+
+func TestRestoreBodySnapshotNotFound(t *testing.T) {
+	s := tempStore(t)
+	bm := testBodyManager(t, s)
+
+	h := newHarness(t, s)
+	h.srv.SetBodyManager(bm)
+	defer h.close()
+
+	h.send(t, Request{
+		JSONRPC: "2.0",
+		ID:      38,
+		Method:  "tools/call",
+		Params:  rawMessage(t, map[string]interface{}{"name": "restore_body", "arguments": map[string]interface{}{"snapshot_id": "nonexistent"}}),
+	})
+
+	resp := h.readResponse(t)
+	rpcErr := resp["error"].(map[string]interface{})
+	msg := rpcErr["message"].(string)
+	if !strings.Contains(msg, "not found") {
+		t.Fatalf("error message = %q, want 'not found'", msg)
+	}
+}
+
+func TestGetBodyLogsRunningBody(t *testing.T) {
+	s := tempStore(t)
+	bm := testBodyManager(t, s)
+	ctx := context.Background()
+
+	created, err := bm.Create(ctx, "logs-test", adapter.BodySpec{Image: "alpine"})
+	if err != nil {
+		t.Fatalf("create body: %v", err)
+	}
+
+	h := newHarness(t, s)
+	h.srv.SetBodyManager(bm)
+	defer h.close()
+
+	h.send(t, Request{
+		JSONRPC: "2.0",
+		ID:      50,
+		Method:  "tools/call",
+		Params: rawMessage(t, map[string]interface{}{
+			"name":      "get_body_logs",
+			"arguments": map[string]interface{}{"body_id": created.ID, "tail": 50},
+		}),
+	})
+
+	resp := h.readResponse(t)
+	result := resp["result"].(map[string]interface{})
+	content := result["content"].([]interface{})
+	text := content[0].(map[string]interface{})["text"].(string)
+
+	var logsResp map[string]interface{}
+	if err := json.Unmarshal([]byte(text), &logsResp); err != nil {
+		t.Fatalf("unmarshal logs response: %v", err)
+	}
+	if logsResp["body_id"] != created.ID {
+		t.Fatalf("body_id = %v, want %s", logsResp["body_id"], created.ID)
+	}
+	if logsResp["tail"].(float64) != 50 {
+		t.Fatalf("tail = %v, want 50", logsResp["tail"])
+	}
+}
+
+func TestGetBodyLogsStoppedBody(t *testing.T) {
+	s := tempStore(t)
+	bm := testBodyManager(t, s)
+	ctx := context.Background()
+
+	created, err := bm.Create(ctx, "logs-stopped", adapter.BodySpec{Image: "alpine"})
+	if err != nil {
+		t.Fatalf("create body: %v", err)
+	}
+	if err := bm.Stop(ctx, created.ID, adapter.StopOpts{}); err != nil {
+		t.Fatalf("stop body: %v", err)
+	}
+
+	h := newHarness(t, s)
+	h.srv.SetBodyManager(bm)
+	defer h.close()
+
+	h.send(t, Request{
+		JSONRPC: "2.0",
+		ID:      51,
+		Method:  "tools/call",
+		Params: rawMessage(t, map[string]interface{}{
+			"name":      "get_body_logs",
+			"arguments": map[string]interface{}{"body_id": created.ID},
+		}),
+	})
+
+	resp := h.readResponse(t)
+	rpcErr := resp["error"].(map[string]interface{})
+	msg := rpcErr["message"].(string)
+	if !strings.Contains(msg, "not running") {
+		t.Fatalf("error message = %q, want 'not running'", msg)
+	}
+}
+
+func TestGetBodyLogsBodyNotFound(t *testing.T) {
+	s := tempStore(t)
+	bm := testBodyManager(t, s)
+
+	h := newHarness(t, s)
+	h.srv.SetBodyManager(bm)
+	defer h.close()
+
+	h.send(t, Request{
+		JSONRPC: "2.0",
+		ID:      52,
+		Method:  "tools/call",
+		Params: rawMessage(t, map[string]interface{}{
+			"name":      "get_body_logs",
+			"arguments": map[string]interface{}{"body_id": "nonexistent"},
+		}),
+	})
+
+	resp := h.readResponse(t)
+	rpcErr := resp["error"].(map[string]interface{})
+	msg := rpcErr["message"].(string)
+	if !strings.Contains(msg, "not found") {
+		t.Fatalf("error message = %q, want 'not found'", msg)
+	}
+}
+
+func TestGetBodyLogsNoBodyManager(t *testing.T) {
+	s := tempStore(t)
+	h := newHarness(t, s)
+	defer h.close()
+
+	h.send(t, Request{
+		JSONRPC: "2.0",
+		ID:      53,
+		Method:  "tools/call",
+		Params: rawMessage(t, map[string]interface{}{
+			"name":      "get_body_logs",
+			"arguments": map[string]interface{}{"body_id": "b1"},
+		}),
+	})
+
+	resp := h.readResponse(t)
+	rpcErr := resp["error"].(map[string]interface{})
+	msg := rpcErr["message"].(string)
+	if !strings.Contains(msg, "body manager not available") {
+		t.Fatalf("error message = %q, want 'body manager not available'", msg)
+	}
+}
+
+func TestGetBodyStatusRunningBody(t *testing.T) {
+	s := tempStore(t)
+	bm := testBodyManager(t, s)
+	ctx := context.Background()
+
+	created, err := bm.Create(ctx, "status-test", adapter.BodySpec{Image: "alpine"})
+	if err != nil {
+		t.Fatalf("create body: %v", err)
+	}
+
+	h := newHarness(t, s)
+	h.srv.SetBodyManager(bm)
+	defer h.close()
+
+	h.send(t, Request{
+		JSONRPC: "2.0",
+		ID:      54,
+		Method:  "tools/call",
+		Params: rawMessage(t, map[string]interface{}{
+			"name":      "get_body_status",
+			"arguments": map[string]interface{}{"body_id": created.ID},
+		}),
+	})
+
+	resp := h.readResponse(t)
+	result := resp["result"].(map[string]interface{})
+	content := result["content"].([]interface{})
+	text := content[0].(map[string]interface{})["text"].(string)
+
+	var statusResp map[string]interface{}
+	if err := json.Unmarshal([]byte(text), &statusResp); err != nil {
+		t.Fatalf("unmarshal status response: %v", err)
+	}
+	if statusResp["id"] != created.ID {
+		t.Fatalf("id = %v, want %s", statusResp["id"], created.ID)
+	}
+	if statusResp["name"] != "status-test" {
+		t.Fatalf("name = %v, want status-test", statusResp["name"])
+	}
+	if statusResp["state"] != "Running" {
+		t.Fatalf("state = %v, want Running", statusResp["state"])
+	}
+}
+
+func TestGetBodyStatusBodyNotFound(t *testing.T) {
+	s := tempStore(t)
+	bm := testBodyManager(t, s)
+
+	h := newHarness(t, s)
+	h.srv.SetBodyManager(bm)
+	defer h.close()
+
+	h.send(t, Request{
+		JSONRPC: "2.0",
+		ID:      55,
+		Method:  "tools/call",
+		Params: rawMessage(t, map[string]interface{}{
+			"name":      "get_body_status",
+			"arguments": map[string]interface{}{"body_id": "nonexistent"},
+		}),
+	})
+
+	resp := h.readResponse(t)
+	rpcErr := resp["error"].(map[string]interface{})
+	msg := rpcErr["message"].(string)
+	if !strings.Contains(msg, "not found") {
+		t.Fatalf("error message = %q, want 'not found'", msg)
+	}
+}
+
+func TestGetBodyStatusNoBodyManager(t *testing.T) {
+	s := tempStore(t)
+	h := newHarness(t, s)
+	defer h.close()
+
+	h.send(t, Request{
+		JSONRPC: "2.0",
+		ID:      56,
+		Method:  "tools/call",
+		Params: rawMessage(t, map[string]interface{}{
+			"name":      "get_body_status",
+			"arguments": map[string]interface{}{"body_id": "b1"},
+		}),
+	})
+
+	resp := h.readResponse(t)
+	rpcErr := resp["error"].(map[string]interface{})
+	msg := rpcErr["message"].(string)
+	if !strings.Contains(msg, "body manager not available") {
+		t.Fatalf("error message = %q, want 'body manager not available'", msg)
+	}
+}
+
+func TestListPlugins(t *testing.T) {
+	s := tempStore(t)
+	pm := plugin.NewPluginManager(t.TempDir(), []string{})
+
+	h := newHarness(t, s)
+	h.srv.SetPluginManager(pm)
+	defer h.close()
+
+	h.send(t, Request{
+		JSONRPC: "2.0",
+		ID:      60,
+		Method:  "tools/call",
+		Params:  rawMessage(t, map[string]interface{}{"name": "list_plugins", "arguments": map[string]interface{}{}}),
+	})
+
+	resp := h.readResponse(t)
+	result := resp["result"].(map[string]interface{})
+	content := result["content"].([]interface{})
+	text := content[0].(map[string]interface{})["text"].(string)
+
+	var plugins []interface{}
+	if err := json.Unmarshal([]byte(text), &plugins); err != nil {
+		t.Fatalf("unmarshal plugins: %v", err)
+	}
+	if len(plugins) != 0 {
+		t.Fatalf("len(plugins) = %d, want 0", len(plugins))
+	}
+}
+
+func TestListPluginsNoManager(t *testing.T) {
+	s := tempStore(t)
+	h := newHarness(t, s)
+	defer h.close()
+
+	h.send(t, Request{
+		JSONRPC: "2.0",
+		ID:      61,
+		Method:  "tools/call",
+		Params:  rawMessage(t, map[string]interface{}{"name": "list_plugins", "arguments": map[string]interface{}{}}),
+	})
+
+	resp := h.readResponse(t)
+	rpcErr := resp["error"].(map[string]interface{})
+	msg := rpcErr["message"].(string)
+	if !strings.Contains(msg, "plugin manager not available") {
+		t.Fatalf("error message = %q, want 'plugin manager not available'", msg)
+	}
+}
+
+func TestPluginHealth(t *testing.T) {
+	s := tempStore(t)
+	pluginDir := t.TempDir()
+	pm := plugin.NewPluginManager(pluginDir, []string{"test-plugin"})
+
+	h := newHarness(t, s)
+	h.srv.SetPluginManager(pm)
+	defer h.close()
+
+	h.send(t, Request{
+		JSONRPC: "2.0",
+		ID:      62,
+		Method:  "tools/call",
+		Params:  rawMessage(t, map[string]interface{}{"name": "plugin_health", "arguments": map[string]interface{}{"plugin_name": "nonexistent"}}),
+	})
+
+	resp := h.readResponse(t)
+	rpcErr := resp["error"].(map[string]interface{})
+	msg := rpcErr["message"].(string)
+	if !strings.Contains(msg, "not found") {
+		t.Fatalf("error message = %q, want 'not found'", msg)
+	}
+}
+
+func TestPluginHealthNoManager(t *testing.T) {
+	s := tempStore(t)
+	h := newHarness(t, s)
+	defer h.close()
+
+	h.send(t, Request{
+		JSONRPC: "2.0",
+		ID:      63,
+		Method:  "tools/call",
+		Params:  rawMessage(t, map[string]interface{}{"name": "plugin_health", "arguments": map[string]interface{}{"plugin_name": "test"}}),
+	})
+
+	resp := h.readResponse(t)
+	rpcErr := resp["error"].(map[string]interface{})
+	msg := rpcErr["message"].(string)
+	if !strings.Contains(msg, "plugin manager not available") {
+		t.Fatalf("error message = %q, want 'plugin manager not available'", msg)
+	}
+}
+
+func TestPluginHealthMissingName(t *testing.T) {
+	s := tempStore(t)
+	pm := plugin.NewPluginManager(t.TempDir(), []string{})
+
+	h := newHarness(t, s)
+	h.srv.SetPluginManager(pm)
+	defer h.close()
+
+	h.send(t, Request{
+		JSONRPC: "2.0",
+		ID:      64,
+		Method:  "tools/call",
+		Params:  rawMessage(t, map[string]interface{}{"name": "plugin_health", "arguments": map[string]interface{}{}}),
+	})
+
+	resp := h.readResponse(t)
+	rpcErr := resp["error"].(map[string]interface{})
+	msg := rpcErr["message"].(string)
+	if !strings.Contains(msg, "plugin_name") {
+		t.Fatalf("error message = %q, want mention of plugin_name", msg)
+	}
+}
+
+func TestToolsListIncludesPluginTools(t *testing.T) {
+	s := tempStore(t)
+	h := newHarness(t, s)
+	defer h.close()
+
+	h.send(t, Request{JSONRPC: "2.0", ID: 65, Method: "tools/list"})
+
+	resp := h.readResponse(t)
+	result := resp["result"].(map[string]interface{})
+	tools := result["tools"].([]interface{})
+
+	names := map[string]bool{}
+	for _, tool := range tools {
+		name := tool.(map[string]interface{})["name"].(string)
+		names[name] = true
+	}
+	for _, want := range []string{"list_plugins", "plugin_health"} {
+		if !names[want] {
+			t.Errorf("missing tool %q in tools/list", want)
+		}
 	}
 }
 
