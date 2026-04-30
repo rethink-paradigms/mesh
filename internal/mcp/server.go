@@ -11,6 +11,7 @@ import (
 	"sync"
 
 	"github.com/rethink-paradigms/mesh/internal/body"
+	"github.com/rethink-paradigms/mesh/internal/plugin"
 	"github.com/rethink-paradigms/mesh/internal/store"
 )
 
@@ -58,8 +59,9 @@ type Server struct {
 	store   *store.Store
 	tools   map[string]ToolHandler
 	defs    map[string]ToolDefinition
-	bodyMgr *body.BodyManager
-	migrator *body.MigrationCoordinator
+	bodyMgr       *body.BodyManager
+	migrator     *body.MigrationCoordinator
+	pluginMgr    *plugin.PluginManager
 
 	reader io.Reader
 	writer io.Writer
@@ -73,6 +75,11 @@ func (s *Server) SetBodyManager(mgr *body.BodyManager) {
 // SetMigrator sets the migration coordinator for migration operations.
 func (s *Server) SetMigrator(m *body.MigrationCoordinator) {
 	s.migrator = m
+}
+
+// SetPluginManager sets the plugin manager for plugin operations.
+func (s *Server) SetPluginManager(m *plugin.PluginManager) {
+	s.pluginMgr = m
 }
 
 // New creates a new MCP server backed by the given store.
