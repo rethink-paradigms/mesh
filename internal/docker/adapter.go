@@ -280,6 +280,21 @@ func (a *Adapter) Capabilities() adapter.AdapterCapabilities {
 	}
 }
 
+// SubstrateName returns the substrate identifier for this adapter.
+func (a *Adapter) SubstrateName() string {
+	return "docker"
+}
+
+// IsHealthy checks if the Docker daemon is reachable.
+func (a *Adapter) IsHealthy(ctx context.Context) bool {
+	c, err := a.getClient(ctx)
+	if err != nil {
+		return false
+	}
+	_, err = c.Ping(ctx)
+	return err == nil
+}
+
 // mapDockerState converts Docker container status strings to adapter BodyState.
 func mapDockerState(status string) adapter.BodyState {
 	switch status {
