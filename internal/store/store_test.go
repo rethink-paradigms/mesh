@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"os"
 	"sync"
@@ -356,6 +357,183 @@ func TestForeignKeyEnforcement(t *testing.T) {
 	err := s.CreateSnapshot(ctx, "snap-fk", "nonexistent-body", "{}", "/tmp/x", 0)
 	if err == nil {
 		t.Fatal("CreateSnapshot with non-existent body_id should fail with foreign key error")
+	}
+}
+
+func TestListBodiesBySubstrate(t *testing.T) {
+	s := tempStore(t)
+	ctx := context.Background()
+
+	// Create bodies with different substrates
+	if err := s.CreateBody(ctx, "b1", "body-1", adapter.StateCreated, "", "docker", ""); err != nil {
+		t.Fatalf("CreateBody docker: %v", err)
+	}
+	if err := s.CreateBody(ctx, "b2", "body-2", adapter.StateCreated, "", "docker", ""); err != nil {
+		t.Fatalf("CreateBody docker 2: %v", err)
+	}
+	if err := s.CreateBody(ctx, "b3", "body-3", adapter.StateCreated, "", "nomad", ""); err != nil {
+		t.Fatalf("CreateBody nomad: %v", err)
+	}
+	if err := s.CreateBody(ctx, "b4", "body-4", adapter.StateCreated, "", "local", ""); err != nil {
+		t.Fatalf("CreateBody local: %v", err)
+	}
+
+	// List docker bodies
+	dockerBodies, err := s.ListBodiesBySubstrate(ctx, "docker")
+	if err != nil {
+		t.Fatalf("ListBodiesBySubstrate docker: %v", err)
+	}
+	if len(dockerBodies) != 2 {
+		t.Errorf("docker bodies count = %d, want 2", len(dockerBodies))
+	}
+	for _, b := range dockerBodies {
+		if b.Substrate != "docker" {
+			t.Errorf("body %s substrate = %q, want docker", b.ID, b.Substrate)
+		}
+	}
+
+	// List nomad bodies
+	nomadBodies, err := s.ListBodiesBySubstrate(ctx, "nomad")
+	if err != nil {
+		t.Fatalf("ListBodiesBySubstrate nomad: %v", err)
+	}
+	if len(nomadBodies) != 1 {
+		t.Errorf("nomad bodies count = %d, want 1", len(nomadBodies))
+	}
+	if nomadBodies[0].ID != "b3" {
+		t.Errorf("nomad body ID = %q, want b3", nomadBodies[0].ID)
+	}
+
+	// List nonexistent substrate
+	empty, err := s.ListBodiesBySubstrate(ctx, "nonexistent")
+	if err != nil {
+		t.Fatalf("ListBodiesBySubstrate nonexistent: %v", err)
+	}
+	if len(empty) != 0 {
+		t.Errorf("nonexistent bodies count = %d, want 0", len(empty))
+	}
+}
+
+func TestSchemaMigrationV1ToV2(t *testing.T) {
+	// Create a v1 database manually (without substrate column)
+	f, err := os.CreateTemp("", "mesh-store-v1-*.db")
+	if err != nil {
+		t.Fatalf("create temp file: %v", err)
+	}
+	path := f.Name()
+	f.Close()
+	defer os.Remove(path)
+
+	dsn := fmt.Sprintf("file:%s", path)
+	db, err := sql.Open("sqlite", dsn)
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+
+	// Create v1 schema (no substrate column in bodies)
+	v1Schema := `
+	CREATE TABLE bodies (
+		id TEXT PRIMARY KEY,
+		name TEXT UNIQUE NOT NULL,
+		state TEXT NOT NULL,
+		spec_json TEXT,
+		instance_id TEXT,
+		created_at TEXT NOT NULL,
+		updated_at TEXT NOT NULL
+	);
+	CREATE TABLE snapshots (
+		id TEXT PRIMARY KEY,
+		body_id TEXT NOT NULL REFERENCES bodies(id),
+		manifest_json TEXT,
+		storage_path TEXT,
+		size_bytes INTEGER,
+		created_at TEXT NOT NULL
+	);
+	CREATE TABLE migrations (
+		id TEXT PRIMARY KEY,
+		body_id TEXT NOT NULL REFERENCES bodies(id),
+		target_substrate TEXT NOT NULL,
+		current_step INTEGER DEFAULT 0,
+		snapshot_id TEXT,
+		started_at TEXT NOT NULL,
+		error TEXT
+	);
+	CREATE TABLE config (
+		key TEXT PRIMARY KEY,
+		value TEXT NOT NULL
+	);
+	`
+	if _, err := db.Exec(v1Schema); err != nil {
+		db.Close()
+		t.Fatalf("exec v1 schema: %v", err)
+	}
+
+	// Insert a v1 body (no substrate)
+	if _, err := db.Exec(
+		`INSERT INTO bodies (id, name, state, spec_json, instance_id, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		"v1-body", "v1-body-name", string(adapter.StateCreated), "{}", "inst-1", "2024-01-01T00:00:00Z", "2024-01-01T00:00:00Z",
+	); err != nil {
+		db.Close()
+		t.Fatalf("insert v1 body: %v", err)
+	}
+
+	// Set schema_version to 1
+	if _, err := db.Exec("INSERT INTO config (key, value) VALUES ('schema_version', '1')"); err != nil {
+		db.Close()
+		t.Fatalf("set schema_version: %v", err)
+	}
+	db.Close()
+
+	// Now open with Store — should migrate v1→v2
+	s, err := Open(path)
+	if err != nil {
+		t.Fatalf("Open v1 db: %v", err)
+	}
+	defer s.Close()
+
+	ctx := context.Background()
+
+	// Verify schema version is now 2
+	version, err := s.GetConfig(ctx, "schema_version")
+	if err != nil {
+		t.Fatalf("GetConfig schema_version: %v", err)
+	}
+	if version != "2" {
+		t.Errorf("schema_version = %q, want 2", version)
+	}
+
+	// Verify the old body now has substrate = "docker" (default)
+	b, err := s.GetBody(ctx, "v1-body")
+	if err != nil {
+		t.Fatalf("GetBody v1-body: %v", err)
+	}
+	if b.Substrate != "docker" {
+		t.Errorf("v1 body substrate = %q, want docker", b.Substrate)
+	}
+	if b.Name != "v1-body-name" {
+		t.Errorf("v1 body name = %q, want v1-body-name", b.Name)
+	}
+
+	// Verify new bodies can be created with substrate
+	if err := s.CreateBody(ctx, "new-body", "new-body-name", adapter.StateRunning, "", "nomad", "inst-2"); err != nil {
+		t.Fatalf("CreateBody after migration: %v", err)
+	}
+	newBody, err := s.GetBody(ctx, "new-body")
+	if err != nil {
+		t.Fatalf("GetBody new-body: %v", err)
+	}
+	if newBody.Substrate != "nomad" {
+		t.Errorf("new body substrate = %q, want nomad", newBody.Substrate)
+	}
+
+	// Verify ListBodiesBySubstrate works on migrated db
+	dockerBodies, err := s.ListBodiesBySubstrate(ctx, "docker")
+	if err != nil {
+		t.Fatalf("ListBodiesBySubstrate docker: %v", err)
+	}
+	if len(dockerBodies) != 1 {
+		t.Errorf("docker bodies count = %d, want 1", len(dockerBodies))
 	}
 }
 
