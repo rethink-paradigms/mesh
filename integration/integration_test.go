@@ -6,10 +6,15 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
+	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -19,6 +24,7 @@ import (
 	"github.com/rethink-paradigms/mesh/internal/daemon"
 	"github.com/rethink-paradigms/mesh/internal/manifest"
 	"github.com/rethink-paradigms/mesh/internal/mcp"
+	"github.com/rethink-paradigms/mesh/internal/plugin"
 	"github.com/rethink-paradigms/mesh/internal/store"
 	"gopkg.in/yaml.v3"
 )
@@ -45,6 +51,8 @@ func tempStore(t *testing.T) *store.Store {
 
 func writeTestConfig(t *testing.T, tmpDir string) *config.Config {
 	t.Helper()
+	pluginDir := filepath.Join(tmpDir, "plugins")
+	os.MkdirAll(pluginDir, 0755)
 	cfg := &config.Config{
 		Daemon: config.DaemonConfig{
 			SocketPath: filepath.Join(tmpDir, "mesh.sock"),
@@ -57,6 +65,14 @@ func writeTestConfig(t *testing.T, tmpDir string) *config.Config {
 		Docker: config.DockerConfig{
 			Host:       "unix:///var/run/docker.sock",
 			APIVersion: "1.48",
+		},
+		Plugin: config.PluginConfig{
+			Dir:     pluginDir,
+			Enabled: []string{},
+		},
+		Registry: config.RegistryConfig{
+			Type:   "s3",
+			Bucket: "test-bucket",
 		},
 	}
 	cfgData, err := yaml.Marshal(cfg)
@@ -201,7 +217,7 @@ func TestDaemonFullPipeline(t *testing.T) {
 	// Step 6: Start MCP server with pipe IO
 	h := newHarness(t, s)
 	h.srv.SetBodyManager(bm)
-	migrator := body.NewMigrationCoordinator(s, mockAdapter, bm)
+	migrator := body.NewMigrationCoordinator(s, mockAdapter, bm, nil)
 	h.srv.SetMigrator(migrator)
 
 	// Step 7: List bodies via MCP
@@ -293,6 +309,8 @@ func TestDaemonFullPipeline(t *testing.T) {
 
 func TestConfigLoadRoundTrip(t *testing.T) {
 	tmpDir := t.TempDir()
+	pluginDir := filepath.Join(tmpDir, "plugins")
+	os.MkdirAll(pluginDir, 0755)
 
 	cfg := &config.Config{
 		Daemon: config.DaemonConfig{
@@ -309,6 +327,14 @@ func TestConfigLoadRoundTrip(t *testing.T) {
 		},
 		Bodies: []config.BodyConfig{
 			{Name: "agent-1", Image: "alpine:latest", Cmd: []string{"sleep", "inf"}, MemoryMB: 512},
+		},
+		Plugin: config.PluginConfig{
+			Dir:     pluginDir,
+			Enabled: []string{},
+		},
+		Registry: config.RegistryConfig{
+			Type:   "s3",
+			Bucket: "test-bucket",
 		},
 	}
 
@@ -668,5 +694,709 @@ func TestExportFilesystemIntegration(t *testing.T) {
 	}
 	if !caps.ImportFilesystem {
 		t.Error("adapter should support ImportFilesystem")
+	}
+}
+
+func TestCrossMachineMigrationViaRegistry(t *testing.T) {
+	s := tempStore(t)
+	mockAdapter := &mockSubstrateAdapter{substrate: "docker"}
+	bm := body.NewBodyManager(s, mockAdapter)
+	ctx := context.Background()
+
+	b, err := bm.Create(ctx, "cross-mig-body", adapter.BodySpec{Image: "alpine:latest"})
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+
+	reg := &mockRegistry{}
+	mc := body.NewMigrationCoordinator(s, mockAdapter, bm, reg)
+	migID, err := mc.BeginMigration(ctx, b.ID, "fleet")
+	if err != nil {
+		t.Fatalf("BeginMigration: %v", err)
+	}
+
+	if len(reg.pushed) != 1 {
+		t.Errorf("pushed = %d, want 1", len(reg.pushed))
+	}
+	if len(reg.pulled) != 1 {
+		t.Errorf("pulled = %d, want 1", len(reg.pulled))
+	}
+
+	_, err = s.GetMigration(ctx, migID)
+	if err == nil {
+		t.Fatal("migration record should be deleted after completion")
+	}
+
+	bodyRec, err := s.GetBody(ctx, b.ID)
+	if err != nil {
+		t.Fatalf("get body after migration: %v", err)
+	}
+	if bodyRec.State != adapter.StateRunning {
+		t.Errorf("body state = %s, want Running", bodyRec.State)
+	}
+
+	if len(mockAdapter.importedTo) != 1 {
+		t.Errorf("importedTo = %d, want 1", len(mockAdapter.importedTo))
+	}
+}
+
+func TestSameMachineMigrationSkipsRegistry(t *testing.T) {
+	s := tempStore(t)
+	mockAdapter := &mockSubstrateAdapter{substrate: "docker"}
+	bm := body.NewBodyManager(s, mockAdapter)
+	ctx := context.Background()
+
+	b, err := bm.Create(ctx, "same-mig-body", adapter.BodySpec{Image: "alpine:latest"})
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+
+	reg := &mockRegistry{}
+	mc := body.NewMigrationCoordinator(s, mockAdapter, bm, reg)
+	_, err = mc.BeginMigration(ctx, b.ID, "docker")
+	if err != nil {
+		t.Fatalf("BeginMigration: %v", err)
+	}
+
+	if len(reg.pushed) != 0 {
+		t.Errorf("pushed = %d, want 0 (same-machine should skip registry)", len(reg.pushed))
+	}
+	if len(reg.pulled) != 0 {
+		t.Errorf("pulled = %d, want 0 (same-machine should skip registry)", len(reg.pulled))
+	}
+}
+
+func TestPluginManagement(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("plugin build skipped on windows")
+	}
+
+	tmpDir := t.TempDir()
+	pluginDir := filepath.Join(tmpDir, "plugins")
+	os.MkdirAll(pluginDir, 0755)
+
+	// Build reference plugin binary
+	pluginBin := filepath.Join(pluginDir, "reference-plugin")
+	buildCmd := exec.Command("go", "build", "-o", pluginBin, "./internal/plugin/reference/")
+	buildCmd.Dir = "/Users/samanvayayagsen/project/rethink-paradigms/mesh-impl"
+	if out, err := buildCmd.CombinedOutput(); err != nil {
+		t.Skipf("plugin build failed (skipping): %v\n%s", err, out)
+	}
+
+	// Verify binary is executable
+	info, err := os.Stat(pluginBin)
+	if err != nil {
+		t.Fatalf("stat plugin binary: %v", err)
+	}
+	if info.Mode()&0o111 == 0 {
+		t.Fatal("plugin binary is not executable")
+	}
+
+	// Create plugin manager with reference plugin enabled
+	pm := plugin.NewPluginManager(pluginDir, []string{"reference-plugin"})
+
+	// Scan should find the plugin
+	found, err := pm.Scan()
+	if err != nil {
+		t.Fatalf("scan: %v", err)
+	}
+	if len(found) != 1 {
+		t.Fatalf("found %d plugins, want 1", len(found))
+	}
+	if _, ok := found["reference-plugin"]; !ok {
+		t.Fatal("reference-plugin not found in scan")
+	}
+
+	// Load the plugin
+	if err := pm.Load("reference-plugin", pluginBin); err != nil {
+		t.Fatalf("load plugin: %v", err)
+	}
+
+	// Verify plugin state
+	rec := pm.Get("reference-plugin")
+	if rec == nil {
+		t.Fatal("plugin record not found after load")
+	}
+	if rec.Meta.Name != "reference" {
+		t.Errorf("plugin name = %q, want reference", rec.Meta.Name)
+	}
+	if rec.Meta.Version != "1.0.0" {
+		t.Errorf("plugin version = %q, want 1.0.0", rec.Meta.Version)
+	}
+	if rec.GetState() != plugin.StateHealthy {
+		t.Errorf("plugin state = %s, want Healthy", rec.GetState())
+	}
+
+	// Test list_plugins via MCP
+	s := tempStore(t)
+	h := newHarness(t, s)
+	h.srv.SetPluginManager(pm)
+
+	h.send(t, mcp.Request{
+		JSONRPC: "2.0",
+		ID:      1,
+		Method:  "tools/call",
+		Params:  rawJSON(t, map[string]interface{}{"name": "list_plugins", "arguments": map[string]interface{}{}}),
+	})
+	resp := h.readResponse(t)
+	if resp["error"] != nil {
+		t.Fatalf("list_plugins error: %v", resp["error"])
+	}
+	result := resp["result"].(map[string]interface{})
+	content := result["content"].([]interface{})
+	text := content[0].(map[string]interface{})["text"].(string)
+	var plugins []map[string]interface{}
+	if err := json.Unmarshal([]byte(text), &plugins); err != nil {
+		t.Fatalf("unmarshal plugins: %v", err)
+	}
+	if len(plugins) != 1 {
+		t.Fatalf("len(plugins) = %d, want 1", len(plugins))
+	}
+	if plugins[0]["name"] != "reference" {
+		t.Errorf("plugin name = %v, want reference", plugins[0]["name"])
+	}
+	if plugins[0]["healthy"] != true {
+		t.Errorf("plugin healthy = %v, want true", plugins[0]["healthy"])
+	}
+
+	// Test plugin_health via MCP
+	h.send(t, mcp.Request{
+		JSONRPC: "2.0",
+		ID:      2,
+		Method:  "tools/call",
+		Params: rawJSON(t, map[string]interface{}{
+			"name":      "plugin_health",
+			"arguments": map[string]interface{}{"plugin_name": "reference-plugin"},
+		}),
+	})
+	resp = h.readResponse(t)
+	if resp["error"] != nil {
+		t.Fatalf("plugin_health error: %v", resp["error"])
+	}
+	result = resp["result"].(map[string]interface{})
+	content = result["content"].([]interface{})
+	text = content[0].(map[string]interface{})["text"].(string)
+	var healthResp map[string]interface{}
+	if err := json.Unmarshal([]byte(text), &healthResp); err != nil {
+		t.Fatalf("unmarshal health: %v", err)
+	}
+	if healthResp["name"] != "reference" {
+		t.Errorf("health name = %v, want reference", healthResp["name"])
+	}
+	if healthResp["healthy"] != true {
+		t.Errorf("health healthy = %v, want true", healthResp["healthy"])
+	}
+
+	// Cleanup
+	h.cancel()
+	h.close()
+	select {
+	case <-h.done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("MCP server did not shut down")
+	}
+
+	// Stop plugin manager
+	if err := pm.Stop(); err != nil {
+		t.Errorf("stop plugin manager: %v", err)
+	}
+}
+
+func TestDaemonCrashRecovery(t *testing.T) {
+	tmpDir := t.TempDir()
+	ctx := context.Background()
+
+	// Pre-seed store with a body that has a fake instance ID
+	dbPath := filepath.Join(tmpDir, "state.db")
+	s, err := store.Open(dbPath)
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+
+	// Create a body in Running state with a fake instance ID
+	if err := s.CreateBody(ctx, "crash-body-1", "crash-test-body", adapter.StateRunning, `{"image":"alpine:latest"}`, "docker", "fake-instance-123"); err != nil {
+		t.Fatalf("create body: %v", err)
+	}
+	s.Close()
+
+	// Create config that points to the pre-seeded store
+	cfg := &config.Config{
+		Daemon: config.DaemonConfig{
+			PIDFile: filepath.Join(tmpDir, "mesh.pid"),
+		},
+		Store: config.StoreConfig{
+			Path: dbPath,
+		},
+		Plugin: config.PluginConfig{
+			Dir:     filepath.Join(tmpDir, "plugins"),
+			Enabled: []string{},
+		},
+	}
+
+	// Start daemon — reconcile should detect orphaned container and transition to Error
+	d, err := daemon.New(cfg)
+	if err != nil {
+		t.Fatalf("new daemon: %v", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	daemonDone := make(chan error, 1)
+	go func() {
+		daemonDone <- d.Start(ctx)
+	}()
+
+	// Wait for daemon to become ready
+	for i := 0; i < 50; i++ {
+		if d.Ready() {
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	if !d.Ready() {
+		cancel()
+		t.Fatal("daemon never became ready")
+	}
+
+	// Give reconcile time to run
+	time.Sleep(100 * time.Millisecond)
+
+	// Verify via health endpoint that reconcile ran
+	addr := d.HTTPAddr()
+	if addr == "" {
+		cancel()
+		t.Fatal("health server address not available")
+	}
+
+	resp, err := http.Get("http://" + addr + "/healthz")
+	if err != nil {
+		cancel()
+		t.Fatalf("health check: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		cancel()
+		t.Fatalf("health status = %d, want 200", resp.StatusCode)
+	}
+
+	var healthResp map[string]interface{}
+	if err := json.NewDecoder(resp.Body).Decode(&healthResp); err != nil {
+		cancel()
+		t.Fatalf("decode health: %v", err)
+	}
+
+	// reconcile_steps should be > 0 since we had an orphaned body
+	reconcileSteps, _ := healthResp["reconcile_steps"].(float64)
+	if reconcileSteps < 1 {
+		t.Errorf("reconcile_steps = %v, want >= 1", reconcileSteps)
+	}
+
+	// Stop daemon
+	cancel()
+	select {
+	case err := <-daemonDone:
+		if err != nil {
+			t.Fatalf("daemon start error: %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("daemon did not stop")
+	}
+
+	// Reopen store and verify body transitioned to Error
+	// Use fresh context since the daemon context was canceled
+	verifyCtx := context.Background()
+	s2, err := store.Open(dbPath)
+	if err != nil {
+		t.Fatalf("reopen store: %v", err)
+	}
+	defer s2.Close()
+
+	bodyRec, err := s2.GetBody(verifyCtx, "crash-body-1")
+	if err != nil {
+		t.Fatalf("get body after reconcile: %v", err)
+	}
+	if bodyRec.State != adapter.StateError {
+		t.Errorf("body state = %s, want Error after crash recovery", bodyRec.State)
+	}
+}
+
+func TestConcurrentBodyOperations(t *testing.T) {
+	s := tempStore(t)
+	mockAdapter := &mockSubstrateAdapter{}
+	bm := body.NewBodyManager(s, mockAdapter)
+	ctx := context.Background()
+
+	// Concurrent creates
+	var wg sync.WaitGroup
+	numBodies := 10
+	bodyIDs := make([]string, numBodies)
+	var mu sync.Mutex
+
+	for i := 0; i < numBodies; i++ {
+		wg.Add(1)
+		go func(idx int) {
+			defer wg.Done()
+			b, err := bm.Create(ctx, fmt.Sprintf("concurrent-body-%d", idx), adapter.BodySpec{Image: "alpine:latest"})
+			if err != nil {
+				t.Errorf("create body %d: %v", idx, err)
+				return
+			}
+			mu.Lock()
+			bodyIDs[idx] = b.ID
+			mu.Unlock()
+		}(i)
+	}
+	wg.Wait()
+
+	// Verify all bodies created
+	bodies, err := s.ListBodies(ctx)
+	if err != nil {
+		t.Fatalf("list bodies: %v", err)
+	}
+	if len(bodies) != numBodies {
+		t.Fatalf("bodies = %d, want %d", len(bodies), numBodies)
+	}
+
+	// Concurrent stops
+	for i := 0; i < numBodies; i++ {
+		wg.Add(1)
+		go func(idx int) {
+			defer wg.Done()
+			mu.Lock()
+			id := bodyIDs[idx]
+			mu.Unlock()
+			if id == "" {
+				t.Errorf("body %d has no ID", idx)
+				return
+			}
+			if err := bm.Stop(ctx, id, adapter.StopOpts{}); err != nil {
+				t.Errorf("stop body %d: %v", idx, err)
+			}
+		}(i)
+	}
+	wg.Wait()
+
+	// Verify all bodies stopped
+	for _, b := range bodies {
+		rec, err := s.GetBody(ctx, b.ID)
+		if err != nil {
+			t.Fatalf("get body %s: %v", b.ID, err)
+		}
+		if rec.State != adapter.StateStopped {
+			t.Errorf("body %s state = %s, want Stopped", b.ID, rec.State)
+		}
+	}
+
+	// Verify adapter calls are race-free
+	if len(mockAdapter.created) != numBodies {
+		t.Errorf("adapter creates = %d, want %d", len(mockAdapter.created), numBodies)
+	}
+	if len(mockAdapter.stopped) != numBodies {
+		t.Errorf("adapter stops = %d, want %d", len(mockAdapter.stopped), numBodies)
+	}
+}
+
+func TestBodyLifecycleFull(t *testing.T) {
+	s := tempStore(t)
+	mockAdapter := &mockSubstrateAdapter{}
+	bm := body.NewBodyManager(s, mockAdapter)
+	ctx := context.Background()
+
+	// Step 1: Create body
+	b, err := bm.Create(ctx, "lifecycle-full", adapter.BodySpec{Image: "alpine:latest"})
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	if b.State != adapter.StateRunning {
+		t.Fatalf("state after create = %s, want Running", b.State)
+	}
+
+	// Step 2: Exec command inside running body
+	result, err := bm.Exec(ctx, b.ID, []string{"echo", "hello"})
+	if err != nil {
+		t.Fatalf("exec: %v", err)
+	}
+	if result.ExitCode != 0 {
+		t.Errorf("exit code = %d, want 0", result.ExitCode)
+	}
+
+	// Step 3: Create snapshot via MCP
+	h := newHarness(t, s)
+	h.srv.SetBodyManager(bm)
+
+	h.send(t, mcp.Request{
+		JSONRPC: "2.0",
+		ID:      1,
+		Method:  "tools/call",
+		Params: rawJSON(t, map[string]interface{}{
+			"name":      "create_snapshot",
+			"arguments": map[string]interface{}{"body_id": b.ID, "label": "test-snap"},
+		}),
+	})
+	resp := h.readResponse(t)
+	if resp["error"] != nil {
+		t.Fatalf("create_snapshot error: %v", resp["error"])
+	}
+	resultMap := resp["result"].(map[string]interface{})
+	content := resultMap["content"].([]interface{})
+	text := content[0].(map[string]interface{})["text"].(string)
+	var snapResp map[string]interface{}
+	if err := json.Unmarshal([]byte(text), &snapResp); err != nil {
+		t.Fatalf("unmarshal snapshot response: %v", err)
+	}
+	snapID := snapResp["id"].(string)
+	if snapID == "" {
+		t.Fatal("snapshot ID is empty")
+	}
+
+	// Step 4: Verify snapshot exists in store
+	snap, err := s.GetSnapshot(ctx, snapID)
+	if err != nil {
+		t.Fatalf("get snapshot: %v", err)
+	}
+	if snap.BodyID != b.ID {
+		t.Errorf("snapshot body_id = %q, want %q", snap.BodyID, b.ID)
+	}
+
+	// Step 5: Restore body from snapshot via MCP
+	h.send(t, mcp.Request{
+		JSONRPC: "2.0",
+		ID:      2,
+		Method:  "tools/call",
+		Params: rawJSON(t, map[string]interface{}{
+			"name":      "restore_body",
+			"arguments": map[string]interface{}{"snapshot_id": snapID},
+		}),
+	})
+	resp = h.readResponse(t)
+	if resp["error"] != nil {
+		t.Fatalf("restore_body error: %v", resp["error"])
+	}
+
+	// Step 6: Verify body still exists after restore
+	bodyRec, err := s.GetBody(ctx, b.ID)
+	if err != nil {
+		t.Fatalf("get body after restore: %v", err)
+	}
+	if bodyRec.State != adapter.StateRunning {
+		t.Errorf("body state after restore = %s, want Running", bodyRec.State)
+	}
+
+	// Step 7: Stop body
+	if err := bm.Stop(ctx, b.ID, adapter.StopOpts{}); err != nil {
+		t.Fatalf("stop: %v", err)
+	}
+
+	// Step 8: Destroy body
+	if err := bm.Destroy(ctx, b.ID); err != nil {
+		t.Fatalf("destroy: %v", err)
+	}
+
+	// Verify body deleted
+	if _, err := s.GetBody(ctx, b.ID); err == nil {
+		t.Fatal("body should be deleted after destroy")
+	}
+
+	// Cleanup MCP
+	h.cancel()
+	h.close()
+	select {
+	case <-h.done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("MCP server did not shut down")
+	}
+}
+
+func TestMCPToolsEndToEnd(t *testing.T) {
+	s := tempStore(t)
+	mockAdapter := &mockSubstrateAdapter{}
+	bm := body.NewBodyManager(s, mockAdapter)
+	ctx := context.Background()
+
+	// Create a body to work with
+	b, err := bm.Create(ctx, "mcp-tools-body", adapter.BodySpec{Image: "alpine:latest"})
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+
+	// Create a stopped body for start/stop tests
+	stoppedBody, err := bm.Create(ctx, "mcp-stopped-body", adapter.BodySpec{Image: "alpine:latest"})
+	if err != nil {
+		t.Fatalf("create stopped body: %v", err)
+	}
+	if err := bm.Stop(ctx, stoppedBody.ID, adapter.StopOpts{}); err != nil {
+		t.Fatalf("stop body: %v", err)
+	}
+
+	h := newHarness(t, s)
+	h.srv.SetBodyManager(bm)
+
+	// Test 1: execute_command
+	h.send(t, mcp.Request{
+		JSONRPC: "2.0",
+		ID:      1,
+		Method:  "tools/call",
+		Params: rawJSON(t, map[string]interface{}{
+			"name":      "execute_command",
+			"arguments": map[string]interface{}{"body_id": b.ID, "command": []string{"echo", "hello"}},
+		}),
+	})
+	resp := h.readResponse(t)
+	if resp["error"] != nil {
+		t.Fatalf("execute_command error: %v", resp["error"])
+	}
+	result := resp["result"].(map[string]interface{})
+	content := result["content"].([]interface{})
+	text := content[0].(map[string]interface{})["text"].(string)
+	var execResp map[string]interface{}
+	if err := json.Unmarshal([]byte(text), &execResp); err != nil {
+		t.Fatalf("unmarshal exec response: %v", err)
+	}
+	if execResp["exit_code"] != float64(0) {
+		t.Errorf("exit_code = %v, want 0", execResp["exit_code"])
+	}
+
+	// Test 2: get_body_status
+	h.send(t, mcp.Request{
+		JSONRPC: "2.0",
+		ID:      2,
+		Method:  "tools/call",
+		Params: rawJSON(t, map[string]interface{}{
+			"name":      "get_body_status",
+			"arguments": map[string]interface{}{"body_id": b.ID},
+		}),
+	})
+	resp = h.readResponse(t)
+	if resp["error"] != nil {
+		t.Fatalf("get_body_status error: %v", resp["error"])
+	}
+	result = resp["result"].(map[string]interface{})
+	content = result["content"].([]interface{})
+	text = content[0].(map[string]interface{})["text"].(string)
+	var statusResp map[string]interface{}
+	if err := json.Unmarshal([]byte(text), &statusResp); err != nil {
+		t.Fatalf("unmarshal status response: %v", err)
+	}
+	if statusResp["state"] != "Running" {
+		t.Errorf("status state = %v, want Running", statusResp["state"])
+	}
+
+	// Test 3: get_body_logs
+	h.send(t, mcp.Request{
+		JSONRPC: "2.0",
+		ID:      3,
+		Method:  "tools/call",
+		Params: rawJSON(t, map[string]interface{}{
+			"name":      "get_body_logs",
+			"arguments": map[string]interface{}{"body_id": b.ID, "tail": 10},
+		}),
+	})
+	resp = h.readResponse(t)
+	if resp["error"] != nil {
+		t.Fatalf("get_body_logs error: %v", resp["error"])
+	}
+	result = resp["result"].(map[string]interface{})
+	content = result["content"].([]interface{})
+	text = content[0].(map[string]interface{})["text"].(string)
+	var logsResp map[string]interface{}
+	if err := json.Unmarshal([]byte(text), &logsResp); err != nil {
+		t.Fatalf("unmarshal logs response: %v", err)
+	}
+	if logsResp["body_id"] != b.ID {
+		t.Errorf("logs body_id = %v, want %s", logsResp["body_id"], b.ID)
+	}
+
+	// Test 4: stop_body
+	h.send(t, mcp.Request{
+		JSONRPC: "2.0",
+		ID:      4,
+		Method:  "tools/call",
+		Params: rawJSON(t, map[string]interface{}{
+			"name":      "stop_body",
+			"arguments": map[string]interface{}{"body_id": b.ID},
+		}),
+	})
+	resp = h.readResponse(t)
+	if resp["error"] != nil {
+		t.Fatalf("stop_body error: %v", resp["error"])
+	}
+	result = resp["result"].(map[string]interface{})
+	content = result["content"].([]interface{})
+	text = content[0].(map[string]interface{})["text"].(string)
+	var stopResp map[string]interface{}
+	if err := json.Unmarshal([]byte(text), &stopResp); err != nil {
+		t.Fatalf("unmarshal stop response: %v", err)
+	}
+	if stopResp["state"] != "Stopped" {
+		t.Errorf("stop state = %v, want Stopped", stopResp["state"])
+	}
+
+	// Test 5: start_body (on the stopped body)
+	h.send(t, mcp.Request{
+		JSONRPC: "2.0",
+		ID:      5,
+		Method:  "tools/call",
+		Params: rawJSON(t, map[string]interface{}{
+			"name":      "start_body",
+			"arguments": map[string]interface{}{"body_id": stoppedBody.ID},
+		}),
+	})
+	resp = h.readResponse(t)
+	if resp["error"] != nil {
+		t.Fatalf("start_body error: %v", resp["error"])
+	}
+	result = resp["result"].(map[string]interface{})
+	content = result["content"].([]interface{})
+	text = content[0].(map[string]interface{})["text"].(string)
+	var startResp map[string]interface{}
+	if err := json.Unmarshal([]byte(text), &startResp); err != nil {
+		t.Fatalf("unmarshal start response: %v", err)
+	}
+	if startResp["state"] != "Running" {
+		t.Errorf("start state = %v, want Running", startResp["state"])
+	}
+
+	// Test 6: delete_body (on the originally stopped body, now running again)
+	// First stop it
+	if err := bm.Stop(ctx, stoppedBody.ID, adapter.StopOpts{}); err != nil {
+		t.Fatalf("pre-stop for delete: %v", err)
+	}
+
+	h.send(t, mcp.Request{
+		JSONRPC: "2.0",
+		ID:      6,
+		Method:  "tools/call",
+		Params: rawJSON(t, map[string]interface{}{
+			"name":      "delete_body",
+			"arguments": map[string]interface{}{"id": stoppedBody.ID},
+		}),
+	})
+	resp = h.readResponse(t)
+	if resp["error"] != nil {
+		t.Fatalf("delete_body error: %v", resp["error"])
+	}
+	result = resp["result"].(map[string]interface{})
+	content = result["content"].([]interface{})
+	text = content[0].(map[string]interface{})["text"].(string)
+	var deleteResp map[string]bool
+	if err := json.Unmarshal([]byte(text), &deleteResp); err != nil {
+		t.Fatalf("unmarshal delete response: %v", err)
+	}
+	if !deleteResp["deleted"] {
+		t.Errorf("deleted = %v, want true", deleteResp["deleted"])
+	}
+
+	// Verify deleted
+	if _, err := s.GetBody(ctx, stoppedBody.ID); err == nil {
+		t.Fatal("body should be deleted")
+	}
+
+	// Cleanup
+	h.cancel()
+	h.close()
+	select {
+	case <-h.done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("MCP server did not shut down")
 	}
 }
