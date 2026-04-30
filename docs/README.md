@@ -24,11 +24,11 @@ The snapshot primitive is `docker export | zstd` — a flat filesystem tarball. 
 
 ## Quick Links
 
-- [Architecture Overview](architecture) — System design and component diagrams
-- [CLI Reference](cli-reference) — Command-line interface documentation
-- [MCP API](mcp-api) — Model Context Protocol API reference
-- [Migration Guide](migration) — Migrating from v0 to v1
-- [Package Documentation](internal/packages) — Internal package reference
+- [Architecture Overview](architecture.md) — System design and component diagrams
+- [CLI Reference](cli-reference.md) — Command-line interface documentation
+- [MCP API](mcp-api.md) — Model Context Protocol API reference
+- [Migration Guide](migration.md) — Migrating from v0 to v1
+- [Package Documentation](internal/packages.md) — Internal package reference
 
 ## Getting Started
 

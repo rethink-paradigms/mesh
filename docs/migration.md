@@ -163,4 +163,4 @@ v1 does not include `mesh clone`. Migration between substrates is handled by the
 
 ## Questions
 
-See the [Architecture Overview](architecture) for system design, [CLI Reference](cli-reference) for command details, and [MCP API](mcp-api) for tool documentation.
+See the [Architecture Overview](architecture.md) for system design, [CLI Reference](cli-reference.md) for command details, and [MCP API](mcp-api.md) for tool documentation.
