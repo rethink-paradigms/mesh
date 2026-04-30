@@ -144,22 +144,37 @@ func migrate(db *sql.DB) error {
 		return fmt.Errorf("read schema_version: %w", err)
 	}
 
-	if version == "1" {
+	if version == "2" {
 		return nil // already migrated
 	}
 
-	// Version 0 or missing: create all tables
-	_, err = db.Exec(schemaV1)
-	if err != nil {
-		return fmt.Errorf("apply schema v1: %w", err)
+	if version == "" {
+		// Version 0 or missing: create all tables fresh
+		_, err = db.Exec(schemaV1)
+		if err != nil {
+			return fmt.Errorf("apply schema v1: %w", err)
+		}
+		_, err = db.Exec("INSERT OR REPLACE INTO config (key, value) VALUES ('schema_version', '2')")
+		if err != nil {
+			return fmt.Errorf("set schema_version: %w", err)
+		}
+		return nil
 	}
 
-	_, err = db.Exec("INSERT OR REPLACE INTO config (key, value) VALUES ('schema_version', '1')")
-	if err != nil {
-		return fmt.Errorf("set schema_version: %w", err)
+	if version == "1" {
+		// v1 → v2: add substrate column with default "docker"
+		_, err = db.Exec(`ALTER TABLE bodies ADD COLUMN substrate TEXT DEFAULT 'docker'`)
+		if err != nil {
+			return fmt.Errorf("migrate v1→v2 add substrate column: %w", err)
+		}
+		_, err = db.Exec("INSERT OR REPLACE INTO config (key, value) VALUES ('schema_version', '2')")
+		if err != nil {
+			return fmt.Errorf("set schema_version to 2: %w", err)
+		}
+		return nil
 	}
 
-	return nil
+	return fmt.Errorf("unsupported schema version %q", version)
 }
 
 // bodyLock acquires the per-body mutex for the given id. Callers must unlock the returned mutex.
@@ -218,6 +233,27 @@ func (s *Store) GetBody(ctx context.Context, id string) (*BodyRecord, error) {
 	return &b, nil
 }
 
+// ListBodiesBySubstrate returns all body records with the given substrate.
+func (s *Store) ListBodiesBySubstrate(ctx context.Context, substrate string) ([]*BodyRecord, error) {
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT id, name, state, spec_json, substrate, instance_id, created_at, updated_at
+		 FROM bodies WHERE substrate = ? ORDER BY created_at`, substrate)
+	if err != nil {
+		return nil, fmt.Errorf("list bodies by substrate %s: %w", substrate, err)
+	}
+	defer rows.Close()
+
+	var bodies []*BodyRecord
+	for rows.Next() {
+		var b BodyRecord
+		if err := rows.Scan(&b.ID, &b.Name, &b.State, &b.SpecJSON, &b.Substrate, &b.InstanceID, &b.CreatedAt, &b.UpdatedAt); err != nil {
+			return nil, fmt.Errorf("scan body: %w", err)
+		}
+		bodies = append(bodies, &b)
+	}
+	return bodies, rows.Err()
+}
+
 // ListBodies returns all body records.
 func (s *Store) ListBodies(ctx context.Context) ([]*BodyRecord, error) {
 	rows, err := s.db.QueryContext(ctx,
@@ -254,6 +290,38 @@ func (s *Store) UpdateBodyState(ctx context.Context, id string, state adapter.Bo
 	n, _ := res.RowsAffected()
 	if n == 0 {
 		return fmt.Errorf("body %s: not found", id)
+	}
+	return nil
+}
+
+// UpdateBodyInstanceID updates the instance_id and updated_at timestamp of a body.
+func (s *Store) UpdateBodyInstanceID(ctx context.Context, id, instanceID string) error {
+	unlock := s.bodyLock(id)
+	defer unlock.Unlock()
+
+	res, err := s.db.ExecContext(ctx,
+		`UPDATE bodies SET instance_id = ?, updated_at = ? WHERE id = ?`,
+		instanceID, now(), id,
+	)
+	if err != nil {
+		return fmt.Errorf("update body instance_id %s: %w", id, err)
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		return fmt.Errorf("body %s: not found", id)
+	}
+	return nil
+}
+
+// DeleteMigration deletes a migration record by id.
+func (s *Store) DeleteMigration(ctx context.Context, id string) error {
+	res, err := s.db.ExecContext(ctx, `DELETE FROM migrations WHERE id = ?`, id)
+	if err != nil {
+		return fmt.Errorf("delete migration %s: %w", id, err)
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		return fmt.Errorf("migration %s: not found", id)
 	}
 	return nil
 }
@@ -402,6 +470,10 @@ func (s *Store) GetMigration(ctx context.Context, id string) (*MigrationRecord, 
 	m.SnapshotID = snapID.String
 	m.Error = errStr.String
 	return &m, nil
+}
+
+func (s *Store) QueryRow(ctx context.Context, query string, args ...interface{}) *sql.Row {
+	return s.db.QueryRowContext(ctx, query, args...)
 }
 
 // --- Config ---
