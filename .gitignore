@@ -73,3 +73,9 @@ consul-data/
 /coverage.out
 *.exe
 /dist/
+
+# SQLite temp files
+*.db-shm
+*.db-wal
+*.db.v1.bak
+tmpal_*.db-*

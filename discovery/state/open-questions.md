@@ -2,16 +2,10 @@
 
 ## Q1: Where does a body live when idle?
 
-**Status**: unresolved
+**Status**: resolved
 **Date**: 2026-04-25T12:47:12Z
 
-Context: Three substrate pools: Local (laptop/Pi), Fleet (BYO VMs via Nomad), Sandbox (Daytona, E2B, Fly). A body at rest — no tasks, no inference — where does it sit? What's the idle cost?
-
-Why it matters: Determines what the scheduler optimizes for. If idle bodies on Fleet VMs cost nothing (VM already running), that's different from Sandbox (billed per-second while running).
-
-Related decisions: D3 (Nomad), D4 (cold migration), D7 (container body)
-
-Hypothesis: Idle bodies should be snapshotted and destroyed on Sandbox (pay nothing), kept running on Fleet (VM already paid for), optionally kept on Local.
+Partially resolved by DE2: user explicitly configures substrate in ~/.mesh/config.yaml. Idle location is user choice, not system decision. Fleet for persistent (A1/A2), Local for development (A5), Sandbox for burst (A3/A4). Full cost-model optimization is a v2.0 concern.
 
 **Relationships:**
 - related_to → D3
@@ -22,16 +16,10 @@ Hypothesis: Idle bodies should be snapshotted and destroyed on Sandbox (pay noth
 
 ## Q2: Registry — where do body snapshots live?
 
-**Status**: unresolved
+**Status**: resolved
 **Date**: 2026-04-25T12:47:13Z
 
-Context: Body = OCI image + FS tarball. Where are these stored? Docker Hub? User's S3/GCS? Provider-native storage? Something Mesh manages?
-
-Why it matters: Defines the dependency surface. If Mesh manages a registry, that's central infrastructure (violates C3/C4). If user brings their own, onboarding friction.
-
-Related decisions: D2 (OCI + tar format), D6 (plugin architecture)
-
-Hypothesis: User-configured blob storage (S3/GCS/R2) as default plugin. OCI image push to any registry the user has credentials for.
+Resolved by v1.0 implementation: S3/R2 for snapshot storage via registry plugin. Local snapshots at ~/.mesh/snapshots/. DE10 covers SQLite store backup (separate concern).
 
 **Relationships:**
 - related_to → D2
@@ -41,16 +29,10 @@ Hypothesis: User-configured blob storage (S3/GCS/R2) as default plugin. OCI imag
 
 ## Q3: Scheduler — is substrate selection core or plugin?
 
-**Status**: unresolved
+**Status**: resolved
 **Date**: 2026-04-25T12:47:13Z
 
-Context: When a user says deploy my agent, something decides: Fleet VM? Sandbox? Which provider? Is that decision logic in Mesh core, or is it a plugin?
-
-Why it matters: If core, Mesh has opinions about placement. If plugin, users bring their own scheduler. Affects how smart Mesh needs to be.
-
-Related decisions: D3 (Nomad), D6 (plugins)
-
-Hypothesis: Core-but-trivial: default scheduler picks cheapest available substrate. Overridable via plugin for users with complex needs.
+Resolved by DE2: static scheduler config for v1.1. Substrate selection is user-config static — neither core nor plugin. Plugin-based scheduler is v2.0 consideration.
 
 **Relationships:**
 - related_to → D3
@@ -60,16 +42,10 @@ Hypothesis: Core-but-trivial: default scheduler picks cheapest available substra
 
 ## Q4: Bootstrap — how does the first install mesh happen?
 
-**Status**: unresolved
+**Status**: resolved
 **Date**: 2026-04-25T12:47:13Z
 
-Context: D5 says MCP is the primary interface. But MCP requires a running Mesh. Chicken-and-egg: you can't install Mesh via MCP because Mesh isn't running yet.
-
-Why it matters: First-run experience defines whether people get past hello world.
-
-Related decisions: D5 (MCP primary), D6 (plugins)
-
-Hypothesis: One-liner shell bootstrap (curl ... | bash or pip install) that installs Mesh + starts a minimal local agent. From there, MCP takes over.
+Resolved by v1.0 implementation: CLI bootstrap via mesh init + install.sh/Homebrew formula. MCP is primary ongoing interface, initial installation is CLI-based.
 
 **Relationships:**
 - related_to → D5

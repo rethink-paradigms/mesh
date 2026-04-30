@@ -1,0 +1,33 @@
+TASK 4: Remove ALL drafts from .sisyphus/drafts/
+
+VERIFICATION 1 - Disk check:
+$ ls .sisyphus/drafts/*.md 2>/dev/null
+zsh:1: no matches found: .sisyphus/drafts/*.md
+EXIT:1
+→ PASS: No .md files remain on disk
+
+VERIFICATION 2 - Git index check:
+$ git ls-files .sisyphus/drafts/
+(no output)
+→ PASS: Git index is empty for drafts directory
+
+FILES REMOVED:
+- Tracked (git rm --cached + rm): 7 files
+  * discovery-update-plan.md
+  * handoff.md
+  * retrieval-system-design.md
+  * unified-retrieval-architecture.md
+  * v1-architecture.md
+  * v1-gap-analysis.md
+  * v2-roadmap-analysis.md
+
+- Untracked (rm only): 7 files
+  * experiment-observations.md
+  * session-orchestration.md
+  * v1-definitive-scope.md
+  * v1-desired-state.md
+  * v1-exploratory-scope.md
+  * v1-merge-to-main.md
+  * v2-roadmap-analysis.md
+
+TOTAL: 14 draft files removed

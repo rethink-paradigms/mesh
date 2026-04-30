@@ -1,0 +1,37 @@
+# Task 7: Governance DB Updates — Evidence
+# Date: 2026-04-30
+
+## Changes Applied
+
+### Questions Resolved
+- Q1: Where does a body live when idle? → resolved
+  Resolution: "Partially resolved by DE2: user explicitly configures substrate in ~/.mesh/config.yaml. Idle location is user choice, not system decision. Fleet for persistent (A1/A2), Local for development (A5), Sandbox for burst (A3/A4). Full cost-model optimization is a v2.0 concern."
+
+- Q2: Registry — where do body snapshots live? → resolved
+  Resolution: "Resolved by v1.0 implementation: S3/R2 for snapshot storage via registry plugin. Local snapshots at ~/.mesh/snapshots/. DE10 covers SQLite store backup (separate concern)."
+
+- Q3: Scheduler — is substrate selection core or plugin? → resolved
+  Resolution: "Resolved by DE2: static scheduler config for v1.1. Substrate selection is user-config static — neither core nor plugin. Plugin-based scheduler is v2.0 consideration."
+
+- Q4: Bootstrap — how does the first install mesh happen? → resolved
+  Resolution: "Resolved by v1.0 implementation: CLI bootstrap via mesh init + install.sh/Homebrew formula. MCP is primary ongoing interface, initial installation is CLI-based."
+
+### Decisions Updated
+- D6: Body updated
+  New body text acknowledges v1.0 go-plugin + gRPC + protobuf AND v1.1 OpenAPI + oapi-codegen v2 direction per DE4, superseding earlier Pulumi approach.
+  Title unchanged: "Provider integrations are plugins, AI-generated via Pulumi skill"
+
+- D10: Title updated
+  Old: "Mesh is separate from Daytona — no integration"
+  New: "Mesh is separate from Daytona — Daytona is valid substrate target via adapter, not dependency."
+  Body unchanged.
+
+## Verification
+- Q1-Q4 status: resolved (confirmed via gov.py list --type question)
+- D6 body: updated (confirmed via gov.py get D6)
+- D10 title: updated (confirmed via gov.py get D10)
+- generate.py decisions-md: exit 0
+- generate.py questions-md: exit 0
+
+## Source
+All resolutions sourced from: .sisyphus/evidence/task-5-validated-content.md
