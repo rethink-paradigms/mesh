@@ -1,8 +1,0 @@
-=== RUN   TestHashRoundTrip
-=== RUN   TestHashRoundTrip/SidecarHashMatches
-=== RUN   TestHashRoundTrip/ExtractAndCompare
---- PASS: TestHashRoundTrip (0.01s)
-    --- PASS: TestHashRoundTrip/SidecarHashMatches (0.00s)
-    --- PASS: TestHashRoundTrip/ExtractAndCompare (0.00s)
-PASS
-ok  	github.com/rethink-paradigms/mesh/internal/snapshot	0.207s

@@ -1,27 +1,6 @@
 # User-generated app scaffolds
 apps/
 
-# Python
-__pycache__/
-*.pyc
-*.pyo
-*.pyd
-.Python
-env/
-venv/
-.venv/
-pip-log.txt
-pip-delete-this-directory.txt
-.pytest_cache/
-.coverage
-htmlcov/
-
-# Python build artifacts
-build/
-dist/
-*.egg-info/
-*.egg
-
 # Environment Variables & Secrets
 .env
 .env.*
@@ -46,21 +25,7 @@ consul-data/
 # Logs
 *.log
 
-# Taskplane runtime artifacts (machine-specific, do not commit)
-.pi/batch-state.json
-.pi/batch-history.json
-.pi/lane-state-*
-.pi/merge-result-*
-.pi/merge-request-*
-.pi/worker-conversation-*
-.pi/orch-logs/
-.pi/orch-abort-signal
-.pi/settings.json
-.worktrees/
-.taskplane-tasks/
-
-# Pi project-local packages (if using pi install -l)
-.pi/npm/
+.pi/
 
 # Cluster state
 .cluster-state.json
@@ -69,13 +34,16 @@ consul-data/
 .playwright-mcp/
 
 # Go build artifacts
-/mesh
-/coverage.out
 *.exe
-/dist/
 
 # SQLite temp files
 *.db-shm
 *.db-wal
 *.db.v1.bak
 tmpal_*.db-*
+
+# Personal dev environment (local only, not part of the project)
+.antigravity/
+.pi/
+.sisyphus/
+.claude/

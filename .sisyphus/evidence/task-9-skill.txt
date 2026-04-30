@@ -1,5 +1,0 @@
-=== SKILL.md Verification ===
-Line count:
-     267 /Users/samanvayayagsen/.agents/skills/mesh-nav/SKILL.md
-SQL references (must be 0):
-0

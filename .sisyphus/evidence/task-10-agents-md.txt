@@ -1,9 +1,0 @@
-      55 /Users/samanvayayagsen/project/rethink-paradigms/mesh/AGENTS.md
-The discovery system is governed by `mesh-nav` skill backed by `.mesh/governance.db` (SQLite graph database).
-- **DB**: `.mesh/governance.db` — 34 entities (decisions, questions, constraints, personas, governance decisions)
-The discovery system is governed by `mesh-nav` skill backed by `.mesh/governance.db` (SQLite graph database).
-- **mesh-nav skill**: `~/.agents/skills/mesh-nav/SKILL.md` — Session bootstrap, decision tracking, drift detection
-- **Scripts**: `~/.agents/skills/mesh-nav/scripts/` — Python CLI tools (stdlib only, zero pip deps)
-3. **`discovery/state/decisions.md`** — Numbered decisions (D1, D2, ...). ⚠️ Generated from DB — don't hand-edit. Regenerate with `generate.py decisions-md`. **Every new design proposal must check this file for conflicts before proceeding.**
-3. **New decisions go through governance DB.** Use `gov.py add_entity` then `generate.py decisions-md`. Don't hand-edit generated markdown.
-- **Generated files**: `decisions.md`, `governance-decisions.md`, `open-questions.md` are generated from DB. Don't hand-edit.

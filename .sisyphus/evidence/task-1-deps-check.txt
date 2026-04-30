@@ -1,6 +1,0 @@
-grafito:    0.1.0
-networkx:   3.6.1
-orjson:     3.11.8
-zstandard:  0.25.0
-
-All dependencies OK
