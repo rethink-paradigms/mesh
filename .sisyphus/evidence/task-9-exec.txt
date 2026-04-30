@@ -1,0 +1,77 @@
+# Task 9: Implement execute_command MCP tool — Evidence
+
+## Changes Made
+
+### Files Modified
+- `internal/mcp/handlers.go` — Replaced stub with real implementation
+- `internal/mcp/mcp_test.go` — Added comprehensive tests
+- `internal/body/manager.go` — Added Exec method to BodyManager
+
+### Implementation Details
+
+1. **execute_command handler** (`internal/mcp/handlers.go`):
+   - Parses `body_id`, `command` (array), and optional `timeout_seconds`
+   - Validates body exists in store
+   - Checks body state is Running before executing
+   - Supports configurable timeout (default 30s)
+   - Uses `context.WithTimeout` for deadline enforcement
+   - Calls `bodyMgr.Exec()` which delegates to substrate adapter
+   - Returns `{stdout, stderr, exit_code}` on success
+   - Returns RPC errors for: body not found, not running, timeout, exec failure
+
+2. **BodyManager.Exec** (`internal/body/manager.go`):
+   - Added `Exec(ctx, bodyID, cmd)` method
+   - Validates body state is Running
+   - Delegates to `adapter.Exec()` with the body's instance handle
+
+3. **Tests** (`internal/mcp/mcp_test.go`):
+   - `TestExecCommandSuccess` — exec on running container returns stdout/exit_code
+   - `TestExecCommandNotRunning` — exec on stopped body returns "not running" error
+   - `TestExecCommandTimeout` — exec with 1s timeout on sleep 10 returns timeout error
+   - `TestExecCommandEmptyCommand` — empty command array returns validation error
+   - `TestExecCommandBodyNotFound` — nonexistent body returns "not found" error
+   - `TestExecCommandNoBodyManager` — no body manager returns "not available" error
+   - Updated mock adapter to support timeout simulation (sleep command respects context)
+
+## Test Results
+
+```
+$ go test ./internal/mcp/ -v
+=== RUN   TestExecCommandSuccess
+--- PASS: TestExecCommandSuccess (0.00s)
+=== RUN   TestExecCommandNotRunning
+--- PASS: TestExecCommandNotRunning (0.00s)
+=== RUN   TestExecCommandTimeout
+--- PASS: TestExecCommandTimeout (1.00s)
+=== RUN   TestExecCommandEmptyCommand
+--- PASS: TestExecCommandEmptyCommand (0.01s)
+=== RUN   TestExecCommandBodyNotFound
+--- PASS: TestExecCommandBodyNotFound (0.00s)
+=== RUN   TestExecCommandNoBodyManager
+--- PASS: TestExecCommandNoBodyManager (0.00s)
+PASS
+ok      github.com/rethink-paradigms/mesh/internal/mcp        1.367s
+```
+
+## Full Suite Results
+
+```
+$ go test ./...
+ok      github.com/rethink-paradigms/mesh/cmd/mesh
+ok      github.com/rethink-paradigms/mesh/internal/adapter
+ok      github.com/rethink-paradigms/mesh/internal/body
+ok      github.com/rethink-paradigms/mesh/internal/config
+ok      github.com/rethink-paradigms/mesh/internal/config-toml
+ok      github.com/rethink-paradigms/mesh/internal/daemon
+ok      github.com/rethink-paradigms/mesh/internal/docker
+ok      github.com/rethink-paradigms/mesh/internal/manifest
+ok      github.com/rethink-paradigms/mesh/internal/mcp
+ok      github.com/rethink-paradigms/mesh/internal/nomad
+ok      github.com/rethink-paradigms/mesh/internal/plugin
+ok      github.com/rethink-paradigms/mesh/internal/registry
+ok      github.com/rethink-paradigms/mesh/internal/restore
+ok      github.com/rethink-paradigms/mesh/internal/snapshot
+ok      github.com/rethink-paradigms/mesh/internal/store
+```
+
+All tests pass. No regressions.

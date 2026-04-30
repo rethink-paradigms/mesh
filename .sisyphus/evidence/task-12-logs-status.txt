@@ -1,0 +1,48 @@
+Task T12: Add get_body_logs + get_body_status MCP tools
+=============================================================
+
+COMPLETED: 2026-04-29
+
+Files Modified:
+- internal/mcp/handlers.go
+- internal/mcp/mcp_test.go
+
+Changes Made:
+1. Registered `get_body_logs` tool in registerTools():
+   - Params: {body_id (string, required), tail (integer, optional, default 100)}
+   - Handler: handleGetBodyLogs
+   - Uses bodyMgr.Exec() with ["tail", "-n", N, "/var/log/mesh.log"]
+   - Returns: {body_id, logs, tail}
+
+2. Registered `get_body_status` tool in registerTools():
+   - Params: {body_id (string, required)}
+   - Handler: handleGetBodyStatus
+   - Uses store.GetBody() + bodyMgr.GetStatus()
+   - Returns: {id, name, state, uptime_sec, memory_mb, cpu_usage}
+
+3. Error handling:
+   - body manager not available → RPCError -32603
+   - missing body_id → RPCError -32602
+   - body not found → RPCError -32603 with "not found"
+   - body not running (logs only) → RPCError -32603 with "not running"
+   - exec failure → RPCError -32603 with "failed to get logs"
+
+4. Tests added (8 new tests):
+   - TestGetBodyLogsRunningBody: verifies logs retrieval with custom tail
+   - TestGetBodyLogsStoppedBody: verifies error when body not running
+   - TestGetBodyLogsBodyNotFound: verifies error when body doesn't exist
+   - TestGetBodyLogsNoBodyManager: verifies error when bodyMgr nil
+   - TestGetBodyStatusRunningBody: verifies status fields returned
+   - TestGetBodyStatusBodyNotFound: verifies error when body doesn't exist
+   - TestGetBodyStatusNoBodyManager: verifies error when bodyMgr nil
+
+5. Mock adapter enhanced:
+   - Added `status` field for configurable BodyStatus returns
+   - Added `execOutputs` map for command-specific ExecResult returns
+
+Test Results:
+- go test ./internal/mcp/ : PASS (52/52 tests, ~1.8s)
+- go test ./... : All internal packages PASS
+  - Pre-existing failure in cmd/mesh/main.go:605 (syntax error, unrelated)
+
+Verification: ALL NEW TESTS PASS. NO REGRESSIONS IN INTERNAL PACKAGES.

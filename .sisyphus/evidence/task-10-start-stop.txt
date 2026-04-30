@@ -1,0 +1,36 @@
+Task T10: Add start_body + stop_body MCP tools
+
+Files modified:
+- internal/mcp/handlers.go
+- internal/mcp/mcp_test.go
+
+Changes:
+1. Registered start_body tool in registerTools()
+2. Registered stop_body tool in registerTools()
+3. Implemented handleStartBody():
+   - Validates body manager is available
+   - Validates body_id parameter
+   - Calls bodyMgr.Start(ctx, bodyID)
+   - Returns body state after operation (id, name, state)
+   - Handles errors: body not found, invalid state transition
+4. Implemented handleStopBody():
+   - Validates body manager is available
+   - Validates body_id parameter
+   - Uses 30s default timeout with context.WithTimeout
+   - Calls bodyMgr.Stop(ctx, bodyID, adapter.StopOpts{Timeout: 30s})
+   - Returns body state after operation (id, name, state)
+   - Handles errors: body not found, invalid state transition, timeout
+
+Tests added (8 tests):
+- TestStartBody: start stopped body → success, state=Running
+- TestStopBody: stop running body → success, state=Stopped
+- TestStartBodyAlreadyRunning: start already-running body → error
+- TestStopBodyAlreadyStopped: stop already-stopped body → error
+- TestStartBodyNoBodyManager: start without body manager → error
+- TestStopBodyNoBodyManager: stop without body manager → error
+- TestStartBodyMissingID: start without body_id → error
+- TestStopBodyMissingID: stop without body_id → error
+
+Verification:
+- go test ./internal/mcp/ -v: 45/45 PASS
+- go test ./...: all packages PASS

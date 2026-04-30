@@ -1,0 +1,32 @@
+Task: T3 — Validate AWS SDK v2 + Go 1.25 compatibility
+Date: 2026-04-29
+Go version: go1.26.2 darwin/arm64
+
+=== Commands Run ===
+1. go get github.com/aws/aws-sdk-go-v2/config@latest
+   Result: added github.com/aws/aws-sdk-go-v2/config v1.32.16
+
+2. go get github.com/aws/aws-sdk-go-v2/service/s3@latest
+   Result: added github.com/aws/aws-sdk-go-v2/service/s3 v1.100.0
+
+3. go build ./...
+   Result: PASS (no output)
+
+4. go test ./internal/registry/
+   Result: PASS (0.635s)
+
+=== Files Modified ===
+- go.mod: Added AWS SDK v2 dependencies (config v1.32.16, service/s3 v1.100.0 + transitive deps)
+- go.sum: Updated with new checksums
+
+=== Files Created ===
+- internal/registry/compat_test.go: Minimal compilation test importing config and s3
+
+=== Key Versions ===
+- github.com/aws/aws-sdk-go-v2 v1.41.6
+- github.com/aws/aws-sdk-go-v2/config v1.32.16
+- github.com/aws/aws-sdk-go-v2/service/s3 v1.100.0
+- github.com/aws/smithy-go v1.25.0
+
+=== Outcome ===
+AWS SDK v2 imports cleanly with Go 1.25.5+ (tested on 1.26.2). No version conflicts.

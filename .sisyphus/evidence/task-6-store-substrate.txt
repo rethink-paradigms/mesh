@@ -1,0 +1,29 @@
+Task 6: Extend Store for substrate tracking
+
+Verification: go test ./internal/store/ -v
+Result: PASS (11/11 tests)
+Duration: 0.645s
+
+Tests run:
+- TestBodyCRUD (existing)
+- TestBodyStateTransitions (existing)
+- TestSnapshotCRUD (existing)
+- TestMigrationCRUD (existing)
+- TestWALMode (existing)
+- TestConcurrentAccess (existing)
+- TestPerBodyMutex (existing)
+- TestForeignKeyEnforcement (existing)
+- TestListBodiesBySubstrate (NEW)
+- TestSchemaMigrationV1ToV2 (NEW)
+- TestConfigCRUD (existing)
+
+Changes made:
+1. internal/store/store.go:
+   - Updated migrate() to handle schema version "2"
+   - Added v1→v2 migration path: ALTER TABLE bodies ADD COLUMN substrate TEXT DEFAULT 'docker'
+   - New schema databases get version "2" directly
+   - Added ListBodiesBySubstrate(ctx, substrate string) method
+
+2. internal/store/store_test.go:
+   - Added TestListBodiesBySubstrate: tests filtering bodies by substrate (docker, nomad, local)
+   - Added TestSchemaMigrationV1ToV2: creates a v1 DB manually, opens with Store, verifies migration to v2, checks default "docker" substrate on existing bodies

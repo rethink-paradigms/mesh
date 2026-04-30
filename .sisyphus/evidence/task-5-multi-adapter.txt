@@ -1,0 +1,68 @@
+=== RUN   TestInterfaceCompilation
+--- PASS: TestInterfaceCompilation (0.00s)
+=== RUN   TestBodyStateStrings
+=== RUN   TestBodyStateStrings/Created
+=== RUN   TestBodyStateStrings/Starting
+=== RUN   TestBodyStateStrings/Running
+=== RUN   TestBodyStateStrings/Stopping
+=== RUN   TestBodyStateStrings/Stopped
+=== RUN   TestBodyStateStrings/Error
+=== RUN   TestBodyStateStrings/Migrating
+=== RUN   TestBodyStateStrings/Destroyed
+--- PASS: TestBodyStateStrings (0.00s)
+    --- PASS: TestBodyStateStrings/Created (0.00s)
+    --- PASS: TestBodyStateStrings/Starting (0.00s)
+    --- PASS: TestBodyStateStrings/Running (0.00s)
+    --- PASS: TestBodyStateStrings/Stopping (0.00s)
+    --- PASS: TestBodyStateStrings/Stopped (0.00s)
+    --- PASS: TestBodyStateStrings/Error (0.00s)
+    --- PASS: TestBodyStateStrings/Migrating (0.00s)
+    --- PASS: TestBodyStateStrings/Destroyed (0.00s)
+=== RUN   TestBodySpecMarshaling
+--- PASS: TestBodySpecMarshaling (0.00s)
+=== RUN   TestBodyStatusMarshaling
+--- PASS: TestBodyStatusMarshaling (0.00s)
+=== RUN   TestStopOptsMarshaling
+--- PASS: TestStopOptsMarshaling (0.00s)
+=== RUN   TestExecResultMarshaling
+--- PASS: TestExecResultMarshaling (0.00s)
+=== RUN   TestAdapterCapabilitiesDefaults
+--- PASS: TestAdapterCapabilitiesDefaults (0.00s)
+=== RUN   TestAdapterCapabilitiesMarshaling
+--- PASS: TestAdapterCapabilitiesMarshaling (0.00s)
+=== RUN   TestImportOptsMarshaling
+--- PASS: TestImportOptsMarshaling (0.00s)
+=== RUN   TestContainerMetadataMarshaling
+--- PASS: TestContainerMetadataMarshaling (0.00s)
+=== RUN   TestHandleString
+--- PASS: TestHandleString (0.00s)
+=== RUN   TestEmptyHandle
+--- PASS: TestEmptyHandle (0.00s)
+=== RUN   TestBodySpecEmpty
+--- PASS: TestBodySpecEmpty (0.00s)
+=== RUN   TestBodyStatusZeroValues
+--- PASS: TestBodyStatusZeroValues (0.00s)
+=== RUN   TestExecResultEmpty
+--- PASS: TestExecResultEmpty (0.00s)
+=== RUN   TestExecResultWithMultilineOutput
+--- PASS: TestExecResultWithMultilineOutput (0.00s)
+=== RUN   TestStopOptsZeroValues
+--- PASS: TestStopOptsZeroValues (0.00s)
+=== RUN   TestMockAdapterImplementation
+--- PASS: TestMockAdapterImplementation (0.00s)
+=== RUN   TestMultiAdapterRegistration
+--- PASS: TestMultiAdapterRegistration (0.00s)
+=== RUN   TestMultiAdapterGetAdapter
+--- PASS: TestMultiAdapterGetAdapter (0.00s)
+=== RUN   TestMultiAdapterDelegation
+--- PASS: TestMultiAdapterDelegation (0.00s)
+=== RUN   TestMultiAdapterUnknownAdapter
+--- PASS: TestMultiAdapterUnknownAdapter (0.00s)
+=== RUN   TestMultiAdapterSubstrateName
+--- PASS: TestMultiAdapterSubstrateName (0.00s)
+=== RUN   TestMultiAdapterIsHealthy
+--- PASS: TestMultiAdapterIsHealthy (0.00s)
+=== RUN   TestMultiAdapterCompileTimeCheck
+--- PASS: TestMultiAdapterCompileTimeCheck (0.00s)
+PASS
+ok  	github.com/rethink-paradigms/mesh/internal/adapter	(cached)

@@ -1,0 +1,75 @@
+Task 14: Implement migration steps 2-3 (provision + transfer local)
+================================================================================
+
+COMPLETED: 2026-04-29
+
+FILES MODIFIED
+--------------
+- internal/body/migration.go
+- internal/body/body_test.go
+- internal/body/body.go (state machine transitions)
+
+IMPLEMENTATION SUMMARY
+----------------------
+
+Step 2 (provision) - stepProvision():
+- Idempotency: checks if mig.newHandle already set, or if migration record
+  CurrentStep >= 2 and recovers handle from body record's InstanceID
+- Inspects source container to get metadata (image, workdir, env, cmd)
+- Creates target container via adapter.Create() with same spec
+- Stores target handle in mig.newHandle
+- Rollback on persist failure: destroys target container, clears handle
+- Error handling: wrapped with fmt.Errorf for context
+
+Step 3 (transfer local) - stepTransfer():
+- Idempotency: checks if migration record CurrentStep >= 3
+- Validates prerequisites: snapshotPath and newHandle must be set
+- Opens snapshot tarball from disk
+- Imports into target container via adapter.ImportFilesystem()
+- Uses Overwrite: true for import opts
+
+Step 1 (export) - stepExport():
+- Also enhanced to actually write exported filesystem data to disk
+- Previously only created store record without writing file
+- Now writes to /tmp/mesh-snapshot-{uuid}.tar.zst
+
+State Machine Changes:
+- Added Running -> Running transition (for idempotent resume)
+- Added Error -> Migrating transition (for retry after failure)
+
+TESTS ADDED
+-----------
+1. TestMigrationStepProvisionCreatesContainer
+   - Verifies target container is created with correct metadata
+   - Checks migration completes to step 7
+
+2. TestMigrationStepProvisionIdempotent
+   - Runs migration twice, verifies only 2 containers total (source + target)
+
+3. TestMigrationStepTransferCopiesFiles
+   - Verifies snapshot is imported into target container
+
+4. TestMigrationStepTransferIdempotent
+   - Runs migration twice, verifies only 1 import operation
+
+5. TestMigrationRetryAfterPartialFailure
+   - Simulates transfer failure (step 3)
+   - Verifies error recorded at step 3
+   - Clears error and resumes
+   - Verifies completion to step 7
+
+6. TestMigrationProvisionFailsWithoutRollback
+   - Simulates Create failure
+   - Verifies no destroy calls (nothing to roll back)
+
+VERIFICATION
+------------
+- go test ./internal/body/ - PASS (all 27 tests)
+- go test ./... - PASS (all packages, no regressions)
+
+DESIGN DECISIONS
+----------------
+- Local filesystem copy only (no S3/network) per task requirements
+- Rollback only for current step failure, not completed steps
+- Handle recovery from body record InstanceID for idempotency
+- Snapshot file written to disk in stepExport (required for stepTransfer)
