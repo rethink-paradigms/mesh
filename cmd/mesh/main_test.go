@@ -2,9 +2,12 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -423,9 +426,204 @@ start_cmd = "echo hello"
 	return cfgPath
 }
 
+func mustWriteYAMLConfig(t *testing.T, tmpHome string, bodies []string) string {
+	t.Helper()
+	cfgDir := filepath.Join(tmpHome, ".mesh")
+	mustMkdirAll(t, cfgDir)
+	mustMkdirAll(t, filepath.Join(cfgDir, "plugins"))
+
+	var bodyLines string
+	for _, name := range bodies {
+		bodyLines += fmt.Sprintf("- name: %s\n  image: alpine:latest\n  workdir: /tmp/%s\n", name, name)
+	}
+
+	cfgContent := fmt.Sprintf("daemon:\n  socket_path: /tmp/mesh-test.sock\n  pid_file: %s\n  log_level: info\nstore:\n  path: %s\ndocker:\n  host: unix:///var/run/docker.sock\n  api_version: \"1.48\"\nregistry:\n  type: s3\n  bucket: test-bucket\nbodies:\n%s",
+		filepath.Join(cfgDir, "mesh.pid"),
+		filepath.Join(cfgDir, "state.db"),
+		bodyLines,
+	)
+
+	cfgPath := filepath.Join(cfgDir, "config.yaml")
+	if err := os.WriteFile(cfgPath, []byte(cfgContent), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return cfgPath
+}
+
 func mustContain(t *testing.T, output, substr string) {
 	t.Helper()
 	if !strings.Contains(output, substr) {
 		t.Errorf("output does not contain %q\nfull output:\n%s", substr, output)
 	}
+}
+
+func TestServeCommandStartsDaemon(t *testing.T) {
+	tmpHome := t.TempDir()
+	t.Setenv("HOME", tmpHome)
+
+	cfgPath := mustWriteYAMLConfig(t, tmpHome, []string{"test-agent"})
+
+	root := newRootCmd()
+	var stdout, stderr bytes.Buffer
+	root.SetOut(&stdout)
+	root.SetErr(&stderr)
+	root.SetArgs([]string{"serve", "--config", cfgPath})
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	root.SetContext(ctx)
+
+	done := make(chan error, 1)
+	go func() {
+		done <- root.Execute()
+	}()
+
+	pidFile := filepath.Join(tmpHome, ".mesh", "mesh.pid")
+	var pid int
+	for i := 0; i < 50; i++ {
+		data, err := os.ReadFile(pidFile)
+		if err == nil {
+			pid, _ = strconv.Atoi(strings.TrimSpace(string(data)))
+			if pid > 0 {
+				break
+			}
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	if pid == 0 {
+		t.Fatal("daemon did not write PID file")
+	}
+
+	cancel()
+
+	select {
+	case err := <-done:
+		if pid == 0 {
+			t.Fatalf("daemon did not write PID file (serve returned: %v)", err)
+		}
+		if err != nil {
+			t.Fatalf("serve command failed: %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		if pid == 0 {
+			t.Fatal("daemon did not write PID file within timeout")
+		}
+		t.Fatal("serve command did not return within timeout")
+	}
+
+	if _, err := os.Stat(pidFile); !os.IsNotExist(err) {
+		t.Fatal("PID file should be removed after stop")
+	}
+}
+
+func TestStopCommandKillsDaemon(t *testing.T) {
+	tmpHome := t.TempDir()
+	t.Setenv("HOME", tmpHome)
+
+	cfgPath := mustWriteYAMLConfig(t, tmpHome, []string{})
+
+	fakeDaemon := exec.Command("sleep", "30")
+	if err := fakeDaemon.Start(); err != nil {
+		t.Fatalf("start fake daemon: %v", err)
+	}
+	defer fakeDaemon.Process.Kill()
+
+	pidFile := filepath.Join(tmpHome, ".mesh", "mesh.pid")
+	if err := os.WriteFile(pidFile, []byte(fmt.Sprintf("%d", fakeDaemon.Process.Pid)), 0o644); err != nil {
+		t.Fatalf("write PID file: %v", err)
+	}
+
+	root := newRootCmd()
+	var stdout, stderr bytes.Buffer
+	root.SetOut(&stdout)
+	root.SetErr(&stderr)
+	root.SetArgs([]string{"stop", "--config", cfgPath, "--timeout", "500ms"})
+
+	if err := root.Execute(); err != nil {
+		t.Fatalf("stop command failed: %v", err)
+	}
+
+	output := stdout.String()
+	mustContain(t, output, "Stopping mesh daemon")
+
+	done := make(chan error, 1)
+	go func() {
+		done <- fakeDaemon.Wait()
+	}()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		fakeDaemon.Process.Kill()
+		t.Fatal("daemon process should have exited after stop")
+	}
+}
+
+func TestStopCommandNotRunning(t *testing.T) {
+	tmpHome := t.TempDir()
+	t.Setenv("HOME", tmpHome)
+
+	cfgPath := mustWriteYAMLConfig(t, tmpHome, []string{})
+
+	root := newRootCmd()
+	var stderr bytes.Buffer
+	root.SetErr(&stderr)
+	root.SetArgs([]string{"stop", "--config", cfgPath})
+
+	err := root.Execute()
+	if err == nil {
+		t.Fatal("expected error when daemon is not running")
+	}
+	if !strings.Contains(err.Error(), "not running") {
+		t.Fatalf("error = %q, want 'not running'", err.Error())
+	}
+}
+
+func TestStatusCommandRunning(t *testing.T) {
+	tmpHome := t.TempDir()
+	t.Setenv("HOME", tmpHome)
+
+	cfgPath := mustWriteYAMLConfig(t, tmpHome, []string{})
+
+	fakeDaemon := exec.Command("sleep", "30")
+	if err := fakeDaemon.Start(); err != nil {
+		t.Fatalf("start fake daemon: %v", err)
+	}
+	defer fakeDaemon.Process.Kill()
+
+	pidFile := filepath.Join(tmpHome, ".mesh", "mesh.pid")
+	if err := os.WriteFile(pidFile, []byte(fmt.Sprintf("%d", fakeDaemon.Process.Pid)), 0o644); err != nil {
+		t.Fatalf("write PID file: %v", err)
+	}
+
+	root := newRootCmd()
+	var stdout bytes.Buffer
+	root.SetOut(&stdout)
+	root.SetArgs([]string{"status", "--config", cfgPath})
+
+	if err := root.Execute(); err != nil {
+		t.Fatalf("status command failed: %v", err)
+	}
+
+	output := stdout.String()
+	mustContain(t, output, "Mesh daemon: running")
+	mustContain(t, output, fmt.Sprintf("(pid %d)", fakeDaemon.Process.Pid))
+}
+
+func TestStatusCommandStopped(t *testing.T) {
+	tmpHome := t.TempDir()
+	t.Setenv("HOME", tmpHome)
+
+	cfgPath := mustWriteYAMLConfig(t, tmpHome, []string{})
+
+	root := newRootCmd()
+	var stdout bytes.Buffer
+	root.SetOut(&stdout)
+	root.SetArgs([]string{"status", "--config", cfgPath})
+
+	if err := root.Execute(); err != nil {
+		t.Fatalf("status command failed: %v", err)
+	}
+
+	output := stdout.String()
+	mustContain(t, output, "Mesh daemon: stopped")
 }

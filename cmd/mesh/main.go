@@ -8,14 +8,16 @@ import (
 	"path/filepath"
 	"runtime/debug"
 	"sort"
+	"strconv"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/spf13/cobra"
 
-	_ "github.com/rethink-paradigms/mesh/internal/config"
+	"github.com/rethink-paradigms/mesh/internal/config"
 	configtoml "github.com/rethink-paradigms/mesh/internal/config-toml"
-	_ "github.com/rethink-paradigms/mesh/internal/daemon"
+	"github.com/rethink-paradigms/mesh/internal/daemon"
 	"github.com/rethink-paradigms/mesh/internal/manifest"
 	"github.com/rethink-paradigms/mesh/internal/restore"
 	"github.com/rethink-paradigms/mesh/internal/snapshot"
@@ -220,17 +222,6 @@ func newRestoreCmd() *cobra.Command {
 	cmd.Flags().StringVar(&snapshotPath, "snapshot", "", "specific snapshot path (default: latest)")
 
 	return cmd
-}
-
-func newStatusCmd() *cobra.Command {
-	return &cobra.Command{
-		Use:   "status",
-		Short: "Show Mesh daemon status",
-		RunE: func(cmd *cobra.Command, args []string) error {
-			fmt.Fprintln(cmd.ErrOrStderr(), "status: not yet implemented")
-			return nil
-		},
-	}
 }
 
 func newListCmd() *cobra.Command {
@@ -442,18 +433,160 @@ func newServeCmd() *cobra.Command {
 		Use:   "serve",
 		Short: "Start the Mesh daemon",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			fmt.Fprintln(cmd.ErrOrStderr(), "serve: not yet implemented")
+			configPath, _ := cmd.Flags().GetString("config")
+			if configPath == "" {
+				configPath = config.DefaultPath()
+			}
+			cfg, err := config.Load(configPath)
+			if err != nil {
+				return fmt.Errorf("load config: %w", err)
+			}
+
+			d, err := daemon.New(cfg)
+			if err != nil {
+				return fmt.Errorf("create daemon: %w", err)
+			}
+
+			if err := d.Start(cmd.Context()); err != nil {
+				if strings.Contains(err.Error(), "already running") {
+					fmt.Fprintln(cmd.ErrOrStderr(), "Error: daemon is already running")
+					return fmt.Errorf("daemon already running")
+				}
+				return err
+			}
 			return nil
 		},
 	}
 }
 
 func newStopCmd() *cobra.Command {
-	return &cobra.Command{
+	var timeout time.Duration
+
+	cmd := &cobra.Command{
 		Use:   "stop",
 		Short: "Stop the Mesh daemon",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			fmt.Fprintln(cmd.ErrOrStderr(), "stop: not yet implemented")
+			configPath, _ := cmd.Flags().GetString("config")
+			if configPath == "" {
+				configPath = config.DefaultPath()
+			}
+			cfg, err := config.Load(configPath)
+			if err != nil {
+				return fmt.Errorf("load config: %w", err)
+			}
+
+			if cfg.Daemon.PIDFile == "" {
+				return fmt.Errorf("no pid_file configured")
+			}
+
+			data, err := os.ReadFile(cfg.Daemon.PIDFile)
+			if err != nil {
+				if os.IsNotExist(err) {
+					fmt.Fprintln(cmd.ErrOrStderr(), "Error: daemon is not running (no PID file)")
+					return fmt.Errorf("daemon not running")
+				}
+				return fmt.Errorf("read PID file: %w", err)
+			}
+
+			pid, err := strconv.Atoi(strings.TrimSpace(string(data)))
+			if err != nil {
+				return fmt.Errorf("invalid PID file: %w", err)
+			}
+
+			proc, err := os.FindProcess(pid)
+			if err != nil {
+				fmt.Fprintln(cmd.ErrOrStderr(), "Error: daemon is not running (process not found)")
+				return fmt.Errorf("daemon not running")
+			}
+
+			if err := proc.Signal(syscall.SIGTERM); err != nil {
+				fmt.Fprintln(cmd.ErrOrStderr(), "Error: daemon is not running (cannot signal)")
+				return fmt.Errorf("daemon not running")
+			}
+
+			fmt.Fprintf(cmd.OutOrStdout(), "Stopping mesh daemon (pid %d)...\n", pid)
+
+			deadline := time.Now().Add(timeout)
+			for time.Now().Before(deadline) {
+				if err := proc.Signal(syscall.Signal(0)); err != nil {
+					fmt.Fprintln(cmd.OutOrStdout(), "Stopped mesh daemon")
+					return nil
+				}
+				time.Sleep(100 * time.Millisecond)
+			}
+
+			fmt.Fprintln(cmd.ErrOrStderr(), "Warning: daemon did not stop within timeout, sending SIGKILL")
+			proc.Signal(syscall.SIGKILL)
+			return nil
+		},
+	}
+
+	cmd.Flags().DurationVar(&timeout, "timeout", 30*time.Second, "timeout to wait for daemon to stop")
+
+	return cmd
+}
+
+func newStatusCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "status",
+		Short: "Show Mesh daemon status",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			configPath, _ := cmd.Flags().GetString("config")
+			if configPath == "" {
+				configPath = config.DefaultPath()
+			}
+			cfg, err := config.Load(configPath)
+			if err != nil {
+				return fmt.Errorf("load config: %w", err)
+			}
+
+			if cfg.Daemon.PIDFile == "" {
+				fmt.Fprintln(cmd.OutOrStdout(), "Mesh daemon: stopped (no pid_file configured)")
+				return nil
+			}
+
+			data, err := os.ReadFile(cfg.Daemon.PIDFile)
+			if err != nil {
+				if os.IsNotExist(err) {
+					fmt.Fprintln(cmd.OutOrStdout(), "Mesh daemon: stopped")
+					return nil
+				}
+				return fmt.Errorf("read PID file: %w", err)
+			}
+
+			pid, err := strconv.Atoi(strings.TrimSpace(string(data)))
+			if err != nil {
+				fmt.Fprintln(cmd.OutOrStdout(), "Mesh daemon: stopped (invalid PID file)")
+				return nil
+			}
+
+			proc, err := os.FindProcess(pid)
+			if err != nil {
+				fmt.Fprintln(cmd.OutOrStdout(), "Mesh daemon: stopped")
+				return nil
+			}
+
+			if err := proc.Signal(syscall.Signal(0)); err != nil {
+				fmt.Fprintln(cmd.OutOrStdout(), "Mesh daemon: stopped")
+				return nil
+			}
+
+			// Process is alive — try to query health endpoint
+			healthAddr := cfg.Daemon.SocketPath
+			if healthAddr == "" {
+				healthAddr = "/tmp/mesh.sock"
+			}
+
+			// The daemon's health server listens on a TCP port, not the socket path.
+			// We need to discover it. Since we can't easily know the port, we'll just
+			// report the PID and basic status.
+			fmt.Fprintf(cmd.OutOrStdout(), "Mesh daemon: running (pid %d)\n", pid)
+
+			// Try to query health endpoint via HTTP on localhost with common ports
+			// The daemon binds to 127.0.0.1:0 (random port), so we can't know it from
+			// config alone. We skip the health query for now and just show PID.
+			// In a real implementation, the daemon could write its HTTP addr to a file.
+
 			return nil
 		},
 	}
