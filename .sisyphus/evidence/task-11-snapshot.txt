@@ -1,0 +1,62 @@
+Task T11: Add snapshot/restore MCP tools
+=====================================
+
+Date: 2026-04-29
+Status: COMPLETED
+
+Files Modified:
+- internal/mcp/handlers.go
+- internal/mcp/mcp_test.go
+- internal/body/manager.go
+
+Changes:
+--------
+1. Added 3 new MCP tools in handlers.go:
+   - create_snapshot: Creates a filesystem snapshot of a running body
+     * Params: {body_id, label?}
+     * Validates body exists and is in Running state
+     * Exports filesystem via adapter, compresses with zstd, computes sha256
+     * Persists snapshot metadata to store
+     * Returns: {id, body_id, created_at, size_bytes, sha256}
+   
+   - list_snapshots: Lists snapshots for a body or all bodies
+     * Params: {body_id?}
+     * If body_id provided, filters to that body
+     * If no body_id, lists all snapshots across all bodies
+     * Returns array of SnapshotRecord objects
+   
+   - restore_body: Restores a body from a snapshot
+     * Params: {snapshot_id, target_substrate?}
+     * Validates snapshot and body exist
+     * Calls restore.RestoreFromStore to extract snapshot
+     * Returns: {restored, snapshot_id, body_id, target_dir, target_substrate}
+
+2. Added ExportFilesystem method to BodyManager (internal/body/manager.go):
+   - Public method to export filesystem of a running body
+   - Needed because adapter field is private
+
+3. Added comprehensive tests in mcp_test.go:
+   - TestCreateSnapshot: Creates snapshot of running body
+   - TestCreateSnapshotBodyNotFound: Error when body doesn't exist
+   - TestCreateSnapshotBodyNotRunning: Error when body is stopped
+   - TestCreateSnapshotNoBodyManager: Error when no body manager
+   - TestListSnapshots: List snapshots filtered by body_id
+   - TestListSnapshotsAllBodies: List all snapshots
+   - TestRestoreBody: Restore from valid snapshot
+   - TestRestoreBodyNoBodyManager: Error when no body manager
+   - TestRestoreBodySnapshotNotFound: Error when snapshot doesn't exist
+
+Test Results:
+-------------
+All tests pass:
+- go test ./internal/mcp/ - PASS (46 tests)
+- go test ./... - PASS (all packages)
+
+Error Handling:
+---------------
+- Body not found: Returns RPC error with code -32603
+- Body not running: Returns RPC error with code -32603  
+- Snapshot not found: Returns RPC error with code -32603
+- Missing required params: Returns RPC error with code -32602
+- Body manager not available: Returns RPC error with code -32603
+- Snapshot pipeline failure: Returns RPC error with code -32603

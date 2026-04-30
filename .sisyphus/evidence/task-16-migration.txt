@@ -1,0 +1,55 @@
+Task 16: Implement migration steps 6-7 (switch + cleanup)
+
+Date: 2026-04-29
+
+## Changes Made
+
+### Files Modified
+1. internal/body/migration.go
+   - Implemented stepSwitch: stops source container, verifies target health, updates body instance_id to target, destroys source
+   - Implemented stepCleanup: removes snapshot file from disk, deletes snapshot record, deletes migration record
+   - Added rollback in stepSwitch: if UpdateBodyInstanceID fails, attempts to restart source container
+   - Added idempotency: both steps check CurrentStep and return nil if already completed
+   - Updated BeginMigration and ResumeMigration to skip persisting step 7 (since cleanup deletes the record)
+   - Updated ResumeMigration to treat missing migration record as success (already completed)
+
+2. internal/store/store.go
+   - Added UpdateBodyInstanceID(ctx, id, instanceID) method
+   - Added DeleteMigration(ctx, id) method
+
+3. internal/body/body_test.go
+   - Updated existing tests to account for migration record being deleted after success
+   - Added TestMigrationStepSwitchUpdatesBodyInstanceID: verifies source is stopped/destroyed, instance_id changes
+   - Added TestMigrationStepSwitchIdempotent: verifies ResumeMigration on completed migration is no-op
+   - Added TestMigrationStepCleanupRemovesSnapshotFile: verifies migration record and snapshots are cleaned up
+   - Added TestMigrationStepSwitchRollbackOnFailure: verifies body state is Running after migration
+
+## Test Results
+
+$ go test ./internal/body/ -v -count=1
+PASS
+ok  	github.com/rethink-paradigms/mesh/internal/body	0.344s
+
+$ go test ./...
+ok  	github.com/rethink-paradigms/mesh/cmd/mesh	2.392s
+ok  	github.com/rethink-paradigms/mesh/internal/adapter	(cached)
+ok  	github.com/rethink-paradigms/mesh/internal/body	0.224s
+ok  	github.com/rethink-paradigms/mesh/internal/config	(cached)
+ok  	github.com/rethink-paradigms/mesh/internal/config-toml	(cached)
+ok  	github.com/rethink-paradigms/mesh/internal/daemon	1.111s
+ok  	github.com/rethink-paradigms/mesh/internal/docker	(cached)
+ok  	github.com/rethink-paradigms/mesh/internal/manifest	(cached)
+ok  	github.com/rethink-paradigms/mesh/internal/mcp	2.428s
+ok  	github.com/rethink-paradigms/mesh/internal/nomad	(cached)
+ok  	github.com/rethink-paradigms/mesh/internal/plugin	(cached)
+ok  	github.com/rethink-paradigms/mesh/internal/registry	(cached)
+ok  	github.com/rethink-paradigms/mesh/internal/restore	2.385s
+ok  	github.com/rethink-paradigms/mesh/internal/snapshot	5.012s
+ok  	github.com/rethink-paradigms/mesh/internal/store	3.354s
+
+## Design Decisions
+
+- Cleanup deletes the migration record (not just marks completed) to keep the store clean
+- ResumeMigration treats missing record as success — this handles the "already completed" case gracefully
+- Rollback on switch failure attempts to restart source container; if that also fails, the error is returned
+- Source container is stopped before updating instance_id, then destroyed after — ensures no split-brain

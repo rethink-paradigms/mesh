@@ -1,0 +1,29 @@
+Task: Validate go-plugin + Go 1.25 compatibility (T1)
+Date: 2026-04-29
+
+RESULT: PASS
+
+Steps:
+1. go get github.com/hashicorp/go-plugin@latest
+   - Resolved: v1.8.0
+   - No version conflicts
+   - Added transitive deps: go-hclog, yamux, oklog/run, golang/protobuf, fatih/color, mattn/go-colorable
+
+2. go build ./...
+   - PASS (no compilation errors)
+
+3. Created internal/plugin/compat_test.go
+   - Imports github.com/hashicorp/go-plugin
+   - Uses plugin.HandshakeConfig and plugin.PluginSet (real exported types)
+   - Note: plugin.ProtocolVersion and plugin.PluginMap do NOT exist in v1.8.0
+
+4. go test ./internal/plugin/ -v
+   - PASS: TestGoPluginImports (0.00s)
+
+Go version: 1.25.5
+go-plugin version: v1.8.0
+
+Files modified:
+- go.mod (go-plugin added to indirect deps via go get)
+- go.sum (updated with new checksums)
+- internal/plugin/compat_test.go (new)

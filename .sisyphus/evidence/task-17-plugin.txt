@@ -1,0 +1,40 @@
+Task T17: Plugin interface + protobuf + go-plugin scaffold
+Date: 2026-04-29
+
+=== FILES CREATED ===
+1. internal/plugin/interface.go       - MeshPlugin interface with PluginInfo and GetAdapter
+2. internal/plugin/plugin.proto       - Protobuf definition for PluginInfo, HealthCheck, GetAdapter
+3. internal/plugin/plugin.pb.go       - Generated protobuf Go code (protoc-gen-go)
+4. internal/plugin/plugin_grpc.pb.go  - Generated gRPC Go code (protoc-gen-go-grpc)
+5. internal/plugin/grpc.go            - gRPC server/client for go-plugin integration
+6. internal/plugin/reference/main.go  - Reference plugin implementing MeshPlugin
+7. internal/plugin/plugin_test.go     - Tests for reference plugin via go-plugin
+
+=== VERIFICATION ===
+- go test ./internal/plugin/          PASS (2 tests, 4 sub-tests)
+- go test ./...                       PASS (all packages, no regressions)
+
+=== TEST DETAILS ===
+TestGoPluginImports        PASS
+TestReferencePlugin        PASS
+  - PluginInfo             PASS (returns name=reference, version=1.0.0)
+  - GetAdapter             PASS (returns adapter with substrate=local, healthy=true)
+  - AdapterCreate          PASS (proxy correctly returns not-implemented)
+
+=== KEY DECISIONS ===
+- MeshPlugin interface: PluginInfo(ctx) + GetAdapter(ctx)
+- go-plugin HandshakeConfig: protocol version 1, magic cookie MESH_PLUGIN/mesh-plugin-2026
+- PluginMap key: "mesh-plugin"
+- gRPC proxy adapter stubs return not-implemented for lifecycle verbs (T18+ will extend)
+- Reference plugin: filesystem-local adapter, substrate "local", no capabilities
+
+=== DEPENDENCIES ===
+- github.com/hashicorp/go-plugin v1.8.0 (already in go.mod)
+- google.golang.org/grpc (transitive via go-plugin)
+- google.golang.org/protobuf (transitive via go-plugin)
+
+=== BLOCKS ===
+- T18: Plugin manager (scan, health, restart)
+- T19: Plugin loading at startup
+- T20: Nomad adapter plugin
+- T21: S3 adapter plugin

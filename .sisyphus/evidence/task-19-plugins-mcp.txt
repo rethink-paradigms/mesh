@@ -1,0 +1,49 @@
+Task T19: Add list_plugins + plugin_health MCP tools + wire plugins into daemon
+
+Files Modified:
+- internal/mcp/server.go        - Added pluginMgr field + SetPluginManager method
+- internal/mcp/handlers.go      - Registered list_plugins and plugin_health tools + handlers
+- internal/mcp/mcp_test.go      - Added 6 tests for plugin MCP tools
+- internal/daemon/daemon.go     - Wired PluginManager into Start()/Stop() lifecycle
+- internal/daemon/daemon_test.go - Added 2 tests for daemon plugin manager integration
+
+Test Results:
+$ go test ./internal/mcp/ ./internal/daemon/ -count=1
+ok      github.com/rethink-paradigms/mesh/internal/mcp        1.759s
+ok      github.com/rethink-paradigms/mesh/internal/daemon     1.254s
+
+$ go test ./...
+ok      github.com/rethink-paradigms/mesh/cmd/mesh            1.723s
+ok      github.com/rethink-paradigms/mesh/internal/adapter    (cached)
+ok      github.com/rethink-paradigms/mesh/internal/body       (cached)
+ok      github.com/rethink-paradigms/mesh/internal/config     (cached)
+ok      github.com/rethink-paradigms/mesh/internal/config-toml (cached)
+ok      github.com/rethink-paradigms/mesh/internal/daemon     0.728s
+ok      github.com/rethink-paradigms/mesh/internal/docker     (cached)
+ok      github.com/rethink-paradigms/mesh/internal/manifest   (cached)
+ok      github.com/rethink-paradigms/mesh/internal/mcp        1.741s
+ok      github.com/rethink-paradigms/mesh/internal/nomad      (cached)
+ok      github.com/rethink-paradigms/mesh/internal/plugin     (cached)
+ok      github.com/rethink-paradigms/mesh/internal/registry   (cached)
+ok      github.com/rethink-paradigms/mesh/internal/restore    (cached)
+ok      github.com/rethink-paradigms/mesh/internal/snapshot   (cached)
+ok      github.com/rethink-paradigms/mesh/internal/store      (cached)
+
+New MCP Tools:
+1. list_plugins - Returns all loaded plugins with name, version, state, healthy status
+2. plugin_health - Returns detailed health for a plugin (name, version, state, healthy, fail_count, retry_count, description, author)
+
+Daemon Integration:
+- Start(): Creates PluginManager, calls StartScanAndLoad() and StartHealthChecks()
+- Stop(): Calls pluginMgr.Stop() to gracefully shutdown all plugin processes
+- Added PluginManager() accessor method
+
+Tests Added:
+- TestListPlugins: Returns empty list when no plugins loaded
+- TestListPluginsNoManager: Error when plugin manager not set
+- TestPluginHealth: Returns not-found for nonexistent plugin
+- TestPluginHealthNoManager: Error when plugin manager not set
+- TestPluginHealthMissingName: Error when plugin_name param missing
+- TestToolsListIncludesPluginTools: Both tools appear in tools/list
+- TestDaemonInitializesPluginManager: Daemon creates plugin manager on start
+- TestDaemonStopsPluginManagerOnShutdown: Daemon stops plugin manager on shutdown
