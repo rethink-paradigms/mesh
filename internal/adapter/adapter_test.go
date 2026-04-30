@@ -53,6 +53,14 @@ func (m *mockAdapter) Capabilities() AdapterCapabilities {
 	return AdapterCapabilities{}
 }
 
+func (m *mockAdapter) SubstrateName() string {
+	return "mock"
+}
+
+func (m *mockAdapter) IsHealthy(ctx context.Context) bool {
+	return true
+}
+
 // Compile-time check that mockAdapter implements SubstrateAdapter.
 var _ SubstrateAdapter = (*mockAdapter)(nil)
 
@@ -561,4 +569,224 @@ func TestMockAdapterImplementation(t *testing.T) {
 	if caps.ExportFilesystem {
 		t.Errorf("Capabilities should have ExportFilesystem=false")
 	}
+
+	if m.SubstrateName() != "mock" {
+		t.Errorf("SubstrateName mismatch: got %q, want %q", m.SubstrateName(), "mock")
+	}
+
+	if !m.IsHealthy(ctx) {
+		t.Errorf("IsHealthy should return true")
+	}
+}
+
+type mockAdapter2 struct{}
+
+func (m *mockAdapter2) Create(ctx context.Context, spec BodySpec) (Handle, error) {
+	return Handle("test-body-2"), nil
+}
+
+func (m *mockAdapter2) Start(ctx context.Context, id Handle) error {
+	return nil
+}
+
+func (m *mockAdapter2) Stop(ctx context.Context, id Handle, opts StopOpts) error {
+	return nil
+}
+
+func (m *mockAdapter2) Destroy(ctx context.Context, id Handle) error {
+	return nil
+}
+
+func (m *mockAdapter2) GetStatus(ctx context.Context, id Handle) (BodyStatus, error) {
+	return BodyStatus{State: StateStopped}, nil
+}
+
+func (m *mockAdapter2) Exec(ctx context.Context, id Handle, cmd []string) (ExecResult, error) {
+	return ExecResult{ExitCode: 1}, nil
+}
+
+func (m *mockAdapter2) ExportFilesystem(ctx context.Context, id Handle) (io.ReadCloser, error) {
+	return io.NopCloser(strings.NewReader("")), nil
+}
+
+func (m *mockAdapter2) ImportFilesystem(ctx context.Context, id Handle, tarball io.Reader, opts ImportOpts) error {
+	return nil
+}
+
+func (m *mockAdapter2) Inspect(ctx context.Context, id Handle) (ContainerMetadata, error) {
+	return ContainerMetadata{}, nil
+}
+
+func (m *mockAdapter2) Capabilities() AdapterCapabilities {
+	return AdapterCapabilities{ExportFilesystem: true}
+}
+
+func (m *mockAdapter2) SubstrateName() string {
+	return "mock2"
+}
+
+func (m *mockAdapter2) IsHealthy(ctx context.Context) bool {
+	return false
+}
+
+var _ SubstrateAdapter = (*mockAdapter2)(nil)
+
+func TestMultiAdapterRegistration(t *testing.T) {
+	ma := NewMultiAdapter()
+
+	if len(ma.ListAdapters()) != 0 {
+		t.Fatalf("expected 0 adapters, got %d", len(ma.ListAdapters()))
+	}
+
+	a1 := &mockAdapter{}
+	a2 := &mockAdapter2{}
+
+	ma.Register("docker", a1)
+	ma.Register("nomad", a2)
+
+	names := ma.ListAdapters()
+	if len(names) != 2 {
+		t.Fatalf("expected 2 adapters, got %d", len(names))
+	}
+
+	found := make(map[string]bool)
+	for _, n := range names {
+		found[n] = true
+	}
+	if !found["docker"] || !found["nomad"] {
+		t.Errorf("expected docker and nomad in list, got %v", names)
+	}
+}
+
+func TestMultiAdapterGetAdapter(t *testing.T) {
+	ma := NewMultiAdapter()
+	a1 := &mockAdapter{}
+	ma.Register("docker", a1)
+
+	got, err := ma.GetAdapter("docker")
+	if err != nil {
+		t.Fatalf("GetAdapter failed: %v", err)
+	}
+	if got != a1 {
+		t.Error("GetAdapter returned wrong adapter")
+	}
+
+	_, err = ma.GetAdapter("unknown")
+	if err == nil {
+		t.Fatal("expected error for unknown adapter")
+	}
+}
+
+func TestMultiAdapterDelegation(t *testing.T) {
+	ma := NewMultiAdapter()
+	a1 := &mockAdapter{}
+	a2 := &mockAdapter2{}
+
+	ma.Register("docker", a1)
+	ma.Register("nomad", a2)
+
+	ctx := context.Background()
+
+	h, err := ma.Create(ctx, BodySpec{Image: "docker/nginx"})
+	if err != nil {
+		t.Fatalf("Create failed: %v", err)
+	}
+	if h != Handle("test-body") {
+		t.Errorf("Create returned unexpected handle: got %q, want %q", h, "test-body")
+	}
+
+	if err := ma.Start(ctx, h); err != nil {
+		t.Fatalf("Start failed: %v", err)
+	}
+
+	status, err := ma.GetStatus(ctx, h)
+	if err != nil {
+		t.Fatalf("GetStatus failed: %v", err)
+	}
+	if status.State != StateRunning && status.State != StateStopped {
+		t.Errorf("GetStatus returned unexpected state: got %q", status.State)
+	}
+
+	result, err := ma.Exec(ctx, h, []string{"echo", "test"})
+	if err != nil {
+		t.Fatalf("Exec failed: %v", err)
+	}
+	if result.ExitCode != 0 && result.ExitCode != 1 {
+		t.Errorf("Exec returned unexpected exit code: got %d", result.ExitCode)
+	}
+
+	if err := ma.Stop(ctx, h, StopOpts{}); err != nil {
+		t.Fatalf("Stop failed: %v", err)
+	}
+
+	if err := ma.Destroy(ctx, h); err != nil {
+		t.Fatalf("Destroy failed: %v", err)
+	}
+
+	rc, err := ma.ExportFilesystem(ctx, h)
+	if err != nil {
+		t.Fatalf("ExportFilesystem failed: %v", err)
+	}
+	if rc == nil {
+		t.Errorf("ExportFilesystem returned nil ReadCloser")
+	}
+	rc.Close()
+
+	if err := ma.ImportFilesystem(ctx, h, bytes.NewReader([]byte{}), ImportOpts{}); err != nil {
+		t.Fatalf("ImportFilesystem failed: %v", err)
+	}
+
+	_, err = ma.Inspect(ctx, h)
+	if err != nil {
+		t.Fatalf("Inspect failed: %v", err)
+	}
+}
+
+func TestMultiAdapterUnknownAdapter(t *testing.T) {
+	ma := NewMultiAdapter()
+
+	ctx := context.Background()
+
+	_, err := ma.Create(ctx, BodySpec{Image: "test"})
+	if err == nil {
+		t.Fatal("expected error with no adapters registered")
+	}
+}
+
+func TestMultiAdapterSubstrateName(t *testing.T) {
+	ma := NewMultiAdapter()
+	if ma.SubstrateName() != "multi" {
+		t.Errorf("SubstrateName mismatch: got %q, want %q", ma.SubstrateName(), "multi")
+	}
+}
+
+func TestMultiAdapterIsHealthy(t *testing.T) {
+	ma := NewMultiAdapter()
+	ctx := context.Background()
+
+	if ma.IsHealthy(ctx) {
+		t.Error("expected IsHealthy=false with no adapters")
+	}
+
+	ma.Register("docker", &mockAdapter{})
+	if !ma.IsHealthy(ctx) {
+		t.Error("expected IsHealthy=true with one healthy adapter")
+	}
+
+	ma2 := NewMultiAdapter()
+	ma2.Register("nomad", &mockAdapter2{})
+	if ma2.IsHealthy(ctx) {
+		t.Error("expected IsHealthy=false with one unhealthy adapter")
+	}
+
+	ma3 := NewMultiAdapter()
+	ma3.Register("docker", &mockAdapter{})
+	ma3.Register("nomad", &mockAdapter2{})
+	if !ma3.IsHealthy(ctx) {
+		t.Error("expected IsHealthy=true with mixed adapters")
+	}
+}
+
+func TestMultiAdapterCompileTimeCheck(t *testing.T) {
+	var _ SubstrateAdapter = (*MultiAdapter)(nil)
 }
