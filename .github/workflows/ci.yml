@@ -42,7 +42,10 @@ jobs:
 
   build:
     name: Build
-    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
@@ -53,5 +56,51 @@ jobs:
       - name: Upload binary
         uses: actions/upload-artifact@v4
         with:
-          name: mesh-binary
+          name: mesh-binary-${{ matrix.os }}
           path: mesh
+
+  integration:
+    name: Integration Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25'
+      - name: Set up Docker
+        uses: docker/setup-buildx-action@v3
+      - name: Build mesh binary
+        run: go build -o mesh ./cmd/mesh/
+      - name: Run integration tests
+        run: go test -tags=integration -v ./... 2>&1 | tee integration.log
+        env:
+          MESH_BINARY: ${{ github.workspace }}/mesh
+      - name: Upload integration logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: integration-logs
+          path: integration.log
+
+  goreleaser-check:
+    name: GoReleaser Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25'
+      - name: Run GoReleaser check
+        uses: goreleaser/goreleaser-action@v6
+        with:
+          distribution: goreleaser
+          version: '~> v2'
+          args: check
+      - name: Run GoReleaser snapshot (dry-run)
+        uses: goreleaser/goreleaser-action@v6
+        with:
+          distribution: goreleaser
+          version: '~> v2'
+          args: release --snapshot --clean
