@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- chore: remove personal AI assistant configs (CLAUDE.md, DESIGN.md, GEMINI.md, scripts/gemini-opinion.sh) from public tracking. Kept locally for dev workflow.
+
 ## [1.0.0] - 2026-05-01
 
 ### Added
