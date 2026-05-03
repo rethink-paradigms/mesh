@@ -9,23 +9,24 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/rethink-paradigms/mesh/internal/adapter"
+	"github.com/rethink-paradigms/mesh/internal/orchestrator"
 	"github.com/rethink-paradigms/mesh/internal/store"
 )
 
-// BodyManager orchestrates body lifecycle operations against a store and substrate adapter.
+// BodyManager orchestrates body lifecycle operations against a store and orchestrator adapter.
 type BodyManager struct {
-	store   *store.Store
-	adapter adapter.SubstrateAdapter
-	mu      sync.Mutex
-	bodies  map[string]*Body
+	store *store.Store
+	orch  orchestrator.OrchestratorAdapter
+	mu    sync.Mutex
+	bodies map[string]*Body
 }
 
 // NewBodyManager creates a new BodyManager.
-func NewBodyManager(s *store.Store, a adapter.SubstrateAdapter) *BodyManager {
+func NewBodyManager(s *store.Store, orchAdapter orchestrator.OrchestratorAdapter) *BodyManager {
 	return &BodyManager{
-		store:   s,
-		adapter: a,
-		bodies:  make(map[string]*Body),
+		store:  s,
+		orch:   orchAdapter,
+		bodies: make(map[string]*Body),
 	}
 }
 
@@ -54,9 +55,17 @@ func (bm *BodyManager) Create(ctx context.Context, name string, spec adapter.Bod
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
-	handle, err := bm.adapter.Create(ctx, spec)
+	orchSpec := orchestrator.BodySpec{
+		Image:     spec.Image,
+		Workdir:   spec.Workdir,
+		Env:       spec.Env,
+		Cmd:       spec.Cmd,
+		MemoryMB:  spec.MemoryMB,
+		CPUShares: spec.CPUShares,
+	}
+	handle, err := bm.orch.ScheduleBody(ctx, orchSpec)
 	if err != nil {
-		return nil, fmt.Errorf("adapter create: %w", err)
+		return nil, fmt.Errorf("orchestrator schedule body: %w", err)
 	}
 
 	specJSON := specToJSON(spec)
@@ -67,7 +76,7 @@ func (bm *BodyManager) Create(ctx context.Context, name string, spec adapter.Bod
 	b.ID = id
 	b.Name = name
 	b.State = adapter.StateCreated
-	b.InstanceID = handle
+	b.InstanceID = adapter.Handle(handle)
 	b.Spec = spec
 	b.Substrate = "local"
 
@@ -75,9 +84,9 @@ func (bm *BodyManager) Create(ctx context.Context, name string, spec adapter.Bod
 		return nil, err
 	}
 
-	if err := bm.adapter.Start(ctx, handle); err != nil {
+	if err := bm.orch.StartBody(ctx, handle); err != nil {
 		_ = bm.transitionPersisted(ctx, b, adapter.StateError)
-		return nil, fmt.Errorf("adapter start: %w", err)
+		return nil, fmt.Errorf("orchestrator start body: %w", err)
 	}
 
 	if err := bm.transitionPersisted(ctx, b, adapter.StateRunning); err != nil {
@@ -101,9 +110,9 @@ func (bm *BodyManager) Start(ctx context.Context, bodyID string) error {
 		return err
 	}
 
-	if err := bm.adapter.Start(ctx, b.InstanceID); err != nil {
+	if err := bm.orch.StartBody(ctx, orchestrator.Handle(b.InstanceID)); err != nil {
 		_ = bm.transitionPersisted(ctx, b, adapter.StateError)
-		return fmt.Errorf("adapter start: %w", err)
+		return fmt.Errorf("orchestrator start body: %w", err)
 	}
 
 	return bm.transitionPersisted(ctx, b, adapter.StateRunning)
@@ -119,9 +128,9 @@ func (bm *BodyManager) Stop(ctx context.Context, bodyID string, opts adapter.Sto
 		return err
 	}
 
-	if err := bm.adapter.Stop(ctx, b.InstanceID, opts); err != nil {
+	if err := bm.orch.StopBody(ctx, orchestrator.Handle(b.InstanceID)); err != nil {
 		_ = bm.transitionPersisted(ctx, b, adapter.StateError)
-		return fmt.Errorf("adapter stop: %w", err)
+		return fmt.Errorf("orchestrator stop body: %w", err)
 	}
 
 	return bm.transitionPersisted(ctx, b, adapter.StateStopped)
@@ -137,8 +146,8 @@ func (bm *BodyManager) Destroy(ctx context.Context, bodyID string) error {
 		return fmt.Errorf("cannot destroy body in state %s (must be Stopped or Error)", b.State)
 	}
 
-	if err := bm.adapter.Destroy(ctx, b.InstanceID); err != nil {
-		return fmt.Errorf("adapter destroy: %w", err)
+	if err := bm.orch.DestroyBody(ctx, orchestrator.Handle(b.InstanceID)); err != nil {
+		return fmt.Errorf("orchestrator destroy body: %w", err)
 	}
 
 	if err := bm.transitionPersisted(ctx, b, adapter.StateDestroyed); err != nil {
@@ -156,18 +165,24 @@ func (bm *BodyManager) Destroy(ctx context.Context, bodyID string) error {
 	return nil
 }
 
-// GetStatus returns the current status of a body by combining store and adapter state.
+// GetStatus returns the current status of a body by combining store and orchestrator state.
 func (bm *BodyManager) GetStatus(ctx context.Context, bodyID string) (adapter.BodyStatus, error) {
 	b := bm.getOrCreateBody(bodyID)
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
-	status, err := bm.adapter.GetStatus(ctx, b.InstanceID)
+	status, err := bm.orch.GetBodyStatus(ctx, orchestrator.Handle(b.InstanceID))
 	if err != nil {
-		return adapter.BodyStatus{}, fmt.Errorf("adapter get status: %w", err)
+		return adapter.BodyStatus{}, fmt.Errorf("orchestrator get body status: %w", err)
 	}
 
-	return status, nil
+	return adapter.BodyStatus{
+		State:      adapter.BodyState(status.State),
+		Uptime:     status.Uptime,
+		MemoryMB:   status.MemoryMB,
+		CPUPercent: status.CPUPercent,
+		StartedAt:  status.StartedAt,
+	}, nil
 }
 
 // List returns all bodies from the store, refreshing the in-memory cache.
@@ -198,11 +213,32 @@ func (bm *BodyManager) ExportFilesystem(ctx context.Context, bodyID string) (io.
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
-	rc, err := bm.adapter.ExportFilesystem(ctx, b.InstanceID)
-	if err != nil {
-		return nil, fmt.Errorf("adapter export filesystem: %w", err)
+	if exp, ok := bm.orch.(orchestrator.Exporter); ok {
+		return exp.ExportFilesystem(ctx, orchestrator.Handle(b.InstanceID))
 	}
-	return rc, nil
+	return nil, fmt.Errorf("orchestrator %q does not support ExportFilesystem", bm.orch.Name())
+}
+
+func (bm *BodyManager) ImportFilesystem(ctx context.Context, bodyID string, r io.Reader) error {
+	b := bm.getOrCreateBody(bodyID)
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	if imp, ok := bm.orch.(orchestrator.Importer); ok {
+		return imp.ImportFilesystem(ctx, orchestrator.Handle(b.InstanceID), r)
+	}
+	return fmt.Errorf("orchestrator %q does not support ImportFilesystem", bm.orch.Name())
+}
+
+func (bm *BodyManager) Inspect(ctx context.Context, bodyID string) (orchestrator.ContainerMetadata, error) {
+	b := bm.getOrCreateBody(bodyID)
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	if ins, ok := bm.orch.(orchestrator.Inspector); ok {
+		return ins.Inspect(ctx, orchestrator.Handle(b.InstanceID))
+	}
+	return orchestrator.ContainerMetadata{}, fmt.Errorf("orchestrator %q does not support Inspect", bm.orch.Name())
 }
 
 // Get retrieves a single body by ID from the store.
@@ -260,5 +296,16 @@ func (bm *BodyManager) Exec(ctx context.Context, bodyID string, cmd []string) (a
 		return adapter.ExecResult{}, fmt.Errorf("cannot exec in body %s: state is %s (must be Running)", bodyID, b.State)
 	}
 
-	return bm.adapter.Exec(ctx, b.InstanceID, cmd)
+	if exec, ok := bm.orch.(orchestrator.Executor); ok {
+		result, err := exec.Exec(ctx, orchestrator.Handle(b.InstanceID), cmd)
+		if err != nil {
+			return adapter.ExecResult{}, err
+		}
+		return adapter.ExecResult{
+			Stdout:   result.Stdout,
+			Stderr:   result.Stderr,
+			ExitCode: result.ExitCode,
+		}, nil
+	}
+	return adapter.ExecResult{}, fmt.Errorf("orchestrator %q does not support Exec", bm.orch.Name())
 }

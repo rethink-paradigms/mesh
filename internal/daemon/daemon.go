@@ -19,7 +19,7 @@ import (
 	"github.com/rethink-paradigms/mesh/internal/adapter"
 	"github.com/rethink-paradigms/mesh/internal/body"
 	"github.com/rethink-paradigms/mesh/internal/config"
-	"github.com/rethink-paradigms/mesh/internal/docker"
+	"github.com/rethink-paradigms/mesh/internal/orchestrator"
 	"github.com/rethink-paradigms/mesh/internal/plugin"
 	"github.com/rethink-paradigms/mesh/internal/store"
 )
@@ -110,14 +110,12 @@ func (d *Daemon) Start(ctx context.Context) error {
 	}
 	d.store = s
 
-	// 3. Initialize Docker adapter and MultiAdapter
-	dockerAdp := docker.New()
+	// 3. Initialize MultiAdapter (adapters registered by plugin system)
 	multi := adapter.NewMultiAdapter()
-	multi.Register("docker", dockerAdp)
 	d.adapters = multi
 
 	// 4. Initialize BodyManager
-	d.bodyMgr = body.NewBodyManager(d.store, d.adapters)
+	d.bodyMgr = body.NewBodyManager(d.store, &multiAdapterOrchestrator{multi: d.adapters})
 
 	// 5. Initialize PluginManager
 	pm := plugin.NewPluginManager(d.cfg.Plugin.Dir, d.cfg.Plugin.Enabled)
@@ -387,4 +385,57 @@ func (d *Daemon) removePIDFile() {
 	if d.cfg.Daemon.PIDFile != "" {
 		os.Remove(d.cfg.Daemon.PIDFile)
 	}
+}
+
+// multiAdapterOrchestrator wraps *adapter.MultiAdapter to satisfy orchestrator.OrchestratorAdapter.
+// This is a temporary bridge until Task 11 fully rewires the daemon.
+type multiAdapterOrchestrator struct {
+	multi *adapter.MultiAdapter
+}
+
+func (m *multiAdapterOrchestrator) ScheduleBody(ctx context.Context, spec orchestrator.BodySpec) (orchestrator.Handle, error) {
+	adpSpec := adapter.BodySpec{
+		Image:     spec.Image,
+		Workdir:   spec.Workdir,
+		Env:       spec.Env,
+		Cmd:       spec.Cmd,
+		MemoryMB:  spec.MemoryMB,
+		CPUShares: spec.CPUShares,
+	}
+	h, err := m.multi.Create(ctx, adpSpec)
+	return orchestrator.Handle(h), err
+}
+
+func (m *multiAdapterOrchestrator) StartBody(ctx context.Context, id orchestrator.Handle) error {
+	return m.multi.Start(ctx, adapter.Handle(id))
+}
+
+func (m *multiAdapterOrchestrator) StopBody(ctx context.Context, id orchestrator.Handle) error {
+	return m.multi.Stop(ctx, adapter.Handle(id), adapter.StopOpts{})
+}
+
+func (m *multiAdapterOrchestrator) DestroyBody(ctx context.Context, id orchestrator.Handle) error {
+	return m.multi.Destroy(ctx, adapter.Handle(id))
+}
+
+func (m *multiAdapterOrchestrator) GetBodyStatus(ctx context.Context, id orchestrator.Handle) (orchestrator.BodyStatus, error) {
+	s, err := m.multi.GetStatus(ctx, adapter.Handle(id))
+	if err != nil {
+		return orchestrator.BodyStatus{}, err
+	}
+	return orchestrator.BodyStatus{
+		State:      orchestrator.BodyState(s.State),
+		Uptime:     s.Uptime,
+		MemoryMB:   s.MemoryMB,
+		CPUPercent: s.CPUPercent,
+		StartedAt:  s.StartedAt,
+	}, nil
+}
+
+func (m *multiAdapterOrchestrator) Name() string {
+	return m.multi.SubstrateName()
+}
+
+func (m *multiAdapterOrchestrator) IsHealthy(ctx context.Context) bool {
+	return m.multi.IsHealthy(ctx)
 }

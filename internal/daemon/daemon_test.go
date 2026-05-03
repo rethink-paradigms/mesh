@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -17,7 +18,6 @@ import (
 	"github.com/rethink-paradigms/mesh/internal/adapter"
 	"github.com/rethink-paradigms/mesh/internal/body"
 	"github.com/rethink-paradigms/mesh/internal/config"
-	"github.com/rethink-paradigms/mesh/internal/docker"
 	"github.com/rethink-paradigms/mesh/internal/store"
 )
 
@@ -30,10 +30,63 @@ func testConfig(t *testing.T) *config.Config {
 		Store: config.StoreConfig{
 			Path: filepath.Join(t.TempDir(), "test.db"),
 		},
-		Docker: config.DockerConfig{
-			Host: "unix:///var/run/docker.sock",
-		},
 	}
+}
+
+// mockDaemonAdapter is a minimal SubstrateAdapter for daemon tests.
+// It returns zero values / not-found errors for all operations.
+type mockDaemonAdapter struct{}
+
+func (m *mockDaemonAdapter) Create(_ context.Context, _ adapter.BodySpec) (adapter.Handle, error) {
+	return "mock-handle", nil
+}
+
+func (m *mockDaemonAdapter) Start(_ context.Context, _ adapter.Handle) error {
+	return nil
+}
+
+func (m *mockDaemonAdapter) Stop(_ context.Context, _ adapter.Handle, _ adapter.StopOpts) error {
+	return nil
+}
+
+func (m *mockDaemonAdapter) Destroy(_ context.Context, _ adapter.Handle) error {
+	return nil
+}
+
+func (m *mockDaemonAdapter) GetStatus(_ context.Context, _ adapter.Handle) (adapter.BodyStatus, error) {
+	return adapter.BodyStatus{}, fmt.Errorf("not found")
+}
+
+func (m *mockDaemonAdapter) Exec(_ context.Context, _ adapter.Handle, _ []string) (adapter.ExecResult, error) {
+	return adapter.ExecResult{}, nil
+}
+
+func (m *mockDaemonAdapter) ExportFilesystem(_ context.Context, _ adapter.Handle) (io.ReadCloser, error) {
+	return nil, fmt.Errorf("not supported")
+}
+
+func (m *mockDaemonAdapter) ImportFilesystem(_ context.Context, _ adapter.Handle, _ io.Reader, _ adapter.ImportOpts) error {
+	return fmt.Errorf("not supported")
+}
+
+func (m *mockDaemonAdapter) Inspect(_ context.Context, _ adapter.Handle) (adapter.ContainerMetadata, error) {
+	return adapter.ContainerMetadata{}, fmt.Errorf("not supported")
+}
+
+func (m *mockDaemonAdapter) Capabilities() adapter.AdapterCapabilities {
+	return adapter.AdapterCapabilities{}
+}
+
+func (m *mockDaemonAdapter) SubstrateName() string {
+	return "docker"
+}
+
+func (m *mockDaemonAdapter) IsHealthy(_ context.Context) bool {
+	return true
+}
+
+func newMockDaemonAdapter() *mockDaemonAdapter {
+	return &mockDaemonAdapter{}
 }
 
 func TestDaemonNew(t *testing.T) {
@@ -237,11 +290,11 @@ func TestReconcileMissingContainer(t *testing.T) {
 		t.Fatalf("CreateBody: %v", err)
 	}
 
-	dockerAdp := docker.New()
+	mockAdp := newMockDaemonAdapter()
 	multi := adapter.NewMultiAdapter()
-	multi.Register("docker", dockerAdp)
+	multi.Register("docker", mockAdp)
 	d.adapters = multi
-	d.bodyMgr = body.NewBodyManager(d.store, d.adapters)
+	d.bodyMgr = body.NewBodyManager(d.store, &multiAdapterOrchestrator{multi: d.adapters})
 
 	if err := d.reconcile(ctx); err != nil {
 		t.Fatalf("reconcile: %v", err)
@@ -278,11 +331,11 @@ func TestReconcileOrphanedStoreRecord(t *testing.T) {
 		t.Fatalf("CreateBody: %v", err)
 	}
 
-	dockerAdp := docker.New()
+	mockAdp := newMockDaemonAdapter()
 	multi := adapter.NewMultiAdapter()
-	multi.Register("docker", dockerAdp)
+	multi.Register("docker", mockAdp)
 	d.adapters = multi
-	d.bodyMgr = body.NewBodyManager(d.store, d.adapters)
+	d.bodyMgr = body.NewBodyManager(d.store, &multiAdapterOrchestrator{multi: d.adapters})
 
 	if err := d.reconcile(ctx); err != nil {
 		t.Fatalf("reconcile: %v", err)
@@ -319,11 +372,11 @@ func TestReconcileStateMismatch(t *testing.T) {
 		t.Fatalf("CreateBody: %v", err)
 	}
 
-	dockerAdp := docker.New()
+	mockAdp := newMockDaemonAdapter()
 	multi := adapter.NewMultiAdapter()
-	multi.Register("docker", dockerAdp)
+	multi.Register("docker", mockAdp)
 	d.adapters = multi
-	d.bodyMgr = body.NewBodyManager(d.store, d.adapters)
+	d.bodyMgr = body.NewBodyManager(d.store, &multiAdapterOrchestrator{multi: d.adapters})
 
 	if err := d.reconcile(ctx); err != nil {
 		t.Fatalf("reconcile: %v", err)
@@ -360,11 +413,11 @@ func TestReconcileMigrationRecovery(t *testing.T) {
 		t.Fatalf("CreateBody: %v", err)
 	}
 
-	dockerAdp := docker.New()
+	mockAdp := newMockDaemonAdapter()
 	multi := adapter.NewMultiAdapter()
-	multi.Register("docker", dockerAdp)
+	multi.Register("docker", mockAdp)
 	d.adapters = multi
-	d.bodyMgr = body.NewBodyManager(d.store, d.adapters)
+	d.bodyMgr = body.NewBodyManager(d.store, &multiAdapterOrchestrator{multi: d.adapters})
 
 	if err := d.reconcile(ctx); err != nil {
 		t.Fatalf("reconcile: %v", err)
@@ -402,11 +455,11 @@ func TestReconcileHealthSteps(t *testing.T) {
 		t.Fatalf("CreateBody: %v", err)
 	}
 
-	dockerAdp := docker.New()
+	mockAdp := newMockDaemonAdapter()
 	multi := adapter.NewMultiAdapter()
-	multi.Register("docker", dockerAdp)
+	multi.Register("docker", mockAdp)
 	d.adapters = multi
-	d.bodyMgr = body.NewBodyManager(d.store, d.adapters)
+	d.bodyMgr = body.NewBodyManager(d.store, &multiAdapterOrchestrator{multi: d.adapters})
 
 	if err := d.reconcile(ctx); err != nil {
 		t.Fatalf("reconcile: %v", err)
@@ -571,7 +624,7 @@ func TestStopIdempotent(t *testing.T) {
 	}
 }
 
-func TestDaemonWiresDockerAdapter(t *testing.T) {
+func TestDaemonWiresMultiAdapter(t *testing.T) {
 	cfg := testConfig(t)
 	d, err := New(cfg)
 	if err != nil {
@@ -597,16 +650,6 @@ func TestDaemonWiresDockerAdapter(t *testing.T) {
 
 	if d.adapters == nil {
 		t.Fatal("adapters should be initialized")
-	}
-	adp, err := d.adapters.GetAdapter("docker")
-	if err != nil {
-		t.Fatalf("get docker adapter: %v", err)
-	}
-	if adp == nil {
-		t.Fatal("docker adapter should not be nil")
-	}
-	if adp.SubstrateName() != "docker" {
-		t.Fatalf("substrate = %q, want docker", adp.SubstrateName())
 	}
 
 	cancel()
