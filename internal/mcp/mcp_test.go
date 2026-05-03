@@ -36,8 +36,8 @@ func (m *mockOrchAdapter) ScheduleBody(_ context.Context, _ orchestrator.BodySpe
 	}
 	return m.handle, nil
 }
-func (m *mockOrchAdapter) StartBody(_ context.Context, _ orchestrator.Handle) error  { return nil }
-func (m *mockOrchAdapter) StopBody(_ context.Context, _ orchestrator.Handle) error   { return nil }
+func (m *mockOrchAdapter) StartBody(_ context.Context, _ orchestrator.Handle) error   { return nil }
+func (m *mockOrchAdapter) StopBody(_ context.Context, _ orchestrator.Handle) error    { return nil }
 func (m *mockOrchAdapter) DestroyBody(_ context.Context, _ orchestrator.Handle) error { return nil }
 func (m *mockOrchAdapter) GetBodyStatus(_ context.Context, _ orchestrator.Handle) (orchestrator.BodyStatus, error) {
 	if m.status.State != "" {
@@ -45,7 +45,7 @@ func (m *mockOrchAdapter) GetBodyStatus(_ context.Context, _ orchestrator.Handle
 	}
 	return orchestrator.BodyStatus{State: orchestrator.StateRunning}, nil
 }
-func (m *mockOrchAdapter) Name() string                    { return "mock" }
+func (m *mockOrchAdapter) Name() string                     { return "mock" }
 func (m *mockOrchAdapter) IsHealthy(_ context.Context) bool { return true }
 
 func (m *mockOrchAdapter) ExportFilesystem(_ context.Context, _ orchestrator.Handle) (io.ReadCloser, error) {
@@ -80,14 +80,16 @@ type mockProvAdapter struct{}
 func (m *mockProvAdapter) CreateMachine(_ context.Context, _ provisioner.MachineSpec, _ string) (provisioner.MachineID, error) {
 	return "mock-machine-1", nil
 }
-func (m *mockProvAdapter) DestroyMachine(_ context.Context, _ provisioner.MachineID) error { return nil }
+func (m *mockProvAdapter) DestroyMachine(_ context.Context, _ provisioner.MachineID) error {
+	return nil
+}
 func (m *mockProvAdapter) GetMachineStatus(_ context.Context, _ provisioner.MachineID) (provisioner.MachineStatus, error) {
 	return provisioner.MachineStatus{State: "running", ID: "mock-machine-1"}, nil
 }
 func (m *mockProvAdapter) ListMachines(_ context.Context) ([]provisioner.MachineInfo, error) {
 	return nil, nil
 }
-func (m *mockProvAdapter) Name() string                    { return "mock-prov" }
+func (m *mockProvAdapter) Name() string                     { return "mock-prov" }
 func (m *mockProvAdapter) IsHealthy(_ context.Context) bool { return true }
 
 func tempStore(t *testing.T) *store.Store {
@@ -126,12 +128,12 @@ func testMigrator(t *testing.T, s *store.Store, bm *body.BodyManager) *body.Migr
 }
 
 type testHarness struct {
-	srv      *Server
-	stdinW   *os.File
-	stdoutR  *os.File
-	scanner  *bufio.Scanner
-	cancel   context.CancelFunc
-	done     chan error
+	srv     *Server
+	stdinW  *os.File
+	stdoutR *os.File
+	scanner *bufio.Scanner
+	cancel  context.CancelFunc
+	done    chan error
 }
 
 func newHarness(t *testing.T, s *store.Store) *testHarness {

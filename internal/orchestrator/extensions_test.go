@@ -17,7 +17,7 @@ func (f *fullMockAdapter) DestroyBody(ctx context.Context, id Handle) error { re
 func (f *fullMockAdapter) GetBodyStatus(ctx context.Context, id Handle) (BodyStatus, error) {
 	return BodyStatus{}, nil
 }
-func (f *fullMockAdapter) Name() string                  { return "full" }
+func (f *fullMockAdapter) Name() string                       { return "full" }
 func (f *fullMockAdapter) IsHealthy(ctx context.Context) bool { return true }
 
 func (f *fullMockAdapter) ExportFilesystem(ctx context.Context, id Handle) (io.ReadCloser, error) {
@@ -44,7 +44,7 @@ func (m *minimalMockAdapter) DestroyBody(ctx context.Context, id Handle) error {
 func (m *minimalMockAdapter) GetBodyStatus(ctx context.Context, id Handle) (BodyStatus, error) {
 	return BodyStatus{}, nil
 }
-func (m *minimalMockAdapter) Name() string                  { return "minimal" }
+func (m *minimalMockAdapter) Name() string                       { return "minimal" }
 func (m *minimalMockAdapter) IsHealthy(ctx context.Context) bool { return true }
 
 func TestExtensionTypeAssertion(t *testing.T) {

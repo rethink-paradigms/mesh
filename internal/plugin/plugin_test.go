@@ -53,8 +53,10 @@ type mockAdapter struct{}
 func (a *mockAdapter) Create(ctx context.Context, spec adapter.BodySpec) (adapter.Handle, error) {
 	return adapter.Handle("mock-" + spec.Image), nil
 }
-func (a *mockAdapter) Start(ctx context.Context, id adapter.Handle) error   { return nil }
-func (a *mockAdapter) Stop(ctx context.Context, id adapter.Handle, opts adapter.StopOpts) error { return nil }
+func (a *mockAdapter) Start(ctx context.Context, id adapter.Handle) error { return nil }
+func (a *mockAdapter) Stop(ctx context.Context, id adapter.Handle, opts adapter.StopOpts) error {
+	return nil
+}
 func (a *mockAdapter) Destroy(ctx context.Context, id adapter.Handle) error { return nil }
 func (a *mockAdapter) GetStatus(ctx context.Context, id adapter.Handle) (adapter.BodyStatus, error) {
 	return adapter.BodyStatus{State: adapter.StateRunning}, nil
@@ -71,9 +73,11 @@ func (a *mockAdapter) ImportFilesystem(ctx context.Context, id adapter.Handle, t
 func (a *mockAdapter) Inspect(ctx context.Context, id adapter.Handle) (adapter.ContainerMetadata, error) {
 	return adapter.ContainerMetadata{}, nil
 }
-func (a *mockAdapter) Capabilities() adapter.AdapterCapabilities { return adapter.AdapterCapabilities{} }
-func (a *mockAdapter) SubstrateName() string                     { return "mock" }
-func (a *mockAdapter) IsHealthy(ctx context.Context) bool        { return true }
+func (a *mockAdapter) Capabilities() adapter.AdapterCapabilities {
+	return adapter.AdapterCapabilities{}
+}
+func (a *mockAdapter) SubstrateName() string              { return "mock" }
+func (a *mockAdapter) IsHealthy(ctx context.Context) bool { return true }
 
 type mockOrchestrator struct{}
 
@@ -86,7 +90,7 @@ func (o *mockOrchestrator) DestroyBody(ctx context.Context, id orchestrator.Hand
 func (o *mockOrchestrator) GetBodyStatus(ctx context.Context, id orchestrator.Handle) (orchestrator.BodyStatus, error) {
 	return orchestrator.BodyStatus{State: orchestrator.StateRunning}, nil
 }
-func (o *mockOrchestrator) Name() string                { return "mock" }
+func (o *mockOrchestrator) Name() string                       { return "mock" }
 func (o *mockOrchestrator) IsHealthy(ctx context.Context) bool { return true }
 
 func TestPluginGetOrchestrator(t *testing.T) {

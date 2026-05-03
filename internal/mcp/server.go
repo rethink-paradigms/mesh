@@ -54,12 +54,12 @@ func (e *RPCError) Error() string {
 
 // Server is an MCP server that reads JSON-RPC requests from an io.Reader and writes responses to an io.Writer.
 type Server struct {
-	mu      sync.Mutex
-	running bool
-	cancel  context.CancelFunc
-	store   *store.Store
-	tools   map[string]ToolHandler
-	defs    map[string]ToolDefinition
+	mu           sync.Mutex
+	running      bool
+	cancel       context.CancelFunc
+	store        *store.Store
+	tools        map[string]ToolHandler
+	defs         map[string]ToolDefinition
 	bodyMgr      *body.BodyManager
 	migrator     *body.MigrationCoordinator
 	pluginMgr    *plugin.PluginManager

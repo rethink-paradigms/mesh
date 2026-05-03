@@ -50,13 +50,13 @@ type PluginConfig struct {
 
 // Config is the top-level v1 configuration.
 type Config struct {
-	Daemon        DaemonConfig              `yaml:"daemon"`
-	Store         StoreConfig               `yaml:"store"`
+	Daemon        DaemonConfig                 `yaml:"daemon"`
+	Store         StoreConfig                  `yaml:"store"`
 	Orchestrators map[string]map[string]string `yaml:"orchestrators"`
 	Provisioners  map[string]map[string]string `yaml:"provisioners"`
-	Bodies        []BodyConfig              `yaml:"bodies"`
-	Registry      RegistryConfig            `yaml:"registry"`
-	Plugin        PluginConfig              `yaml:"plugin"`
+	Bodies        []BodyConfig                 `yaml:"bodies"`
+	Registry      RegistryConfig               `yaml:"registry"`
+	Plugin        PluginConfig                 `yaml:"plugin"`
 
 	// Legacy fields for backward compatibility — parsed then migrated to Orchestrators
 	Nomad nomadCompat `yaml:"nomad"`

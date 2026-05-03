@@ -15,9 +15,9 @@ import (
 
 // BodyManager orchestrates body lifecycle operations against a store and orchestrator adapter.
 type BodyManager struct {
-	store *store.Store
-	orch  orchestrator.OrchestratorAdapter
-	mu    sync.Mutex
+	store  *store.Store
+	orch   orchestrator.OrchestratorAdapter
+	mu     sync.Mutex
 	bodies map[string]*Body
 }
 

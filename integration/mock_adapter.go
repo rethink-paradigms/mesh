@@ -15,13 +15,13 @@ import (
 )
 
 type mockSubstrateAdapter struct {
-	mu        sync.Mutex
-	created   []adapter.Handle
-	started   []adapter.Handle
-	stopped   []adapter.Handle
-	destroyed []adapter.Handle
+	mu         sync.Mutex
+	created    []adapter.Handle
+	started    []adapter.Handle
+	stopped    []adapter.Handle
+	destroyed  []adapter.Handle
 	importedTo []adapter.Handle
-	substrate string
+	substrate  string
 }
 
 var _ adapter.SubstrateAdapter = (*mockSubstrateAdapter)(nil)

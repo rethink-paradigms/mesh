@@ -199,13 +199,13 @@ func (m *mockOrchAdapter) SubstrateName() string {
 
 type minimalOrchAdapter struct{}
 
-func (m *minimalOrchAdapter) Name() string { return "minimal" }
+func (m *minimalOrchAdapter) Name() string                     { return "minimal" }
 func (m *minimalOrchAdapter) IsHealthy(_ context.Context) bool { return true }
 func (m *minimalOrchAdapter) ScheduleBody(_ context.Context, _ orchestrator.BodySpec) (orchestrator.Handle, error) {
 	return "h1", nil
 }
-func (m *minimalOrchAdapter) StartBody(_ context.Context, _ orchestrator.Handle) error { return nil }
-func (m *minimalOrchAdapter) StopBody(_ context.Context, _ orchestrator.Handle) error { return nil }
+func (m *minimalOrchAdapter) StartBody(_ context.Context, _ orchestrator.Handle) error   { return nil }
+func (m *minimalOrchAdapter) StopBody(_ context.Context, _ orchestrator.Handle) error    { return nil }
 func (m *minimalOrchAdapter) DestroyBody(_ context.Context, _ orchestrator.Handle) error { return nil }
 func (m *minimalOrchAdapter) GetBodyStatus(_ context.Context, _ orchestrator.Handle) (orchestrator.BodyStatus, error) {
 	return orchestrator.BodyStatus{State: orchestrator.StateRunning}, nil
@@ -222,12 +222,16 @@ type mockProvisioner struct {
 func (m *mockProvisioner) CreateMachine(_ context.Context, _ provisioner.MachineSpec, _ string) (provisioner.MachineID, error) {
 	return "machine-1", nil
 }
-func (m *mockProvisioner) DestroyMachine(_ context.Context, _ provisioner.MachineID) error { return nil }
+func (m *mockProvisioner) DestroyMachine(_ context.Context, _ provisioner.MachineID) error {
+	return nil
+}
 func (m *mockProvisioner) GetMachineStatus(_ context.Context, _ provisioner.MachineID) (provisioner.MachineStatus, error) {
 	return provisioner.MachineStatus{State: "running", ID: "machine-1"}, nil
 }
-func (m *mockProvisioner) ListMachines(_ context.Context) ([]provisioner.MachineInfo, error) { return nil, nil }
-func (m *mockProvisioner) Name() string { return m.name }
+func (m *mockProvisioner) ListMachines(_ context.Context) ([]provisioner.MachineInfo, error) {
+	return nil, nil
+}
+func (m *mockProvisioner) Name() string                     { return m.name }
 func (m *mockProvisioner) IsHealthy(_ context.Context) bool { return true }
 
 type mockRegistry struct {

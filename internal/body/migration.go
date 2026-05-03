@@ -72,7 +72,7 @@ func NewMigrationCoordinator(s *store.Store, bm *BodyManager, orchRegistry *orch
 func (mc *MigrationCoordinator) buildSteps() []struct {
 	name string
 	fn   stepFunc
-}{
+} {
 	return []struct {
 		name string
 		fn   stepFunc
@@ -316,10 +316,10 @@ func (mc *MigrationCoordinator) stepProvision(ctx context.Context, mig *migratio
 
 	// Provision a machine on the target substrate
 	machineSpec := provisioner.MachineSpec{
-		Image:    "mesh-agent",
-		MemoryMB: 512,
+		Image:     "mesh-agent",
+		MemoryMB:  512,
 		CPUShares: 256,
-		Region:   "default",
+		Region:    "default",
 	}
 	_, err = prov.CreateMachine(ctx, machineSpec, "")
 	if err != nil {

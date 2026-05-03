@@ -1,5 +1,7 @@
-// Package adapter defines the SubstrateAdapter interface for substrate-agnostic
-// body provisioning. Implementations include Docker, Nomad, and sandbox providers.
+// Package adapter provides deprecated type aliases for backward compatibility.
+// All types re-export orchestrator types. New code should import orchestrator directly.
+//
+// Deprecated: Use github.com/rethink-paradigms/mesh/internal/orchestrator instead.
 package adapter
 
 import (
@@ -7,82 +9,60 @@ import (
 	"fmt"
 	"io"
 	"strings"
-	"time"
+
+	"github.com/rethink-paradigms/mesh/internal/orchestrator"
 )
 
-// Handle is a substrate-specific body instance identifier.
-type Handle string
+// Type aliases — re-exported from orchestrator for backward compatibility.
+// Deprecated: Use orchestrator.Handle instead.
+type Handle = orchestrator.Handle
 
-// BodyState represents the lifecycle state of a body.
-type BodyState string
+// Deprecated: Use orchestrator.BodyState instead.
+type BodyState = orchestrator.BodyState
 
+// Deprecated: Use orchestrator.StateCreated etc. instead.
 const (
-	StateCreated   BodyState = "Created"
-	StateStarting  BodyState = "Starting"
-	StateRunning   BodyState = "Running"
-	StateStopping  BodyState = "Stopping"
-	StateStopped   BodyState = "Stopped"
-	StateError     BodyState = "Error"
-	StateMigrating BodyState = "Migrating"
-	StateDestroyed BodyState = "Destroyed"
+	StateCreated   = orchestrator.StateCreated
+	StateStarting  = orchestrator.StateStarting
+	StateRunning   = orchestrator.StateRunning
+	StateStopping  = orchestrator.StateStopping
+	StateStopped   = orchestrator.StateStopped
+	StateError     = orchestrator.StateError
+	StateMigrating = orchestrator.StateMigrating
+	StateDestroyed = orchestrator.StateDestroyed
 )
 
-// BodySpec defines the desired state of a body at creation time.
-type BodySpec struct {
-	Image     string
-	Workdir   string
-	Env       map[string]string
-	Cmd       []string
-	MemoryMB  int
-	CPUShares int
-}
+// Deprecated: Use orchestrator.BodySpec instead.
+type BodySpec = orchestrator.BodySpec
 
-// BodyStatus represents the current status of a running body.
-type BodyStatus struct {
-	State      BodyState
-	Uptime     time.Duration
-	MemoryMB   int64
-	CPUPercent float64
-	StartedAt  time.Time
-}
+// Deprecated: Use orchestrator.BodyStatus instead.
+type BodyStatus = orchestrator.BodyStatus
 
-// StopOpts controls how a body is stopped.
-type StopOpts struct {
-	Signal  string
-	Timeout time.Duration
-}
+// Deprecated: Use orchestrator.StopOpts instead.
+type StopOpts = orchestrator.StopOpts
 
-// ExecResult contains the output of a command executed inside a body.
-type ExecResult struct {
-	Stdout   string
-	Stderr   string
-	ExitCode int
+// Deprecated: Use orchestrator.ExecResult instead.
+type ExecResult = orchestrator.ExecResult
+
+// Deprecated: Use orchestrator.ContainerMetadata instead.
+type ContainerMetadata = orchestrator.ContainerMetadata
+
+// ImportOpts controls filesystem import behavior.
+// Deprecated: This type is not used by the orchestrator interface.
+type ImportOpts struct {
+	Overwrite bool
 }
 
 // AdapterCapabilities describes which optional verbs an adapter supports.
+// Deprecated: Use orchestrator capability interfaces (Exporter, Importer, Inspector, Executor) instead.
 type AdapterCapabilities struct {
 	ExportFilesystem bool
 	ImportFilesystem bool
 	Inspect          bool
 }
 
-// ImportOpts controls filesystem import behavior.
-type ImportOpts struct {
-	Overwrite bool
-}
-
-// ContainerMetadata contains metadata about a container.
-type ContainerMetadata struct {
-	Image    string
-	Env      map[string]string
-	Cmd      []string
-	Workdir  string
-	Platform string
-}
-
-// SubstrateAdapter defines the interface for managing body instances on a substrate.
-// Required verbs: Create, Start, Stop, Destroy, GetStatus, Exec
-// Optional verbs: ExportFilesystem, ImportFilesystem, Inspect
+// SubstrateAdapter defines the legacy interface for managing body instances on a substrate.
+// Deprecated: Use orchestrator.OrchestratorAdapter and capability interfaces instead.
 type SubstrateAdapter interface {
 	Create(ctx context.Context, spec BodySpec) (Handle, error)
 	Start(ctx context.Context, id Handle) error
@@ -102,12 +82,13 @@ type SubstrateAdapter interface {
 }
 
 // MultiAdapter routes SubstrateAdapter calls to named substrate adapters.
-// It implements SubstrateAdapter by delegating to a registered adapter.
+// Deprecated: Use orchestrator.Registry instead.
 type MultiAdapter struct {
 	adapters map[string]SubstrateAdapter
 }
 
 // NewMultiAdapter creates a new empty MultiAdapter.
+// Deprecated: Use orchestrator.Registry instead.
 func NewMultiAdapter() *MultiAdapter {
 	return &MultiAdapter{
 		adapters: make(map[string]SubstrateAdapter),
@@ -218,7 +199,7 @@ func (m *MultiAdapter) Inspect(ctx context.Context, id Handle) (ContainerMetadat
 	return adapter.Inspect(ctx, id)
 }
 
-// Capabilities returns the capabilities of the adapter that owns the handle.
+// Capabilities returns empty capabilities.
 func (m *MultiAdapter) Capabilities() AdapterCapabilities {
 	return AdapterCapabilities{}
 }

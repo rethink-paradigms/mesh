@@ -82,7 +82,7 @@ func NewRegistry() *Registry {
 // ErrNotFound is returned when an adapter is not found in the registry.
 // The error message includes the names of available adapters.
 type errNotFound struct {
-	name     string
+	name      string
 	available []string
 }
 

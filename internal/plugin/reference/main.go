@@ -8,8 +8,8 @@ import (
 
 	"github.com/hashicorp/go-plugin"
 	"github.com/rethink-paradigms/mesh/internal/adapter"
-	meshplugin "github.com/rethink-paradigms/mesh/internal/plugin"
 	"github.com/rethink-paradigms/mesh/internal/orchestrator"
+	meshplugin "github.com/rethink-paradigms/mesh/internal/plugin"
 )
 
 type ReferencePlugin struct{}
@@ -36,7 +36,7 @@ type LocalAdapter struct{}
 func (a *LocalAdapter) Create(ctx context.Context, spec adapter.BodySpec) (adapter.Handle, error) {
 	return adapter.Handle("local-" + spec.Image), nil
 }
-func (a *LocalAdapter) Start(ctx context.Context, id adapter.Handle) error   { return nil }
+func (a *LocalAdapter) Start(ctx context.Context, id adapter.Handle) error { return nil }
 func (a *LocalAdapter) Stop(ctx context.Context, id adapter.Handle, opts adapter.StopOpts) error {
 	return nil
 }

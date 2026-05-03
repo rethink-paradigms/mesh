@@ -365,11 +365,11 @@ func (s *Server) handleCreateSnapshot(ctx context.Context, params json.RawMessag
 	}
 
 	return map[string]interface{}{
-		"id":          snapID,
-		"body_id":     p.BodyID,
-		"created_at":  time.Now().UTC().Format(time.RFC3339),
-		"size_bytes":  stat.Size(),
-		"sha256":      digest,
+		"id":         snapID,
+		"body_id":    p.BodyID,
+		"created_at": time.Now().UTC().Format(time.RFC3339),
+		"size_bytes": stat.Size(),
+		"sha256":     digest,
 	}, nil
 }
 
@@ -410,7 +410,7 @@ func (s *Server) handleRestoreBody(ctx context.Context, params json.RawMessage) 
 		return nil, &RPCError{Code: -32603, Message: "body manager not available"}
 	}
 	var p struct {
-		SnapshotID     string `json:"snapshot_id"`
+		SnapshotID      string `json:"snapshot_id"`
 		TargetSubstrate string `json:"target_substrate,omitempty"`
 	}
 	if err := json.Unmarshal(params, &p); err != nil || p.SnapshotID == "" {
@@ -433,10 +433,10 @@ func (s *Server) handleRestoreBody(ctx context.Context, params json.RawMessage) 
 	}
 
 	return map[string]interface{}{
-		"restored":       true,
-		"snapshot_id":    p.SnapshotID,
-		"body_id":        snap.BodyID,
-		"target_dir":     targetDir,
+		"restored":         true,
+		"snapshot_id":      p.SnapshotID,
+		"body_id":          snap.BodyID,
+		"target_dir":       targetDir,
 		"target_substrate": p.TargetSubstrate,
 	}, nil
 }
@@ -606,13 +606,13 @@ func (s *Server) handlePluginHealth(ctx context.Context, params json.RawMessage)
 	}
 
 	return map[string]interface{}{
-		"name":          rec.Meta.Name,
-		"version":       rec.Meta.Version,
-		"state":         string(rec.GetState()),
-		"healthy":       rec.GetState() == plugin.StateHealthy,
-		"fail_count":    rec.GetFailCount(),
-		"retry_count":   rec.GetRetryCount(),
-		"description":   rec.Meta.Description,
-		"author":        rec.Meta.Author,
+		"name":        rec.Meta.Name,
+		"version":     rec.Meta.Version,
+		"state":       string(rec.GetState()),
+		"healthy":     rec.GetState() == plugin.StateHealthy,
+		"fail_count":  rec.GetFailCount(),
+		"retry_count": rec.GetRetryCount(),
+		"description": rec.Meta.Description,
+		"author":      rec.Meta.Author,
 	}, nil
 }
