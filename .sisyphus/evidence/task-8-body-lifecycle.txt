@@ -1,0 +1,6 @@
+=== RUN   TestFullLifecycle
+--- PASS: TestFullLifecycle (0.02s)
+=== RUN   TestBodyManagerLifecycle
+--- PASS: TestBodyManagerLifecycle (0.01s)
+PASS
+ok  	github.com/rethink-paradigms/mesh/internal/body	1.404s
