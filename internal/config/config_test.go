@@ -30,9 +30,6 @@ daemon:
   log_level: debug
 store:
   path: /tmp/mesh.db
-docker:
-  host: unix:///var/run/docker.sock
-  api_version: "1.48"
 registry:
   type: s3
   bucket: my-bucket
@@ -69,14 +66,6 @@ bodies:
 	// Verify store config
 	if cfg.Store.Path != "/tmp/mesh.db" {
 		t.Errorf("Store.Path = %q, want %q", cfg.Store.Path, "/tmp/mesh.db")
-	}
-
-	// Verify docker config
-	if cfg.Docker.Host != "unix:///var/run/docker.sock" {
-		t.Errorf("Docker.Host = %q, want %q", cfg.Docker.Host, "unix:///var/run/docker.sock")
-	}
-	if cfg.Docker.APIVersion != "1.48" {
-		t.Errorf("Docker.APIVersion = %q, want %q", cfg.Docker.APIVersion, "1.48")
 	}
 
 	// Verify bodies
@@ -150,14 +139,6 @@ bodies:
 	wantStorePath := filepath.Join(home, ".mesh", "state.db")
 	if cfg.Store.Path != wantStorePath {
 		t.Errorf("Store.Path = %q, want %q", cfg.Store.Path, wantStorePath)
-	}
-
-	// Verify docker defaults
-	if cfg.Docker.Host != "unix:///var/run/docker.sock" {
-		t.Errorf("Docker.Host = %q, want %q", cfg.Docker.Host, "unix:///var/run/docker.sock")
-	}
-	if cfg.Docker.APIVersion != "1.48" {
-		t.Errorf("Docker.APIVersion = %q, want %q", cfg.Docker.APIVersion, "1.48")
 	}
 }
 
@@ -277,7 +258,6 @@ func TestConfigStructTags(t *testing.T) {
 	types := []interface{}{
 		DaemonConfig{},
 		StoreConfig{},
-		DockerConfig{},
 		BodyConfig{},
 		Config{},
 	}
@@ -497,44 +477,6 @@ bodies:
 	}
 }
 
-// TestLoadNomadConfig loads a config with nomad section.
-func TestLoadNomadConfig(t *testing.T) {
-	content := `
-registry:
-  type: s3
-  bucket: my-bucket
-nomad:
-  address: http://nomad.example.com:4646
-  token: abc123
-  region: us-west-2
-  namespace: production
-plugin:
-  dir: /tmp
-bodies:
-  - name: agent1
-    image: alpine:latest
-`
-	path := writeConfig(t, content)
-
-	cfg, err := Load(path)
-	if err != nil {
-		t.Fatalf("Load() error = %v", err)
-	}
-
-	if cfg.Nomad.Address != "http://nomad.example.com:4646" {
-		t.Errorf("Nomad.Address = %q, want %q", cfg.Nomad.Address, "http://nomad.example.com:4646")
-	}
-	if cfg.Nomad.Token != "abc123" {
-		t.Errorf("Nomad.Token = %q, want %q", cfg.Nomad.Token, "abc123")
-	}
-	if cfg.Nomad.Region != "us-west-2" {
-		t.Errorf("Nomad.Region = %q, want %q", cfg.Nomad.Region, "us-west-2")
-	}
-	if cfg.Nomad.Namespace != "production" {
-		t.Errorf("Nomad.Namespace = %q, want %q", cfg.Nomad.Namespace, "production")
-	}
-}
-
 // TestLoadBodySubstrate loads a config with body substrate field.
 func TestLoadBodySubstrate(t *testing.T) {
 	content := `
@@ -586,8 +528,8 @@ bodies:
 		t.Errorf("Registry.Type = %q, want %q", cfg.Registry.Type, "s3")
 	}
 
-	if cfg.Nomad.Address != "http://127.0.0.1:4646" {
-		t.Errorf("Nomad.Address = %q, want %q", cfg.Nomad.Address, "http://127.0.0.1:4646")
+	if cfg.Orchestrators["nomad"]["address"] != "http://127.0.0.1:4646" {
+		t.Errorf("Orchestrators[nomad][address] = %q, want %q", cfg.Orchestrators["nomad"]["address"], "http://127.0.0.1:4646")
 	}
 
 	if cfg.Bodies[0].Substrate != "docker" {
@@ -634,8 +576,9 @@ registry:
   bucket: my-bucket
 plugin:
   dir: /tmp
-nomad:
-  address: %s
+orchestrators:
+  nomad:
+    address: %s
 bodies:
   - name: agent1
     image: alpine:latest
@@ -679,7 +622,6 @@ func TestConfigStructTagsNew(t *testing.T) {
 	types := []interface{}{
 		RegistryConfig{},
 		PluginConfig{},
-		NomadConfig{},
 	}
 
 	for _, typ := range types {
@@ -699,5 +641,181 @@ func TestConfigStructTagsNew(t *testing.T) {
 				t.Errorf("Field %s.%s has no yaml tag", typVal.Name(), field.Name)
 			}
 		}
+	}
+}
+
+// TestConfigOrchestrators loads a config with orchestrators map.
+func TestConfigOrchestrators(t *testing.T) {
+	content := `
+registry:
+  type: s3
+  bucket: my-bucket
+plugin:
+  dir: /tmp
+orchestrators:
+  nomad:
+    address: http://localhost:4646
+    token: my-token
+    region: us-east-1
+bodies:
+  - name: agent1
+    image: alpine:latest
+`
+	path := writeConfig(t, content)
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+
+	if cfg.Orchestrators == nil {
+		t.Fatal("Orchestrators is nil")
+	}
+	if cfg.Orchestrators["nomad"] == nil {
+		t.Fatal("Orchestrators[nomad] is nil")
+	}
+	if cfg.Orchestrators["nomad"]["address"] != "http://localhost:4646" {
+		t.Errorf("Orchestrators[nomad][address] = %q, want %q", cfg.Orchestrators["nomad"]["address"], "http://localhost:4646")
+	}
+	if cfg.Orchestrators["nomad"]["token"] != "my-token" {
+		t.Errorf("Orchestrators[nomad][token] = %q, want %q", cfg.Orchestrators["nomad"]["token"], "my-token")
+	}
+	if cfg.Orchestrators["nomad"]["region"] != "us-east-1" {
+		t.Errorf("Orchestrators[nomad][region] = %q, want %q", cfg.Orchestrators["nomad"]["region"], "us-east-1")
+	}
+
+	// Provisioners should be initialized (not nil)
+	if cfg.Provisioners == nil {
+		t.Fatal("Provisioners is nil, want empty map")
+	}
+}
+
+// TestConfigBackwardCompat loads a legacy YAML with [nomad] section and maps it to orchestrators.
+func TestConfigBackwardCompat(t *testing.T) {
+	content := `
+registry:
+  type: s3
+  bucket: my-bucket
+plugin:
+  dir: /tmp
+nomad:
+  address: http://legacy.nomad:4646
+  token: legacy-token
+  region: eu-west-1
+  namespace: legacy-ns
+bodies:
+  - name: agent1
+    image: alpine:latest
+`
+	path := writeConfig(t, content)
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+
+	if cfg.Orchestrators == nil {
+		t.Fatal("Orchestrators is nil")
+	}
+	if cfg.Orchestrators["nomad"] == nil {
+		t.Fatal("Orchestrators[nomad] is nil")
+	}
+	if cfg.Orchestrators["nomad"]["address"] != "http://legacy.nomad:4646" {
+		t.Errorf("Orchestrators[nomad][address] = %q, want %q", cfg.Orchestrators["nomad"]["address"], "http://legacy.nomad:4646")
+	}
+	if cfg.Orchestrators["nomad"]["token"] != "legacy-token" {
+		t.Errorf("Orchestrators[nomad][token] = %q, want %q", cfg.Orchestrators["nomad"]["token"], "legacy-token")
+	}
+	if cfg.Orchestrators["nomad"]["region"] != "eu-west-1" {
+		t.Errorf("Orchestrators[nomad][region] = %q, want %q", cfg.Orchestrators["nomad"]["region"], "eu-west-1")
+	}
+	if cfg.Orchestrators["nomad"]["namespace"] != "legacy-ns" {
+		t.Errorf("Orchestrators[nomad][namespace] = %q, want %q", cfg.Orchestrators["nomad"]["namespace"], "legacy-ns")
+	}
+}
+
+// TestConfigDefaults verifies Orchestrators and Provisioners are initialized on minimal config.
+func TestConfigDefaults(t *testing.T) {
+	content := `
+registry:
+  type: s3
+  bucket: my-bucket
+plugin:
+  dir: /tmp
+bodies:
+  - name: agent1
+    image: alpine:latest
+`
+	path := writeConfig(t, content)
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+
+	if cfg.Orchestrators == nil {
+		t.Fatal("Orchestrators is nil, want initialized map")
+	}
+	if cfg.Provisioners == nil {
+		t.Fatal("Provisioners is nil, want initialized map")
+	}
+	// Nomad address default should be set
+	if cfg.Orchestrators["nomad"]["address"] != "http://127.0.0.1:4646" {
+		t.Errorf("Orchestrators[nomad][address] = %q, want %q", cfg.Orchestrators["nomad"]["address"], "http://127.0.0.1:4646")
+	}
+}
+
+// TestConfigProvisionersEmpty verifies Provisioners is an empty map by default.
+func TestConfigProvisionersEmpty(t *testing.T) {
+	content := `
+registry:
+  type: s3
+  bucket: my-bucket
+plugin:
+  dir: /tmp
+bodies:
+  - name: agent1
+    image: alpine:latest
+`
+	path := writeConfig(t, content)
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+
+	if cfg.Provisioners == nil {
+		t.Fatal("Provisioners is nil, want empty map")
+	}
+	if len(cfg.Provisioners) != 0 {
+		t.Errorf("len(Provisioners) = %d, want 0", len(cfg.Provisioners))
+	}
+}
+
+// TestConfigBackwardCompatDockerIgnored verifies legacy [docker] section is silently ignored.
+func TestConfigBackwardCompatDockerIgnored(t *testing.T) {
+	content := `
+registry:
+  type: s3
+  bucket: my-bucket
+plugin:
+  dir: /tmp
+docker:
+  host: unix:///var/run/docker.sock
+  api_version: "1.48"
+bodies:
+  - name: agent1
+    image: alpine:latest
+`
+	path := writeConfig(t, content)
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+
+	// Docker section should be silently ignored - no panic, no error
+	if cfg.Orchestrators == nil {
+		t.Fatal("Orchestrators is nil")
 	}
 }

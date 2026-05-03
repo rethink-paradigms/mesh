@@ -22,12 +22,6 @@ type StoreConfig struct {
 	Path string `yaml:"path"`
 }
 
-// DockerConfig holds Docker adapter settings.
-type DockerConfig struct {
-	Host       string `yaml:"host"`
-	APIVersion string `yaml:"api_version"`
-}
-
 // BodyConfig defines a body to be managed by the daemon.
 type BodyConfig struct {
 	Name      string            `yaml:"name"`
@@ -54,22 +48,26 @@ type PluginConfig struct {
 	Enabled []string `yaml:"enabled"`
 }
 
-type NomadConfig struct {
+// Config is the top-level v1 configuration.
+type Config struct {
+	Daemon        DaemonConfig              `yaml:"daemon"`
+	Store         StoreConfig               `yaml:"store"`
+	Orchestrators map[string]map[string]string `yaml:"orchestrators"`
+	Provisioners  map[string]map[string]string `yaml:"provisioners"`
+	Bodies        []BodyConfig              `yaml:"bodies"`
+	Registry      RegistryConfig            `yaml:"registry"`
+	Plugin        PluginConfig              `yaml:"plugin"`
+
+	// Legacy fields for backward compatibility — parsed then migrated to Orchestrators
+	Nomad nomadCompat `yaml:"nomad"`
+}
+
+// nomadCompat captures the legacy [nomad] section for backward compatibility.
+type nomadCompat struct {
 	Address   string `yaml:"address"`
 	Token     string `yaml:"token"`
 	Region    string `yaml:"region"`
 	Namespace string `yaml:"namespace"`
-}
-
-// Config is the top-level v1 configuration.
-type Config struct {
-	Daemon   DaemonConfig   `yaml:"daemon"`
-	Store    StoreConfig    `yaml:"store"`
-	Docker   DockerConfig   `yaml:"docker"`
-	Bodies   []BodyConfig   `yaml:"bodies"`
-	Registry RegistryConfig `yaml:"registry"`
-	Plugin   PluginConfig   `yaml:"plugin"`
-	Nomad    NomadConfig    `yaml:"nomad"`
 }
 
 // DefaultPath returns the default config file path (~/.mesh/config.yaml),
@@ -121,12 +119,6 @@ func applyDefaults(cfg *Config) {
 			cfg.Store.Path = filepath.Join(home, ".mesh", "state.db")
 		}
 	}
-	if cfg.Docker.Host == "" {
-		cfg.Docker.Host = "unix:///var/run/docker.sock"
-	}
-	if cfg.Docker.APIVersion == "" {
-		cfg.Docker.APIVersion = "1.48"
-	}
 	if cfg.Registry.Type == "" {
 		cfg.Registry.Type = "s3"
 	}
@@ -136,9 +128,42 @@ func applyDefaults(cfg *Config) {
 			cfg.Plugin.Dir = filepath.Join(home, ".mesh", "plugins")
 		}
 	}
-	if cfg.Nomad.Address == "" {
-		cfg.Nomad.Address = "http://127.0.0.1:4646"
+
+	// Initialize maps
+	if cfg.Orchestrators == nil {
+		cfg.Orchestrators = make(map[string]map[string]string)
 	}
+	if cfg.Provisioners == nil {
+		cfg.Provisioners = make(map[string]map[string]string)
+	}
+
+	// Backward compatibility: migrate legacy [nomad] section to orchestrators.nomad
+	if cfg.Nomad.Address != "" || cfg.Nomad.Token != "" || cfg.Nomad.Region != "" || cfg.Nomad.Namespace != "" {
+		if cfg.Orchestrators["nomad"] == nil {
+			cfg.Orchestrators["nomad"] = make(map[string]string)
+		}
+		if cfg.Nomad.Address != "" {
+			cfg.Orchestrators["nomad"]["address"] = cfg.Nomad.Address
+		}
+		if cfg.Nomad.Token != "" {
+			cfg.Orchestrators["nomad"]["token"] = cfg.Nomad.Token
+		}
+		if cfg.Nomad.Region != "" {
+			cfg.Orchestrators["nomad"]["region"] = cfg.Nomad.Region
+		}
+		if cfg.Nomad.Namespace != "" {
+			cfg.Orchestrators["nomad"]["namespace"] = cfg.Nomad.Namespace
+		}
+	}
+
+	// Default nomad address if not set
+	if cfg.Orchestrators["nomad"] == nil {
+		cfg.Orchestrators["nomad"] = make(map[string]string)
+	}
+	if cfg.Orchestrators["nomad"]["address"] == "" {
+		cfg.Orchestrators["nomad"]["address"] = "http://127.0.0.1:4646"
+	}
+
 	for i := range cfg.Bodies {
 		if cfg.Bodies[i].Substrate == "" {
 			cfg.Bodies[i].Substrate = "docker"
@@ -163,10 +188,10 @@ func validate(cfg *Config) error {
 			_ = os.MkdirAll(cfg.Plugin.Dir, 0755)
 		}
 	}
-	if cfg.Nomad.Address != "" {
-		u, err := url.Parse(cfg.Nomad.Address)
+	if addr := cfg.Orchestrators["nomad"]["address"]; addr != "" {
+		u, err := url.Parse(addr)
 		if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
-			return fmt.Errorf("config: nomad address %q is not a valid URL", cfg.Nomad.Address)
+			return fmt.Errorf("config: nomad address %q is not a valid URL", addr)
 		}
 	}
 	if cfg.Registry.Type == "s3" && cfg.Registry.Bucket == "" {
