@@ -9,6 +9,7 @@ import (
 	"github.com/hashicorp/go-plugin"
 	"github.com/rethink-paradigms/mesh/internal/adapter"
 	meshplugin "github.com/rethink-paradigms/mesh/internal/plugin"
+	"github.com/rethink-paradigms/mesh/internal/orchestrator"
 )
 
 type ReferencePlugin struct{}
@@ -24,6 +25,10 @@ func (p *ReferencePlugin) PluginInfo(ctx context.Context) (meshplugin.PluginMeta
 
 func (p *ReferencePlugin) GetAdapter(ctx context.Context) (adapter.SubstrateAdapter, error) {
 	return &LocalAdapter{}, nil
+}
+
+func (p *ReferencePlugin) GetOrchestrator(ctx context.Context) (orchestrator.OrchestratorAdapter, error) {
+	return nil, fmt.Errorf("orchestrator adapter not yet implemented in reference plugin")
 }
 
 type LocalAdapter struct{}

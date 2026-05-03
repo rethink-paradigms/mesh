@@ -7,6 +7,7 @@ import (
 
 	"github.com/hashicorp/go-plugin"
 	"github.com/rethink-paradigms/mesh/internal/adapter"
+	"github.com/rethink-paradigms/mesh/internal/orchestrator"
 	"google.golang.org/grpc"
 )
 
@@ -111,6 +112,10 @@ func (c *meshPluginRPCClient) GetAdapter(ctx context.Context) (adapter.Substrate
 			Inspect:          resp.SupportsInspect,
 		},
 	}, nil
+}
+
+func (c *meshPluginRPCClient) GetOrchestrator(ctx context.Context) (orchestrator.OrchestratorAdapter, error) {
+	return nil, fmt.Errorf("GetOrchestrator not available over gRPC; use GetAdapter")
 }
 
 type grpcAdapterProxy struct {
