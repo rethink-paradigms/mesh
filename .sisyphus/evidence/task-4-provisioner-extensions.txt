@@ -1,0 +1,24 @@
+=== RUN   TestProvisionerExtensions
+--- PASS: TestProvisionerExtensions (0.00s)
+=== RUN   TestHasCapabilitySnapshotter
+--- PASS: TestHasCapabilitySnapshotter (0.00s)
+=== RUN   TestHasCapabilityLogFetcher
+--- PASS: TestHasCapabilityLogFetcher (0.00s)
+=== RUN   TestNetworkConfiguratorInterface
+--- PASS: TestNetworkConfiguratorInterface (0.00s)
+=== RUN   TestEmptyRegistry
+--- PASS: TestEmptyRegistry (0.00s)
+=== RUN   TestRegistryWithMock
+--- PASS: TestRegistryWithMock (0.00s)
+=== RUN   TestRegistryDuplicateRegister
+--- PASS: TestRegistryDuplicateRegister (0.00s)
+=== RUN   TestRegistryList
+--- PASS: TestRegistryList (0.00s)
+=== RUN   TestRegistryConcurrency
+--- PASS: TestRegistryConcurrency (0.00s)
+=== RUN   TestDefaultRegistry
+--- PASS: TestDefaultRegistry (0.00s)
+=== RUN   TestErrNotFoundIncludesAvailable
+--- PASS: TestErrNotFoundIncludesAvailable (0.00s)
+PASS
+ok  	github.com/rethink-paradigms/mesh/internal/provisioner	1.539s

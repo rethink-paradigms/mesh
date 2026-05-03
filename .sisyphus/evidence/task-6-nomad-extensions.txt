@@ -1,0 +1,6 @@
+Compile-time assertions verified:
+  var _ orchestrator.OrchestratorAdapter = (*Adapter)(nil)
+  var _ orchestrator.Exporter = (*Adapter)(nil)
+  var _ orchestrator.Importer = (*Adapter)(nil)
+  var _ orchestrator.Inspector = (*Adapter)(nil)
+  var _ orchestrator.Executor = (*Adapter)(nil)

@@ -1,0 +1,4 @@
+=== RUN   TestRegistryWithMock
+--- PASS: TestRegistryWithMock (0.00s)
+PASS
+ok  	github.com/rethink-paradigms/mesh/internal/provisioner	1.213s

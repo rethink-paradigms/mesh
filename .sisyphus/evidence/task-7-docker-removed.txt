@@ -1,0 +1,10 @@
+=== Task 7 Evidence: Docker Adapter Removal ===
+
+1. Directory deleted: internal/docker/
+   (directory does not exist — confirmed deleted)
+
+2. grep -r '"internal/docker"' --include='*.go' .
+   (no matches — all imports removed)
+
+3. grep -r 'docker\.New' --include='*.go' .
+   (no matches — all usages removed)

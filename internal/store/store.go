@@ -313,6 +313,25 @@ func (s *Store) UpdateBodyInstanceID(ctx context.Context, id, instanceID string)
 	return nil
 }
 
+// UpdateBodySubstrate updates the substrate and updated_at timestamp of a body.
+func (s *Store) UpdateBodySubstrate(ctx context.Context, id, substrate string) error {
+	unlock := s.bodyLock(id)
+	defer unlock.Unlock()
+
+	res, err := s.db.ExecContext(ctx,
+		`UPDATE bodies SET substrate = ?, updated_at = ? WHERE id = ?`,
+		substrate, now(), id,
+	)
+	if err != nil {
+		return fmt.Errorf("update body substrate %s: %w", id, err)
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		return fmt.Errorf("body %s: not found", id)
+	}
+	return nil
+}
+
 // DeleteMigration deletes a migration record by id.
 func (s *Store) DeleteMigration(ctx context.Context, id string) error {
 	res, err := s.db.ExecContext(ctx, `DELETE FROM migrations WHERE id = ?`, id)

@@ -1,0 +1,6 @@
+=== RUN   TestConfigBackwardCompat
+--- PASS: TestConfigBackwardCompat (0.00s)
+=== RUN   TestConfigBackwardCompatDockerIgnored
+--- PASS: TestConfigBackwardCompatDockerIgnored (0.00s)
+PASS
+ok  	github.com/rethink-paradigms/mesh/internal/config	1.231s

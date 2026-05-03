@@ -607,6 +607,10 @@ func (mc *MigrationCoordinator) stepSwitch(ctx context.Context, mig *migrationCo
 	b.InstanceID = mig.newHandle
 	b.Substrate = mig.target
 
+	if err := mc.store.UpdateBodySubstrate(ctx, mig.bodyID, mig.target); err != nil {
+		return fmt.Errorf("update body substrate: %w", err)
+	}
+
 	if srcHandle != "" {
 		srcOrch, _ := mc.orchRegistry.Open(b.Substrate)
 		if srcOrch != nil {

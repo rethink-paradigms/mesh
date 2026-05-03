@@ -550,10 +550,11 @@ func TestMigrationDualRegistry(t *testing.T) {
 	// Provisioner for fly
 	mockProv := &mockProvisioner{name: "fly"}
 
-	// Registries
+	// Registries — register source as "local" (BodyManager sets Substrate="local")
+	// and also as "nomad" for lookup during migration steps
 	orchReg := orchestrator.NewRegistry()
-	if err := orchReg.Register("nomad", srcOrch); err != nil {
-		t.Fatalf("register nomad orchestrator: %v", err)
+	if err := orchReg.Register("local", srcOrch); err != nil {
+		t.Fatalf("register local orchestrator: %v", err)
 	}
 	if err := orchReg.Register("fly", tgtOrch); err != nil {
 		t.Fatalf("register fly orchestrator: %v", err)
@@ -633,8 +634,8 @@ func TestMigrationNoProvisioner(t *testing.T) {
 
 	// No provisioner registered for fly
 	orchReg := orchestrator.NewRegistry()
-	if err := orchReg.Register("nomad", srcOrch); err != nil {
-		t.Fatalf("register nomad orchestrator: %v", err)
+	if err := orchReg.Register("local", srcOrch); err != nil {
+		t.Fatalf("register local orchestrator: %v", err)
 	}
 
 	// Empty provisioner registry — but register something else to test "available" list
@@ -671,16 +672,15 @@ func TestMigrationSameSubstrate(t *testing.T) {
 	s := openTestStore(t)
 	ctx := context.Background()
 
-	// Single orchestrator for nomad
-	orch := newMockOrchestrator("nomad")
+	orch := newMockOrchestrator("local")
 	orch.inspectMeta = orchestrator.ContainerMetadata{
 		Image:   "alpine:latest",
 		Workdir: "/app",
 	}
 
 	orchReg := orchestrator.NewRegistry()
-	if err := orchReg.Register("nomad", orch); err != nil {
-		t.Fatalf("register nomad orchestrator: %v", err)
+	if err := orchReg.Register("local", orch); err != nil {
+		t.Fatalf("register local orchestrator: %v", err)
 	}
 
 	// No provisioner needed for same-substrate migration
@@ -693,7 +693,7 @@ func TestMigrationSameSubstrate(t *testing.T) {
 	}
 
 	mc := NewMigrationCoordinator(s, bm, orchReg, provReg, nil)
-	migID, err := mc.BeginMigration(ctx, b.ID, "nomad")
+	migID, err := mc.BeginMigration(ctx, b.ID, "local")
 	if err != nil {
 		t.Fatalf("BeginMigration: %v", err)
 	}
@@ -726,11 +726,10 @@ func TestMigrationExtensionMissing(t *testing.T) {
 	s := openTestStore(t)
 	ctx := context.Background()
 
-	// Orchestrator without Exporter extension
-	orchNoExport := newMockOrchestratorNoExtensions("nomad")
+	orchNoExport := newMockOrchestratorNoExtensions("local")
 
 	orchReg := orchestrator.NewRegistry()
-	if err := orchReg.Register("nomad", orchNoExport); err != nil {
+	if err := orchReg.Register("local", orchNoExport); err != nil {
 		t.Fatalf("register orchestrator: %v", err)
 	}
 
@@ -771,7 +770,7 @@ func TestMigrationDurability(t *testing.T) {
 	provReg := provisioner.NewRegistry()
 
 	mc := NewMigrationCoordinator(s, bm, orchReg, provReg, nil)
-	migID, err := mc.BeginMigration(ctx, b.ID, "remote-host")
+	migID, err := mc.BeginMigration(ctx, b.ID, "local")
 	if err != nil {
 		t.Fatalf("BeginMigration: %v", err)
 	}
@@ -806,7 +805,7 @@ func TestMigrationCreatesSnapshot(t *testing.T) {
 	provReg := provisioner.NewRegistry()
 
 	mc := NewMigrationCoordinator(s, bm, orchReg, provReg, nil)
-	_, err = mc.BeginMigration(ctx, b.ID, "remote-host")
+	_, err = mc.BeginMigration(ctx, b.ID, "local")
 	if err != nil {
 		t.Fatalf("BeginMigration: %v", err)
 	}
@@ -1465,13 +1464,11 @@ func TestMigrationCrossMachineUsesRegistry(t *testing.T) {
 		t.Fatalf("Create: %v", err)
 	}
 
-	// For cross-machine, we need target orchestrator too
 	tgtOrch := newMockOrchestrator("fleet")
 	orchReg := orchestrator.NewRegistry()
-	orchReg.Register("docker", mo)
+	orchReg.Register("local", mo)
 	orchReg.Register("fleet", tgtOrch)
 
-	// Provisioner for fleet
 	mockProv := &mockProvisioner{name: "fleet"}
 	provReg := provisioner.NewRegistry()
 	provReg.Register("fleet", mockProv)
@@ -1519,7 +1516,7 @@ func TestMigrationCrossMachineSHA256Mismatch(t *testing.T) {
 
 	tgtOrch := newMockOrchestrator("fleet")
 	orchReg := orchestrator.NewRegistry()
-	orchReg.Register("docker", mo)
+	orchReg.Register("local", mo)
 	orchReg.Register("fleet", tgtOrch)
 
 	mockProv := &mockProvisioner{name: "fleet"}
@@ -1552,7 +1549,7 @@ func TestMigrationCrossMachineRetryPush(t *testing.T) {
 
 	tgtOrch := newMockOrchestrator("fleet")
 	orchReg := orchestrator.NewRegistry()
-	orchReg.Register("docker", mo)
+	orchReg.Register("local", mo)
 	orchReg.Register("fleet", tgtOrch)
 
 	mockProv := &mockProvisioner{name: "fleet"}
@@ -1591,12 +1588,13 @@ func TestMigrationSameMachineIgnoresRegistry(t *testing.T) {
 	}
 
 	orchReg := orchestrator.NewRegistry()
+	orchReg.Register("local", mo)
 	orchReg.Register("docker", mo)
 	provReg := provisioner.NewRegistry()
 
 	reg := newMockRegistry()
 	mc := NewMigrationCoordinator(s, bm, orchReg, provReg, reg)
-	_, err = mc.BeginMigration(ctx, b.ID, "docker")
+	_, err = mc.BeginMigration(ctx, b.ID, "local")
 	if err != nil {
 		t.Fatalf("BeginMigration: %v", err)
 	}
@@ -1626,7 +1624,7 @@ func TestMigrationCrossMachineResumeAfterTransfer(t *testing.T) {
 
 	tgtOrch := newMockOrchestrator("fleet")
 	orchReg := orchestrator.NewRegistry()
-	orchReg.Register("docker", mo)
+	orchReg.Register("local", mo)
 	orchReg.Register("fleet", tgtOrch)
 
 	mockProv := &mockProvisioner{name: "fleet"}

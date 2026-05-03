@@ -1,0 +1,6 @@
+=== Task 7 Evidence: Daemon Tests ===
+
+go test -race ./internal/daemon/
+ok  	github.com/rethink-paradigms/mesh/internal/daemon	(cached)
+
+go build ./cmd/mesh/

@@ -1,0 +1,4 @@
+=== RUN   TestMigrationNoProvisioner
+--- PASS: TestMigrationNoProvisioner (0.02s)
+PASS
+ok  	github.com/rethink-paradigms/mesh/internal/body	1.329s

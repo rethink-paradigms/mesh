@@ -1,0 +1,52 @@
+=== RUN   TestMigrationDualRegistry
+--- PASS: TestMigrationDualRegistry (0.02s)
+=== RUN   TestMigrationNoProvisioner
+--- PASS: TestMigrationNoProvisioner (0.01s)
+=== RUN   TestMigrationSameSubstrate
+--- PASS: TestMigrationSameSubstrate (0.01s)
+=== RUN   TestMigrationExtensionMissing
+--- PASS: TestMigrationExtensionMissing (0.01s)
+=== RUN   TestMigrationDurability
+--- PASS: TestMigrationDurability (0.01s)
+=== RUN   TestMigrationCreatesSnapshot
+--- PASS: TestMigrationCreatesSnapshot (0.01s)
+=== RUN   TestMigrationStepProvisionCreatesContainer
+--- PASS: TestMigrationStepProvisionCreatesContainer (0.01s)
+=== RUN   TestMigrationStepProvisionIdempotent
+--- PASS: TestMigrationStepProvisionIdempotent (0.01s)
+=== RUN   TestMigrationStepTransferCopiesFiles
+--- PASS: TestMigrationStepTransferCopiesFiles (0.01s)
+=== RUN   TestMigrationStepTransferIdempotent
+--- PASS: TestMigrationStepTransferIdempotent (0.01s)
+=== RUN   TestMigrationRetryAfterPartialFailure
+--- PASS: TestMigrationRetryAfterPartialFailure (0.01s)
+=== RUN   TestMigrationStepImportRestoresFiles
+--- PASS: TestMigrationStepImportRestoresFiles (0.01s)
+=== RUN   TestMigrationStepImportIdempotent
+--- PASS: TestMigrationStepImportIdempotent (0.01s)
+=== RUN   TestMigrationStepVerifyDetectsMissingFiles
+--- PASS: TestMigrationStepVerifyDetectsMissingFiles (0.01s)
+=== RUN   TestMigrationStepVerifyDetectsUnhealthyContainer
+--- PASS: TestMigrationStepVerifyDetectsUnhealthyContainer (0.01s)
+=== RUN   TestMigrationProvisionFailsWithoutRollback
+--- PASS: TestMigrationProvisionFailsWithoutRollback (0.01s)
+=== RUN   TestMigrationStepSwitchUpdatesBodyInstanceID
+--- PASS: TestMigrationStepSwitchUpdatesBodyInstanceID (0.01s)
+=== RUN   TestMigrationStepSwitchIdempotent
+--- PASS: TestMigrationStepSwitchIdempotent (0.01s)
+=== RUN   TestMigrationStepCleanupRemovesSnapshotFile
+--- PASS: TestMigrationStepCleanupRemovesSnapshotFile (0.01s)
+=== RUN   TestMigrationStepSwitchRollbackOnFailure
+--- PASS: TestMigrationStepSwitchRollbackOnFailure (0.01s)
+=== RUN   TestMigrationCrossMachineUsesRegistry
+--- PASS: TestMigrationCrossMachineUsesRegistry (0.01s)
+=== RUN   TestMigrationCrossMachineSHA256Mismatch
+--- PASS: TestMigrationCrossMachineSHA256Mismatch (0.01s)
+=== RUN   TestMigrationCrossMachineRetryPush
+--- PASS: TestMigrationCrossMachineRetryPush (3.02s)
+=== RUN   TestMigrationSameMachineIgnoresRegistry
+--- PASS: TestMigrationSameMachineIgnoresRegistry (0.03s)
+=== RUN   TestMigrationCrossMachineResumeAfterTransfer
+--- PASS: TestMigrationCrossMachineResumeAfterTransfer (0.02s)
+PASS
+ok  	github.com/rethink-paradigms/mesh/internal/body	(cached)
