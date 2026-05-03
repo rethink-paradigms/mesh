@@ -566,6 +566,7 @@ func (mc *MigrationCoordinator) stepSwitch(ctx context.Context, mig *migrationCo
 
 	b := mc.bm.getOrCreateBody(mig.bodyID)
 	srcHandle := b.InstanceID
+	srcSubstrate := b.Substrate
 
 	if mig.newHandle == "" {
 		return fmt.Errorf("target handle not set (step 2 not completed?)")
@@ -585,9 +586,9 @@ func (mc *MigrationCoordinator) stepSwitch(ctx context.Context, mig *migrationCo
 	}
 
 	if srcHandle != "" {
-		srcOrch, err := mc.orchRegistry.Open(b.Substrate)
+		srcOrch, err := mc.orchRegistry.Open(srcSubstrate)
 		if err != nil {
-			return fmt.Errorf("open source orchestrator for %q: %w", b.Substrate, err)
+			return fmt.Errorf("open source orchestrator for %q: %w", srcSubstrate, err)
 		}
 		if err := srcOrch.StopBody(ctx, orchestrator.Handle(srcHandle)); err != nil {
 			return fmt.Errorf("stop source container: %w", err)
@@ -596,7 +597,7 @@ func (mc *MigrationCoordinator) stepSwitch(ctx context.Context, mig *migrationCo
 
 	if err := mc.store.UpdateBodyInstanceID(ctx, mig.bodyID, string(mig.newHandle)); err != nil {
 		if srcHandle != "" {
-			srcOrch, _ := mc.orchRegistry.Open(b.Substrate)
+			srcOrch, _ := mc.orchRegistry.Open(srcSubstrate)
 			if srcOrch != nil {
 				_ = srcOrch.StartBody(ctx, orchestrator.Handle(srcHandle))
 			}
@@ -612,7 +613,7 @@ func (mc *MigrationCoordinator) stepSwitch(ctx context.Context, mig *migrationCo
 	}
 
 	if srcHandle != "" {
-		srcOrch, _ := mc.orchRegistry.Open(b.Substrate)
+		srcOrch, _ := mc.orchRegistry.Open(srcSubstrate)
 		if srcOrch != nil {
 			_ = srcOrch.DestroyBody(ctx, orchestrator.Handle(srcHandle))
 		}

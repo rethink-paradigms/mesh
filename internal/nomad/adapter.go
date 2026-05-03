@@ -344,7 +344,9 @@ func (a *Adapter) Inspect(ctx context.Context, id orchestrator.Handle) (orchestr
 	meta := orchestrator.ContainerMetadata{}
 	if len(job.TaskGroups) > 0 && len(job.TaskGroups[0].Tasks) > 0 {
 		task := job.TaskGroups[0].Tasks[0]
-		meta.Image = task.Config["image"].(string)
+		if img, ok := task.Config["image"].(string); ok {
+			meta.Image = img
+		}
 		meta.Env = task.Env
 		if cmd, ok := task.Config["command"].([]string); ok {
 			meta.Cmd = cmd
