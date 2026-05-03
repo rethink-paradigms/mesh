@@ -41,7 +41,7 @@ func (s *Server) registerTools() {
 	s.RegisterTool("create_body", s.handleCreateBody, ToolDefinition{
 		Name:        "create_body",
 		Description: "Create and start a new body on the substrate.",
-		InputSchema: json.RawMessage(`{"type":"object","properties":{"name":{"type":"string"},"image":{"type":"string"},"workdir":{"type":"string"},"env":{"type":"object","additionalProperties":{"type":"string"}},"cmd":{"type":"array","items":{"type":"string"}},"memory_mb":{"type":"integer"},"cpu_shares":{"type":"integer"}},"required":["name","image"]}`),
+		InputSchema: json.RawMessage(`{"type":"object","properties":{"name":{"type":"string"},"image":{"type":"string"},"substrate":{"type":"string","description":"Target substrate name. Optional when exactly one orchestrator is registered."},"workdir":{"type":"string"},"env":{"type":"object","additionalProperties":{"type":"string"}},"cmd":{"type":"array","items":{"type":"string"}},"memory_mb":{"type":"integer"},"cpu_shares":{"type":"integer"}},"required":["name","image"]}`),
 	})
 	s.RegisterTool("delete_body", s.handleDeleteBody, ToolDefinition{
 		Name:        "delete_body",
@@ -152,6 +152,7 @@ func (s *Server) handleCreateBody(ctx context.Context, params json.RawMessage) (
 	var p struct {
 		Name      string            `json:"name"`
 		Image     string            `json:"image"`
+		Substrate string            `json:"substrate,omitempty"`
 		Workdir   string            `json:"workdir,omitempty"`
 		Env       map[string]string `json:"env,omitempty"`
 		Cmd       []string          `json:"cmd,omitempty"`
@@ -163,6 +164,24 @@ func (s *Server) handleCreateBody(ctx context.Context, params json.RawMessage) (
 	}
 	if p.Name == "" || p.Image == "" {
 		return nil, &RPCError{Code: -32602, Message: "name and image are required"}
+	}
+
+	if s.orchRegistry != nil {
+		names := s.orchRegistry.List()
+		if p.Substrate == "" {
+			switch len(names) {
+			case 0:
+				return nil, &RPCError{Code: -32603, Message: "no substrate available: no orchestrators registered"}
+			case 1:
+				p.Substrate = names[0]
+			default:
+				return nil, &RPCError{Code: -32602, Message: fmt.Sprintf("substrate required when multiple orchestrators registered; available: %v", names)}
+			}
+		} else {
+			if _, err := s.orchRegistry.Open(p.Substrate); err != nil {
+				return nil, &RPCError{Code: -32602, Message: fmt.Sprintf("unknown substrate %q: %v", p.Substrate, err)}
+			}
+		}
 	}
 
 	spec := adapter.BodySpec{
@@ -180,10 +199,11 @@ func (s *Server) handleCreateBody(ctx context.Context, params json.RawMessage) (
 	}
 
 	return map[string]interface{}{
-		"id":     b.ID,
-		"name":   b.Name,
-		"state":  string(b.State),
-		"handle": string(b.InstanceID),
+		"id":        b.ID,
+		"name":      b.Name,
+		"state":     string(b.State),
+		"handle":    string(b.InstanceID),
+		"substrate": p.Substrate,
 	}, nil
 }
 
