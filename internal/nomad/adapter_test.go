@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/rethink-paradigms/mesh/internal/adapter"
+	"github.com/rethink-paradigms/mesh/internal/orchestrator"
 )
 
 func TestNew(t *testing.T) {
@@ -52,41 +52,26 @@ func TestNewFromEnvDefaults(t *testing.T) {
 	}
 }
 
-func TestCapabilities(t *testing.T) {
+func TestName(t *testing.T) {
 	a := New(Config{})
-	caps := a.Capabilities()
-
-	if !caps.ExportFilesystem {
-		t.Error("ExportFilesystem should be true")
-	}
-	if !caps.ImportFilesystem {
-		t.Error("ImportFilesystem should be true")
-	}
-	if !caps.Inspect {
-		t.Error("Inspect should be true")
-	}
-}
-
-func TestSubstrateName(t *testing.T) {
-	a := New(Config{})
-	if a.SubstrateName() != "nomad" {
-		t.Errorf("SubstrateName() = %q, want %q", a.SubstrateName(), "nomad")
+	if a.Name() != "nomad" {
+		t.Errorf("Name() = %q, want %q", a.Name(), "nomad")
 	}
 }
 
 func TestMapNomadClientStatus(t *testing.T) {
 	tests := []struct {
 		nomadStatus string
-		want        adapter.BodyState
+		want        orchestrator.BodyState
 	}{
-		{"pending", adapter.StateStarting},
-		{"running", adapter.StateRunning},
-		{"failed", adapter.StateError},
-		{"lost", adapter.StateError},
-		{"complete", adapter.StateStopped},
-		{"terminal", adapter.StateStopped},
-		{"unknown", adapter.StateCreated},
-		{"", adapter.StateCreated},
+		{"pending", orchestrator.StateStarting},
+		{"running", orchestrator.StateRunning},
+		{"failed", orchestrator.StateError},
+		{"lost", orchestrator.StateError},
+		{"complete", orchestrator.StateStopped},
+		{"terminal", orchestrator.StateStopped},
+		{"unknown", orchestrator.StateCreated},
+		{"", orchestrator.StateCreated},
 	}
 
 	for _, tt := range tests {
@@ -111,53 +96,53 @@ func TestGenerateJobID(t *testing.T) {
 	}
 }
 
-func TestCreateErrorWithoutNomad(t *testing.T) {
+func TestScheduleBodyErrorWithoutNomad(t *testing.T) {
 	a := New(Config{Address: "http://127.0.0.1:1"})
 	ctx := context.Background()
 
-	_, err := a.Create(ctx, adapter.BodySpec{Image: "alpine"})
+	_, err := a.ScheduleBody(ctx, orchestrator.BodySpec{Image: "alpine"})
 	if err == nil {
-		t.Error("Create should fail when Nomad is not available")
+		t.Error("ScheduleBody should fail when Nomad is not available")
 	}
 }
 
-func TestStartErrorWithoutNomad(t *testing.T) {
+func TestStartBodyErrorWithoutNomad(t *testing.T) {
 	a := New(Config{Address: "http://127.0.0.1:1"})
 	ctx := context.Background()
 
-	err := a.Start(ctx, adapter.Handle("nonexistent"))
+	err := a.StartBody(ctx, orchestrator.Handle("nonexistent"))
 	if err == nil {
-		t.Error("Start should fail when Nomad is not available")
+		t.Error("StartBody should fail when Nomad is not available")
 	}
 }
 
-func TestStopErrorWithoutNomad(t *testing.T) {
+func TestStopBodyErrorWithoutNomad(t *testing.T) {
 	a := New(Config{Address: "http://127.0.0.1:1"})
 	ctx := context.Background()
 
-	err := a.Stop(ctx, adapter.Handle("nonexistent"), adapter.StopOpts{})
+	err := a.StopBody(ctx, orchestrator.Handle("nonexistent"))
 	if err == nil {
-		t.Error("Stop should fail when Nomad is not available")
+		t.Error("StopBody should fail when Nomad is not available")
 	}
 }
 
-func TestDestroyErrorWithoutNomad(t *testing.T) {
+func TestDestroyBodyErrorWithoutNomad(t *testing.T) {
 	a := New(Config{Address: "http://127.0.0.1:1"})
 	ctx := context.Background()
 
-	err := a.Destroy(ctx, adapter.Handle("nonexistent"))
+	err := a.DestroyBody(ctx, orchestrator.Handle("nonexistent"))
 	if err == nil {
-		t.Error("Destroy should fail when Nomad is not available")
+		t.Error("DestroyBody should fail when Nomad is not available")
 	}
 }
 
-func TestGetStatusErrorWithoutNomad(t *testing.T) {
+func TestGetBodyStatusErrorWithoutNomad(t *testing.T) {
 	a := New(Config{Address: "http://127.0.0.1:1"})
 	ctx := context.Background()
 
-	_, err := a.GetStatus(ctx, adapter.Handle("nonexistent"))
+	_, err := a.GetBodyStatus(ctx, orchestrator.Handle("nonexistent"))
 	if err == nil {
-		t.Error("GetStatus should fail when Nomad is not available")
+		t.Error("GetBodyStatus should fail when Nomad is not available")
 	}
 }
 
@@ -165,7 +150,7 @@ func TestExecErrorWithoutNomad(t *testing.T) {
 	a := New(Config{Address: "http://127.0.0.1:1"})
 	ctx := context.Background()
 
-	_, err := a.Exec(ctx, adapter.Handle("nonexistent"), []string{"echo", "hi"})
+	_, err := a.Exec(ctx, orchestrator.Handle("nonexistent"), []string{"echo", "hi"})
 	if err == nil {
 		t.Error("Exec should fail when Nomad is not available")
 	}
@@ -175,7 +160,7 @@ func TestExportFilesystemErrorWithoutNomad(t *testing.T) {
 	a := New(Config{Address: "http://127.0.0.1:1"})
 	ctx := context.Background()
 
-	_, err := a.ExportFilesystem(ctx, adapter.Handle("nonexistent"))
+	_, err := a.ExportFilesystem(ctx, orchestrator.Handle("nonexistent"))
 	if err == nil {
 		t.Error("ExportFilesystem should fail when Nomad is not available")
 	}
@@ -185,7 +170,7 @@ func TestImportFilesystemErrorWithoutNomad(t *testing.T) {
 	a := New(Config{Address: "http://127.0.0.1:1"})
 	ctx := context.Background()
 
-	err := a.ImportFilesystem(ctx, adapter.Handle("nonexistent"), nil, adapter.ImportOpts{})
+	err := a.ImportFilesystem(ctx, orchestrator.Handle("nonexistent"), nil)
 	if err == nil {
 		t.Error("ImportFilesystem should fail when Nomad is not available")
 	}
@@ -195,7 +180,7 @@ func TestInspectErrorWithoutNomad(t *testing.T) {
 	a := New(Config{Address: "http://127.0.0.1:1"})
 	ctx := context.Background()
 
-	_, err := a.Inspect(ctx, adapter.Handle("nonexistent"))
+	_, err := a.Inspect(ctx, orchestrator.Handle("nonexistent"))
 	if err == nil {
 		t.Error("Inspect should fail when Nomad is not available")
 	}
@@ -211,5 +196,29 @@ func TestIsHealthyWithoutNomad(t *testing.T) {
 }
 
 func TestCompileTimeInterfaceCheck(t *testing.T) {
-	var _ adapter.SubstrateAdapter = (*Adapter)(nil)
+	var _ orchestrator.OrchestratorAdapter = (*Adapter)(nil)
+}
+
+func TestNomadExtensions(t *testing.T) {
+	a := New(Config{})
+
+	if !orchestrator.HasCapability[orchestrator.Exporter](a) {
+		t.Error("Adapter should implement Exporter")
+	}
+	if !orchestrator.HasCapability[orchestrator.Importer](a) {
+		t.Error("Adapter should implement Importer")
+	}
+	if !orchestrator.HasCapability[orchestrator.Inspector](a) {
+		t.Error("Adapter should implement Inspector")
+	}
+	if !orchestrator.HasCapability[orchestrator.Executor](a) {
+		t.Error("Adapter should implement Executor")
+	}
+}
+
+func TestExtensionCompileTimeInterfaceChecks(t *testing.T) {
+	var _ orchestrator.Exporter = (*Adapter)(nil)
+	var _ orchestrator.Importer = (*Adapter)(nil)
+	var _ orchestrator.Inspector = (*Adapter)(nil)
+	var _ orchestrator.Executor = (*Adapter)(nil)
 }
