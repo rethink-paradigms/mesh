@@ -3,12 +3,12 @@ package main
 import (
 	"context"
 	"fmt"
-	"io"
 	"os"
 
 	"github.com/hashicorp/go-plugin"
 	"github.com/rethink-paradigms/mesh/internal/adapter"
 	"github.com/rethink-paradigms/mesh/internal/nomad"
+	"github.com/rethink-paradigms/mesh/internal/orchestrator"
 	meshplugin "github.com/rethink-paradigms/mesh/internal/plugin"
 )
 
@@ -25,7 +25,12 @@ func (p *NomadPlugin) PluginInfo(ctx context.Context) (meshplugin.PluginMeta, er
 	}, nil
 }
 
+// Deprecated: use GetOrchestrator.
 func (p *NomadPlugin) GetAdapter(ctx context.Context) (adapter.SubstrateAdapter, error) {
+	return nil, fmt.Errorf("GetAdapter is deprecated: use GetOrchestrator instead")
+}
+
+func (p *NomadPlugin) GetOrchestrator(ctx context.Context) (orchestrator.OrchestratorAdapter, error) {
 	if p.adapter == nil {
 		cfg := nomad.Config{
 			Address:   os.Getenv("NOMAD_ADDR"),
@@ -39,41 +44,6 @@ func (p *NomadPlugin) GetAdapter(ctx context.Context) (adapter.SubstrateAdapter,
 		p.adapter = nomad.New(cfg)
 	}
 	return p.adapter, nil
-}
-
-type localAdapter struct{}
-
-func (a *localAdapter) Create(ctx context.Context, spec adapter.BodySpec) (adapter.Handle, error) {
-	return adapter.Handle("local-" + spec.Image), nil
-}
-func (a *localAdapter) Start(ctx context.Context, id adapter.Handle) error   { return nil }
-func (a *localAdapter) Stop(ctx context.Context, id adapter.Handle, opts adapter.StopOpts) error {
-	return nil
-}
-func (a *localAdapter) Destroy(ctx context.Context, id adapter.Handle) error { return nil }
-func (a *localAdapter) GetStatus(ctx context.Context, id adapter.Handle) (adapter.BodyStatus, error) {
-	return adapter.BodyStatus{State: adapter.StateRunning}, nil
-}
-func (a *localAdapter) Exec(ctx context.Context, id adapter.Handle, cmd []string) (adapter.ExecResult, error) {
-	return adapter.ExecResult{ExitCode: 0}, nil
-}
-func (a *localAdapter) ExportFilesystem(ctx context.Context, id adapter.Handle) (io.ReadCloser, error) {
-	return nil, fmt.Errorf("not supported")
-}
-func (a *localAdapter) ImportFilesystem(ctx context.Context, id adapter.Handle, tarball io.Reader, opts adapter.ImportOpts) error {
-	return fmt.Errorf("not supported")
-}
-func (a *localAdapter) Inspect(ctx context.Context, id adapter.Handle) (adapter.ContainerMetadata, error) {
-	return adapter.ContainerMetadata{}, nil
-}
-func (a *localAdapter) Capabilities() adapter.AdapterCapabilities {
-	return adapter.AdapterCapabilities{}
-}
-func (a *localAdapter) SubstrateName() string {
-	return "local"
-}
-func (a *localAdapter) IsHealthy(ctx context.Context) bool {
-	return true
 }
 
 func main() {

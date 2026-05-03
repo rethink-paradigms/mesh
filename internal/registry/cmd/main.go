@@ -7,6 +7,7 @@ import (
 
 	"github.com/hashicorp/go-plugin"
 	"github.com/rethink-paradigms/mesh/internal/adapter"
+	"github.com/rethink-paradigms/mesh/internal/orchestrator"
 	meshplugin "github.com/rethink-paradigms/mesh/internal/plugin"
 	"github.com/rethink-paradigms/mesh/internal/registry"
 )
@@ -41,6 +42,10 @@ func (p *S3RegistryPlugin) GetAdapter(ctx context.Context) (adapter.SubstrateAda
 		return nil, err
 	}
 	return plugin.GetAdapter(ctx)
+}
+
+func (p *S3RegistryPlugin) GetOrchestrator(ctx context.Context) (orchestrator.OrchestratorAdapter, error) {
+	return nil, fmt.Errorf("S3RegistryPlugin does not provide an orchestrator")
 }
 
 func main() {
