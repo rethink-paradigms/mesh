@@ -16,10 +16,10 @@ Enables: D2, D4, D3
 Blocks: live-migration paths (explicitly deferred)
 
 **Relationships:**
+- constrains → D1
 - enables → D2
 - enables → D3
 - enables → D4
-- constrains → D1
 
 ---
 
@@ -69,11 +69,11 @@ Blocks: (none)
 [Implementation note: Tarball+manifest format works. Not yet a unified OCI+tarball composite. Separate concerns in code.]
 
 **Relationships:**
+- constrains → D2
 - related_to → D2
 - enables → D2
 - enables → D4
 - enables → D2
-- constrains → D2
 
 ---
 
@@ -93,12 +93,12 @@ Enables: edge deployment, cheap fleet nodes
 Blocks: adopting k8s-sigs/agent-sandbox directly (must reimplement concepts over Nomad)
 
 **Relationships:**
+- constrains → D3
+- constrains → D3
 - related_to → D3
 - related_to → D3
 - related_to → D3
 - enables → D3
-- constrains → D3
-- constrains → D3
 
 ---
 
@@ -118,12 +118,12 @@ Enables: substrate adapter contract stays tiny (6 verbs)
 Blocks: sub-second cross-substrate migration (explicitly out of scope)
 
 **Relationships:**
-- related_to → D4
-- related_to → D4
-- related_to → D4
-- enables → D4
-- enables → D4
 - constrains → D4
+- related_to → D4
+- related_to → D4
+- related_to → D4
+- enables → D4
+- enables → D4
 
 ---
 
@@ -162,6 +162,7 @@ Rationale: Less code, fewer bugs, fewer security issues. Users own their provide
 [Implementation note: go-plugin+gRPC plugin system fully built. OpenAPI codegen pipeline NOT built. AI generation NOT built.]
 
 **Relationships:**
+- constrains → D6
 - related_to → D6
 - related_to → D6
 - related_to → D6
@@ -171,7 +172,6 @@ Rationale: Less code, fewer bugs, fewer security issues. Users own their provide
 - related_to → D6
 - related_to → D6
 - supersedes → D6
-- constrains → D6
 
 ---
 
@@ -236,15 +236,7 @@ Blocks: (nothing worth blocking)
 **Status**: accepted
 **Date**: 2026-05-03T13:56:51Z
 
-Mesh v1.1 should support multiple sandbox substrate providers equally. All providers are evaluated on the same criteria: Docker/OCI compatibility, filesystem persistence, suspend/resume capability, Tailscale integration, billing model, and runtime limits. No single provider is designated 'primary.'
-
-Rationale: (1) Docker/OCI-native — all candidate providers must run Docker images or OCI containers, compatible with Mesh D2 (OCI image + volume tarball format). (2) Persistent volumes — filesystem must survive stop/destroy, enabling Mesh's portable body model. (3) Suspend/resume — fast resume is optional acceleration for cold migration, not required. (4) Tailscale integration — aligns with Mesh networking where available. (5) Cost-effectiveness — per-second or per-hour billing for burst workloads. (6) Unlimited runtime — no 1h/24h cap.
-
-Evaluated providers: Fly Machines (Docker-native, persistent volumes, suspend/resume, Tailscale, per-second billing, unlimited), E2B (Python-centric, cannot export filesystem, no persistent volumes, memory snapshots violate D1 — excluded), Modal (Python-centric, Go adapter feasibility uncertain, no pause/resume, read-only templates only — excluded), Cloudflare Containers (no POSIX filesystem, ephemeral disk resets on sleep — excluded), Daytona (managed platform, 8-16GB RAM requirement, AGPL 3.0 — valid as substrate target via adapter, not core dependency).
-
-Excluded from v1.1: auto-scaling scheduler that routes to cheapest provider — users explicitly select substrate in v1.1 config.
-
-[Implementation note: MultiAdapter infrastructure supports equality. Only Docker+Nomad adapters exist. No sandbox providers (Fly, E2B) yet.]
+All orchestrators are equal within their pool; all provisioners are equal within their pool. But orchestrators and provisioners are fundamentally different interfaces (DE17). Within each pool, no adapter gets special treatment — Nomad is not privileged over a future K8s adapter; Hetzner is not privileged over DigitalOcean. The old flat 'all substrates equal' framing is replaced by per-pool equality.
 
 **Relationships:**
 - related_to → D6
@@ -255,10 +247,10 @@ Excluded from v1.1: auto-scaling scheduler that routes to cheapest provider — 
 
 ## DE2: Static scheduler config for v1.1 — no auto-scheduling
 
-**Status**: implemented
+**Status**: accepted
 **Date**: 2026-05-03T13:57:05Z
 
-For v1.1, the Mesh scheduler is static configuration only. Users explicitly select which substrate each body runs on via config (~/.mesh/config.yaml). There is NO automatic scheduler that decides where to deploy without user input. Rationale: (1) Auto-scheduling adds significant complexity (cost model across providers, capacity queries, idle detection) without proven demand. (2) Users in v1.1 are early adopters who know where they want their agents to run. (3) Keeps core tiny (C6). (4) Idle detection (is agent actually doing work?) is an unsolved problem — zero CPU doesn't mean idle (network waits), filesystem inactivity doesn't mean idle (compute-only workloads). Deferring auto-scheduling avoids baking in a wrong model. Operational details: Idle detection is a daemon feature (watching MCP exec calls, not a plugin — it's core infrastructure). Auto-idling on sandbox (snapshot → destroy → restore on next request) is opt-in via config flag, not default. Static cost model: user sets API keys per provider in config, the daemon doesn't query provider pricing APIs. This decision supersedes Q3 (Scheduler — is substrate selection core or plugin?) by resolving that for v1.1, substrate selection is neither core nor plugin — it's user-config static. A plugin-based scheduler is a v2.0 consideration.
+Config specifies orchestrator + provisioner pairing, not a flat substrate name. User configuration declares which orchestrator to use (e.g., nomad) and which provisioner (e.g., hetzner). The daemon routes body lifecycle operations to the configured orchestrator and compute operations to the configured provisioner. Replaces the flat substrate routing model.
 
 **Relationships:**
 - related_to → D6
@@ -348,14 +340,16 @@ P4 DEFER to v2.0:
 
 ## DE8: Docker adapter is a plugin, not built-in (EQ1)
 
-**Status**: accepted
+**Status**: rejected
 **Date**: 2026-05-03T13:58:38Z
 
-Resolves EQ1: Docker should be a PLUGIN, not built-in, consistent with Nomad being a plugin. This creates architectural consistency — all substrate adapters are plugins, loaded by the daemon at startup. The only built-in adapter is the 'local' filesystem adapter (for A5 developer agent, writes bodies directly to local disk). Rationale: (1) If Nomad is a plugin, Docker should be too. The current inconsistency (Docker built-in, Nomad plugin) is an accident of development order, not a design choice. (2) Making Docker a plugin forces the plugin loading system to be robust — if the first plugin loaded is Docker, the plugin infrastructure must work from day one. (3) Users who don't need Docker (e.g., Fly Machines only users) don't load it. (4) The daemon startup sequence becomes: init config -> init store -> load enabled plugins -> start MCP server. If Docker plugin fails to load, daemon still starts (with a warning). This change requires moving the existing internal/docker/ code into a plugin package with the SubstrateAdapter interface. The Docker plugin is special only in that it ships with Mesh (included in the default install), but it uses the same plugin loading mechanism as any third-party adapter.
+INVALIDATED by DE17. Docker is not a Mesh adapter at all. Mesh never touches container runtimes directly (DE17 two-pool architecture). Docker is managed by orchestrators (Nomad via its Docker task driver). Making Docker a 'plugin' in Mesh is wrong because Docker is not a Mesh concern — it's an implementation detail of the orchestrator. The concept of 'Docker adapter as plugin' assumed a flat SubstrateAdapter model that has been replaced by the two-pool architecture (DE17).
 
 **Relationships:**
 - related_to → D7
 - related_to → D6
+- supersedes → DE8
+- supersedes → DE8
 
 ---
 
@@ -399,7 +393,7 @@ Resolves EQ3: Daemon upgrades for v1.1 follow a stop-restart model: (1) SIGTERM 
 
 ## DE12: Migration testing: mock layer + Docker-to-Docker CI + manual Fly/Nomad (EQ5)
 
-**Status**: implemented
+**Status**: accepted
 **Date**: 2026-05-03T13:59:35Z
 
 Resolves EQ5: Testing cross-substrate migration for v1.1 uses a layered approach: LAYER 1 (unit tests): Mock SubstrateAdapter interface for each adapter. Test migration coordinator with mocks — verify the 7-step sequence (export, provision, transfer, import, verify, switch, cleanup) with injected failures at each step. LAYER 2 (integration tests): Docker-to-Docker migration on the same machine. Uses real Docker daemon. Tests: snapshot body on Docker, restore to new Docker container, verify SHA-256 match. LAYER 3 (manual integration tests): Docker-to-Fly migration requires real Fly API credentials. Run as a manual test script (mesh-test migrate --from docker --to fly). Produces a report. LAYER 4 (CI/CD): Docker-to-Docker migration test runs in GitHub Actions (Docker-in-Docker). Fly and Nomad tests are manual-only until we have CI-accessible test clusters. NOT in scope for v1.1: automated Fly/Nomad migration tests in CI. These require real API credentials and infrastructure.
@@ -411,7 +405,7 @@ Resolves EQ5: Testing cross-substrate migration for v1.1 uses a layered approach
 **Status**: accepted
 **Date**: 2026-05-03T13:59:49Z
 
-Refinement to DE1 based on API spike findings: Fly Machines has NO filesystem tarball export API. The rootfs is ephemeral (cold start rebuilds from OCI image). Volumes are host-tied (reattach requires same physical host). No stable REST exec API (only CLI: fly machine exec). This does NOT change DE1 (Fly as primary sandbox), but it clarifies the adapter strategy: (1) Persistent body data goes on Fly Volumes (mounted at /data). (2) Exec implemented via flyctl CLI wrapper or pre-configured commands at creation. (3) Body migration FROM sandbox requires self-export (tar from within container). Body migration TO sandbox uses OCI image push. (4) Fleet pool (Docker/Nomad) remains the primary body storage location with full docker export support. The sandbox pool is for ephemeral form changes (burst compute, clone-and-run), not long-term body hosting. This is consistent with the persona matrix where A3 (Task Runner) and A4 (Burst Clone) use sandbox, while A1 (Hermes) and A2 (Tool Agent) primarily use Fleet.
+Fly adapter as first provisioner implementation. Fly Machines API implements ProvisionerAdapter (CreateMachine, DestroyMachine, ListMachines, GetStatus). This validates the provisioner interface design and the AI-generation pipeline (DE4, DE15). Fly is a provisioner, not the old flat substrate adapter.
 
 **Relationships:**
 - related_to → DE1
@@ -420,21 +414,14 @@ Refinement to DE1 based on API spike findings: Fly Machines has NO filesystem ta
 
 ## DE14: database/sql pattern as Phase 1 plugin architecture
 
-**Status**: implemented
+**Status**: accepted
 **Date**: 2026-05-03T14:00:03Z
 
-Context: The SubstrateAdapter interface (Create, Start, Stop, Destroy, Snapshot, Restore) is the core contract, but real providers have additional capabilities: ListMachines, GetLogs, ExecCommand, etc. Two patterns were considered: (1) fat interface with ErrNotImplemented passthrough, (2) database/sql driver pattern with optional extension interfaces.
-
-Decision: Mesh adopts the database/sql driver pattern for Phase 1. The core SubstrateAdapter interface remains minimal (6 verbs). Optional capabilities are exposed via extension interfaces that plugins can optionally implement: SubstrateLister, SubstrateLogger, SubstrateExecutor, etc. Core checks via type assertion (e.g., lister, ok := adapter.(SubstrateLister)) before calling extension methods.
-
-Rationale: (1) No bloated interface — plugins only implement what they support. (2) Compile-time safety — unsupported methods simply don't exist on the type. (3) Clear capability discovery — core can advertise features based on what extensions are available. (4) Matches Go ecosystem convention — database/sql, io.Reader/Writer, etc. all use this pattern.
-
-Conflicts with: (none)
-Enables: clean adapter interface, gradual capability addition, plugin-specific features without core bloat
-Blocks: unified 'call any method' API (must check capability first)
+Both OrchestratorAdapter and ProvisionerAdapter registries use the database/sql driver pattern. Core interfaces remain minimal. Optional capabilities exposed via extension interfaces with type assertion discovery. Registration via init() side-effect pattern. This applies to BOTH adapter pools (orchestrators and provisioners), not the old single SubstrateAdapter which has been replaced by the two-pool architecture (DE17).
 
 **Relationships:**
 - related_to → D6
+- related_to → DE14
 - related_to → DE14
 
 ---
@@ -466,22 +453,65 @@ Blocks: direct Pulumi integration (DE4), custom codegen tooling
 **Status**: accepted
 **Date**: 2026-05-03T14:00:35Z
 
-Context: When a plugin doesn't support a capability (e.g., ListMachines, GetLogs), there are two error-handling patterns: (1) return ErrNotImplemented from every unsupported method, or (2) don't implement the method at all — use extension interfaces and type assertion.
-
-Decision: Mesh uses extension interfaces and type assertion, NOT ErrNotImplemented passthrough. Optional capabilities are defined as separate interfaces (SubstrateLister, SubstrateLogger, SubstrateExecutor, etc.). Core code checks capability availability via type assertion before calling methods. If the extension is not implemented, the feature is simply unavailable.
-
-Rationale: (1) No silent failures — ErrNotImplemented can be ignored or mishandled. (2) Compile-time safety — the compiler enforces that implemented methods have correct signatures. (3) Clear intent — implementing an extension interface signals explicit support. (4) Easier testing — mock adapters only implement the interfaces they need. (5) Matches Go best practices — database/sql, io package, and standard library all use this pattern.
-
-Anti-pattern rejected: Fat interface with ErrNotImplemented — leads to boilerplate, unclear capability boundaries, and runtime errors that should be compile-time checks.
-
-Conflicts with: (none)
-Enables: clean capability discovery, safe feature gating, plugin-specific extensions without core changes
-Blocks: universal 'call any method' without capability checks
-
-[Implementation note: Capabilities struct with boolean flags exists (functionally equivalent). Does NOT use Go optional interface pattern with type assertions as specified.]
+Extension interfaces and type assertion for optional capabilities in both adapter types. OrchestratorAdapter extensions: Executor (exec into body), Logger (stream logs), Inspector (detailed status). ProvisionerAdapter extensions: Snapshotter (machine snapshots), NetworkConfigurator (network setup), LogFetcher (cloud-init output). Core checks via type assertion before calling extension methods. Applies to both pools per DE17.
 
 **Relationships:**
 - related_to → DE14
+- related_to → DE16
+
+---
+
+## DE17: Two-pool adapter architecture
+
+**Status**: accepted
+**Date**: 2026-05-03T18:43:44Z
+
+Two-pool adapter architecture: Orchestrators + Provisioners. The single SubstrateAdapter interface is replaced by two independent interfaces — OrchestratorAdapter (body lifecycle: schedule, stop, destroy, snapshot, restore) and ProvisionerAdapter (compute lifecycle: create machine, destroy, list, get status). These are independent concerns with different implementations and plugin strategies. Orchestrators (Nomad, future K8s/Incus) are hand-written core adapters. Provisioners (Hetzner, DO, Daytona, E2B) are AI-generated from OpenAPI specs. Mesh never touches container runtimes directly — that is the orchestrator's responsibility.
+
+**Relationships:**
+- related_to → DE14
+- related_to → DE16
+- related_to → DE17
+- related_to → DE17
+- related_to → DE17
+- supersedes → DE8
+- supersedes → DE8
+
+---
+
+## DE18: Mesh never touches container runtimes directly
+
+**Status**: accepted
+**Date**: 2026-05-03T18:44:03Z
+
+Mesh never touches container runtimes (Docker, LXC) directly. Container runtimes are managed by orchestrators — Nomad manages Docker via its task driver, Incus manages LXC containers. Mesh talks to orchestrators only. The existing docker/adapter.go that calls the Docker SDK directly is architectural drift and should be removed. When a user wants a Docker body, Mesh tells Nomad to schedule it — Nomad uses its Docker task driver internally.
+
+**Relationships:**
+- related_to → DE17
+
+---
+
+## DE19: Cloud-init/user-data bootstrap pattern
+
+**Status**: accepted
+**Date**: 2026-05-03T18:44:22Z
+
+VM bootstrapping uses cloud-init/user-data pattern. The orchestrator generates a bootstrap script (e.g., install Nomad, join cluster). The provisioner passes it as user-data at VM creation time. Neither adapter knows about the other. The daemon coordinates: (1) asks orchestrator for bootstrap config, (2) asks provisioner to create VM with that user-data, (3) polls machine status until running, (4) polls orchestrator node status until joined. No SSH in core. First node uses InitializeCluster() for leader bootstrap. Subsequent nodes use GetBootstrapConfig(role=client, leaderAddr). Matches kubeadm and Nomad's own patterns.
+
+**Relationships:**
+- related_to → DE17
+
+---
+
+## DE20: Local support deferred
+
+**Status**: accepted
+**Date**: 2026-05-03T18:44:40Z
+
+Local support (Docker on laptop, Lima/Colima, direct-Docker orchestration) is deferred to a later version. v1 focuses on fleet (cloud VMs + Nomad orchestration) and sandbox capability (burst containers via provisioner). Local development requires separate research into Lima/Colima positioning and whether a lightweight local orchestrator is needed. Research found: Lima is a local VM provisioner for macOS, Colima wraps Lima with Docker/Incus runtime setup. LXC support via Nomad was dropped (Oct 2024). These need dedicated research before designing local support.
+
+**Relationships:**
+- related_to → DE17
 
 ---
 

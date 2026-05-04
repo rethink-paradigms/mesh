@@ -22,29 +22,29 @@ Code is compiled output. The design is the true artifact. If this document is co
 
 **Key tools (examples):** `mesh.body.create`, `mesh.body.snapshot`, `mesh.body.migrate`, `mesh.provisioner.list`, `mesh.plugin.install`
 
-### 2. Provisioning (Provider Plugins)
+### 2. Provisioning (Infrastructure)
 
-**Owns:** How Mesh reaches compute substrates
+**Owns:** Creating and destroying raw compute (VMs, sandboxes)
 
-**Contract:** Receives substrate requirements (CPU, RAM, disk, region). Returns a substrate handle (running container with network endpoint).
+**Contract:** Receives machine spec (size, region, provider). Returns a machine handle (IP, status). Accepts optional user-data/cloud-init for bootstrapping.
 
-**Internal complexity:** Plugin discovery, loading, validation. Individual provider implementations (Docker local, Nomad fleet, E2B sandbox, Fly machine). If no plugin exists, skill triggers Pulumi to generate one.
+**Internal complexity:** Provider-specific API calls (Hetzner, DigitalOcean, Daytona, E2B, Fly). Implementations are AI-generated from OpenAPI specs. Machine status polling. Cloud-init log retrieval for debugging.
 
-**Does NOT know:** What's inside the body, how snapshots are stored, how MCP works.
+**Does NOT know:** What orchestrator runs on the machine, what bodies are scheduled, how snapshots work.
 
-**Key interface:** `Provisioner.Provision(spec) → Handle`, `Provisioner.Destroy(handle)`, `Provisioner.ListCapabilities() → CapabilitySet`
+**Key interface:** `Provisioner.CreateMachine(spec, userData) → MachineID`, `Provisioner.DestroyMachine(id)`, `Provisioner.GetMachineStatus(id)`, `Provisioner.GetMachineLogs(id)`
 
-### 3. Orchestration (Body Lifecycle + Substrate Adapter)
+### 3. Orchestration (Body Lifecycle)
 
-**Owns:** How Mesh runs bodies — the core runtime
+**Owns:** Body lifecycle on compute — scheduling, starting, stopping, destroying, snapshotting, restoring
 
-**Contract:** Receives body spec (base image, resources, env). Returns running body with identity. Accepts lifecycle commands (start, stop, destroy). Manages body state machine.
+**Contract:** Receives body spec. Schedules it on available compute via an orchestrator (Nomad for v1). Returns running body with handle. Also handles cluster bootstrapping — generates cloud-init scripts for new nodes, tracks cluster state.
 
-**Internal complexity:** Body state machine (Created → Starting → Running → Stopping → Stopped → Destroyed). Substrate adapter contract — a uniform interface that Provisioning plugins implement. Scheduling hints (where to run) — but scheduling DECISIONS are made by the caller (skill/user), not by this module.
+**Internal complexity:** Orchestrator-specific logic (Nomad job specs, node status, cluster join). Body state machine. Bootstrap config generation. Node health monitoring.
 
-**Does NOT know:** How snapshots are captured, how storage works, how MCP routes requests.
+**Does NOT know:** How machines are provisioned, which cloud provider is used, how MCP works.
 
-**Key interface:** `BodyManager.Create(spec) → Body`, `BodyManager.Start(id)`, `BodyManager.Stop(id)`, `BodyManager.Destroy(id)`, `BodyManager.List() → []Body`
+**Key interface:** `Orchestrator.ScheduleBody(spec) → Handle`, `Orchestrator.StopBody(handle)`, `Orchestrator.DestroyBody(handle)`, `Orchestrator.SnapshotBody(handle) → tarball`, `Orchestrator.RestoreBody(handle, tarball)`, `Orchestrator.InitializeCluster() → ClusterInfo`, `Orchestrator.GetBootstrapConfig(role, clusterInfo) → userData`, `Orchestrator.NodeStatus(addr) → status`
 
 ### 4. Persistence (Snapshot + Storage)
 
@@ -74,9 +74,9 @@ Code is compiled output. The design is the true artifact. If this document is co
 
 **Owns:** How Mesh extends itself
 
-**Contract:** Receives plugin type (provider, storage, scheduler) and name. Returns loaded plugin instance. Handles plugin lifecycle (discover, install, configure, use, update, remove). Triggers Pulumi skill for generation when plugin doesn't exist.
+**Contract:** Receives plugin type (provisioner, orchestrator, storage) and name. Returns loaded plugin instance. Handles plugin lifecycle (discover, install, configure, use, update, remove). Triggers Pulumi skill for generation when plugin doesn't exist.
 
-**Internal complexity:** Plugin registry (what's available, what's installed). Plugin loading (discovery, validation, sandboxing via go-plugin with gRPC protocol). Plugin generation (integration with Pulumi skill to generate infrastructure code, then wrap in SubstrateAdapter interface). Plugin repo structure (mesh-plugins/providers/*, mesh-plugins/storage/*). Capability declaration at load time (required vs optional features).
+**Internal complexity:** Plugin registry (what's available, what's installed). Plugin loading (discovery, validation, sandboxing via go-plugin with gRPC protocol). Plugin generation (integration with AI codegen to generate infrastructure code from OpenAPI specs — for provisioner plugins). Plugin repo structure (mesh-plugins/provisioners/*, mesh-plugins/orchestrators/*, mesh-plugins/storage/*). Provisioner plugins implement ProvisionerAdapter (AI-generated from OpenAPI). Orchestrator plugins implement OrchestratorAdapter (hand-written, core). Storage plugins implement StorageBackend. Capability declaration at load time (required vs optional features).
 
 **Does NOT know:** What any specific plugin does internally.
 
@@ -87,11 +87,20 @@ Code is compiled output. The design is the true artifact. If this document is co
 ### Create and Run a Body
 
 1. Skill calls Interface: `mesh.body.create(spec)`
-2. Interface calls Orchestration: `BodyManager.Create(spec)`
-3. Orchestration calls Provisioning: `Provisioner.Provision(spec) → substrate handle`
-4. Orchestration calls Networking: `Network.AssignIdentity(bodyId) → network identity`
-5. Orchestration returns Body (with handle + identity) to Interface
-6. Interface returns body info to skill
+2. Interface calls Orchestration: `Orchestrator.ScheduleBody(spec)`
+3. Orchestrator schedules body on available compute (Nomad schedules Docker container on fleet node)
+4. Orchestration calls Networking: `Network.AssignIdentity(bodyId)`
+5. Orchestration returns Body to Interface
+
+### Add a Fleet Node
+
+1. User/skill calls Interface: `mesh.fleet.add(providerSpec)`
+2. Interface calls Orchestration: `Orchestrator.GetBootstrapConfig(role="client", clusterInfo)`
+3. Interface calls Provisioning: `Provisioner.CreateMachine(spec, bootstrapUserData)`
+4. Provisioner creates VM on cloud provider with user-data
+5. VM boots, cloud-init installs orchestrator, node joins cluster
+6. Interface polls `Orchestrator.NodeStatus(addr)` until Ready
+7. Fleet node is now available for body scheduling
 
 ### Snapshot a Body
 
@@ -122,16 +131,22 @@ Note: Transport is NOT a module. It's a coordination script that calls modules 2
 
 **Core (always present):**
 
-- Orchestration (body lifecycle, substrate adapter contract)
+- Orchestration (body lifecycle, OrchestratorAdapter contract)
 - Interface (MCP server, tool definitions)
 - Networking (Tailscale integration)
 - Plugin Infrastructure (registry, loading, gRPC protocol, lifecycle)
 
-**Plugin (user installs what they need):**
+**Plugin (provisioners — user installs what they need):**
 
-- Provisioning providers (Docker local, Nomad fleet, E2B sandbox, Fly machine, etc.)
-- Storage backends (S3, local FS, OCI registry, R2, MinIO, GCS, Azure)
-- Scheduler policies (cheapest, lowest-latency, user-specified, multi-cloud)
+- Hetzner, DigitalOcean, Daytona, E2B, Fly, Lima/Colima (AI-generated from OpenAPI)
+
+**Plugin (orchestrators):**
+
+- Nomad (v1 core, future: K8s, Incus)
+
+**Plugin (storage):**
+
+- S3, local FS, OCI registry, R2, MinIO, GCS, Azure
 
 **Principle:** If adding support for a new cloud/sandbox requires changing core code, the boundary is wrong. This enforces D6 (provider integrations are plugins) and enables community contributions without core maintenance.
 
@@ -143,7 +158,7 @@ Note: Transport is NOT a module. It's a coordination script that calls modules 2
 
 **Configuration:** Each module has its own config section. No module reads another module's config. Single config file (YAML) with sections per module. Mesh CLI provides `mesh config set <module>.<key> <value>` interface.
 
-**Testing:** Each module can be tested in isolation with mock contracts for its dependencies. Plugin system supports mock adapters for unit testing. Go SDK includes testing framework (SubstrateAdapter interface mocks).
+**Testing:** Each module can be tested in isolation with mock contracts for its dependencies. Plugin system supports mock adapters for unit testing. Go SDK includes testing framework (OrchestratorAdapter and ProvisionerAdapter interface mocks).
 
 **Security:** Plugin subprocess isolation (go-plugin) limits plugin access to host. Plugin signature verification (optional). Encryption at rest supported via storage backend plugins (S3 SSE-S3, R2 encryption). User controls all credentials — never stored in Mesh core.
 
@@ -151,7 +166,7 @@ Note: Transport is NOT a module. It's a coordination script that calls modules 2
 
 **Interface:** D5 (MCP primary), Daytona analysis (MCP patterns, Tailscale integration)
 
-**Provisioning:** D6 (plugins), D7 (container body), plugin-architecture.md (gRPC protocol, go-plugin lifecycle, capability model, Pulumi skill integration)
+**Provisioning:** D6 (plugins), D7 (container body), DE17 (two-pool architecture), DE18 (no direct runtime), DE19 (cloud-init bootstrap), plugin-architecture.md (gRPC protocol, go-plugin lifecycle, capability model, Pulumi skill integration)
 
 **Orchestration:** D1 (FS-only), D4 (cold migration), substrate-adapter.md (6 verbs, capability discovery, compliance matrix)
 
@@ -205,7 +220,7 @@ Note: Transport is NOT a module. It's a coordination script that calls modules 2
 **C6: Core is tiny — provider code is plugin, not core library**
 - Provisioning: Zero provider code in core. All providers are plugins.
 - Storage: Zero storage code in core. All backends are plugins.
-- Orchestration: Substrate adapter interface is only abstraction. Plugins implement it.
+- Orchestration: OrchestratorAdapter and ProvisionerAdapter interfaces are the only abstractions. Provisioner plugins implement ProvisionerAdapter. Orchestrator adapters implement OrchestratorAdapter.
 - Plugin Infra: Plugin registry and loader. Pulumi skill generates plugins, not core code.
 
 This design respects all constraints. Every module boundary is drawn to enable independent development, testing, and maintenance. Any competent team with this document can build Mesh.

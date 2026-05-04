@@ -10,7 +10,7 @@ Mesh is built on three abstractions:
 
 **Form.** The physical instantiation of a body on a specific substrate at a given time. A body can take many forms over its lifetime: a Docker container on a laptop, a Nomad allocation on a fleet VM, or a sandbox instance on a cloud provider. Forms are ephemeral by design. Destroying a form does not destroy the body.
 
-**Substrate.** The compute environment where a form runs. Mesh supports three substrate pools: Local (laptop, workstation, Raspberry Pi), Fleet (user-managed VMs scheduled via Nomad), and Sandbox (cloud environments like Daytona, E2B, Fly, Modal, Cloudflare). Every substrate speaks OCI containers. The body format is container-native.
+**Substrate.** The compute environment where a form runs. Mesh manages substrates through two independent adapter pools: **Provisioners** create and destroy raw compute (VMs on Hetzner/DigitalOcean, sandboxes on Daytona/E2B), and **Orchestrators** manage body lifecycle on that compute (Nomad for v1, with K8s/Incus possible later). Mesh never touches container runtimes directly — that is the orchestrator's responsibility. Docker, LXC, and other runtimes are managed by the orchestrator's internal drivers.
 
 ## Architecture Diagram
 
@@ -28,13 +28,17 @@ SQLite with WAL mode. Single file, crash-safe, no external database required. St
 
 Core tables: `bodies`, `snapshots`, `migrations`, `plugins`.
 
-### MultiAdapter Router
+### Adapter Registry (Orchestrators)
 
-The `MultiAdapter` routes `SubstrateAdapter` calls to named adapters (Docker, Nomad, plugin). It delegates each operation to the adapter that owns the body instance. If no adapter matches, it falls back to the first registered adapter. This allows a single daemon to manage bodies across Docker containers locally and Nomad allocations on a fleet, routing each call transparently.
+The orchestrator registry manages body lifecycle adapters. For v1, Nomad is the fleet orchestrator — it schedules Docker containers on provisioned VMs via Nomad job specs. The orchestrator also handles cluster management: generating bootstrap configs for new nodes, tracking cluster state, and monitoring node health. Orchestrators implement the `OrchestratorAdapter` interface. Both adapter pools use the database/sql registration pattern (DE14).
+
+### Adapter Registry (Provisioners)
+
+The provisioner registry manages compute lifecycle adapters. Provisioners create and destroy VMs or sandboxes by calling cloud provider APIs. They accept opaque user-data (cloud-init scripts) at machine creation time, passed through from the orchestrator. Provisioners are AI-generated from OpenAPI specs (DE4, DE15). They implement the `ProvisionerAdapter` interface.
 
 ### BodyManager
 
-Orchestrates body lifecycle against the store and the substrate adapter. Creates, starts, stops, destroys, and queries bodies. Each operation follows the state machine, persists every transition, and handles adapter errors by transitioning to Error state.
+Orchestrates body lifecycle against the store and the orchestrator adapter. Creates, starts, stops, destroys, and queries bodies. Each operation follows the state machine, persists every transition, and handles adapter errors by transitioning to Error state.
 
 ### MigrationCoordinator
 
@@ -149,32 +153,52 @@ Cold migration is a 7-step coordinator that moves a body between substrates. All
 
 The coordinator uses exponential backoff with retries (up to 3 attempts) for registry operations. Cross-machine transfers verify SHA-256 checksums before and after transfer.
 
-## Substrate Adapter Interface
+## Adapter Interfaces
 
-All substrate operations go through a single `SubstrateAdapter` interface. This keeps the core small and substrate-agnostic.
+Mesh uses two independent adapter interfaces, one for each pool.
 
 ```go
-type SubstrateAdapter interface {
-    // Required verbs
-    Create(ctx context.Context, spec BodySpec) (Handle, error)
-    Start(ctx context.Context, id Handle) error
-    Stop(ctx context.Context, id Handle, opts StopOpts) error
-    Destroy(ctx context.Context, id Handle) error
-    GetStatus(ctx context.Context, id Handle) (BodyStatus, error)
-    Exec(ctx context.Context, id Handle, cmd []string) (ExecResult, error)
+// OrchestratorAdapter — body lifecycle on compute
+type OrchestratorAdapter interface {
+    // Cluster management
+    InitializeCluster(ctx context.Context) (ClusterInfo, error)
+    GetBootstrapConfig(ctx context.Context, role string, info ClusterInfo) (string, error)
+    NodeStatus(ctx context.Context, addr string) (NodeStatus, error)
+    LeaveNode(ctx context.Context, addr string) error
 
-    // Optional verbs (used by snapshot and migration)
-    ExportFilesystem(ctx context.Context, id Handle) (io.ReadCloser, error)
-    ImportFilesystem(ctx context.Context, id Handle, tarball io.Reader, opts ImportOpts) error
-    Inspect(ctx context.Context, id Handle) (ContainerMetadata, error)
-    Capabilities() AdapterCapabilities
+    // Body lifecycle
+    ScheduleBody(ctx context.Context, spec BodySpec) (Handle, error)
+    StartBody(ctx context.Context, id Handle) error
+    StopBody(ctx context.Context, id Handle) error
+    DestroyBody(ctx context.Context, id Handle) error
+    GetBodyStatus(ctx context.Context, id Handle) (BodyStatus, error)
+    SnapshotBody(ctx context.Context, id Handle) (io.ReadCloser, error)
+    RestoreBody(ctx context.Context, id Handle, tarball io.Reader) error
 
-    SubstrateName() string
+    // Metadata
+    Capabilities() OrchestratorCapabilities
+    Name() string
+    IsHealthy(ctx context.Context) bool
+}
+
+// ProvisionerAdapter — compute lifecycle
+type ProvisionerAdapter interface {
+    CreateMachine(ctx context.Context, spec MachineSpec, userData string) (MachineID, error)
+    DestroyMachine(ctx context.Context, id MachineID) error
+    GetMachineStatus(ctx context.Context, id MachineID) (MachineStatus, error)
+    GetMachineLogs(ctx context.Context, id MachineID) (string, error)
+    ListMachines(ctx context.Context) ([]MachineInfo, error)
+
+    // Metadata
+    Capabilities() ProvisionerCapabilities
+    Name() string
     IsHealthy(ctx context.Context) bool
 }
 ```
 
-The Docker adapter is built-in for v1.0 (L1). Nomad and other adapters are loaded as plugins through the `MultiAdapter` router. The `BodySpec` carries image, environment, command, resource limits, and working directory.
+Extension interfaces (DE16) provide optional capabilities via type assertion: `Executor` (exec into body), `Logger` (stream logs), `Inspector` (detailed status) for orchestrators; `Snapshotter` (machine snapshots), `NetworkConfigurator` (network setup) for provisioners.
+
+Nomad is the v1 orchestrator. Mesh talks to Nomad to schedule bodies — Nomad manages Docker containers internally via its task driver system. Mesh never calls the Docker API directly (DE18). Provisioner adapters are AI-generated from OpenAPI specs.
 
 ## Config Resolution
 
@@ -193,9 +217,10 @@ When `mesh serve` runs, the daemon:
 
 1. Checks for PID file conflicts (prevents double-start)
 2. Opens the SQLite store with WAL mode
-3. Initializes the Docker adapter and registers it with the MultiAdapter
+3. Initializes the orchestrator adapter (Nomad for v1) and registers it with the orchestrator registry
 4. Creates the BodyManager
 5. Scans and loads plugins, starts plugin health checks
+5a. Initializes provisioner adapters from config and registers them with the provisioner registry
 6. Runs reconciliation: checks every persisted body against its adapter, transitions orphans to Error, recovers running containers from Error state
 7. Writes the PID file
 8. Starts the HTTP health server on `127.0.0.1:0` (random port, reported via `HTTPAddr()`)
@@ -214,3 +239,7 @@ When `mesh serve` runs, the daemon:
 | D5 | MCP + skills as primary interface, not CLI | Agents manage their own bodies via MCP. CLI is a thin debugging surface. |
 | D6 | Provider integrations are plugins, not core | Core has zero provider code. Plugins use go-plugin + gRPC + protobuf. |
 | D7 | Agent body = container, not VM | Containers are universal, OCI-standard, and lightweight. MicroVMs add overhead. |
+| DE17 | Two-pool adapter architecture: Orchestrators + Provisioners | Single SubstrateAdapter conflated orchestration with provisioning. Independent interfaces enable independent development. |
+| DE18 | Mesh never touches container runtimes directly | Docker/LXC are managed by orchestrators. Mesh talks to Nomad, not Docker. |
+| DE19 | Cloud-init/user-data bootstrap pattern | Orchestrator generates bootstrap script, provisioner passes as user-data. Clean separation. |
+| DE20 | Local support deferred | Lima/Colima, direct Docker — deferred to later version. v1 focuses on fleet + sandbox. |

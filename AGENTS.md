@@ -68,6 +68,12 @@ python3 ~/.agents/skills/mesh-nav/scripts/generate.py decisions-md              
 
 **Three substrate pools:** Local (laptop/Pi), Fleet (BYO VMs via Nomad), Sandbox (Daytona, E2B, Fly, Modal, Cloudflare).
 
+**Two adapter pools (DE17):** Orchestrators (body lifecycle — Nomad v1) and Provisioners (compute lifecycle — AI-generated from OpenAPI). Mesh never touches container runtimes directly (DE18). Docker/LXC managed by orchestrators.
+
+**Bootstrap pattern (DE19):** Orchestrator generates cloud-init script, provisioner passes as user-data. No SSH in core.
+
+**Local support deferred (DE20):** v1 focuses on fleet (cloud VMs + Nomad) and sandbox capability.
+
 **Primary interface:** MCP server + skills. Not CLI. (D5)
 
 **No K8s. Ever.** Nomad on 2GB VMs. (D3)

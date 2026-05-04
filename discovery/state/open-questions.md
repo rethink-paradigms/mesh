@@ -5,7 +5,7 @@
 **Status**: resolved
 **Date**: 2026-04-25T12:47:12Z
 
-Partially resolved by DE2: user explicitly configures substrate in ~/.mesh/config.yaml. Idle location is user choice, not system decision. Fleet for persistent (A1/A2), Local for development (A5), Sandbox for burst (A3/A4). Full cost-model optimization is a v2.0 concern.
+Resolved by v1.0 implementation: user explicitly configures substrate in ~/.mesh/config.yaml (see internal/config/config.go). Idle location is user choice, not system decision. Fleet for persistent agents (A1/A2), Local for development (A5), Sandbox for burst (A3/A4). Full cost-model optimization deferred to v2.0.
 
 **Relationships:**
 - related_to → D3
@@ -19,7 +19,7 @@ Partially resolved by DE2: user explicitly configures substrate in ~/.mesh/confi
 **Status**: resolved
 **Date**: 2026-04-25T12:47:13Z
 
-Resolved by v1.0 implementation: S3/R2 for snapshot storage via registry plugin. Local snapshots at ~/.mesh/snapshots/. DE10 covers SQLite store backup (separate concern).
+Resolved by v1.0 implementation: S3 for snapshot storage via registry plugin (commit 9d2eda3). Local snapshots at ~/.mesh/snapshots/ for development and offline use. Store backup via SQLite WAL (separate concern).
 
 **Relationships:**
 - related_to → D2
@@ -32,7 +32,7 @@ Resolved by v1.0 implementation: S3/R2 for snapshot storage via registry plugin.
 **Status**: resolved
 **Date**: 2026-04-25T12:47:13Z
 
-Resolved by DE2: static scheduler config for v1.1. Substrate selection is user-config static — neither core nor plugin. Plugin-based scheduler is v2.0 consideration.
+Resolved by v1.0 implementation: substrate selection is user-config static via ~/.mesh/config.yaml (commit d17ea2c). Multi-adapter routing dispatches to configured substrate (commit 4cf780f). Neither core nor plugin — it is configuration. Dynamic scheduling deferred to v2.0.
 
 **Relationships:**
 - related_to → D3
