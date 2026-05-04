@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/rethink-paradigms/mesh/internal/adapter"
+	"github.com/rethink-paradigms/mesh/internal/orchestrator"
 )
 
 // Body wraps a store record with an in-memory state machine and per-body mutex.
@@ -13,26 +13,26 @@ type Body struct {
 	mu         sync.Mutex
 	ID         string
 	Name       string
-	State      adapter.BodyState
-	InstanceID adapter.Handle
-	Spec       adapter.BodySpec
+	State      orchestrator.BodyState
+	InstanceID orchestrator.Handle
+	Spec       orchestrator.BodySpec
 	Substrate  string
 }
 
 // validTransitions defines which state transitions are allowed.
-var validTransitions = map[adapter.BodyState][]adapter.BodyState{
-	adapter.StateCreated:   {adapter.StateStarting, adapter.StateError},
-	adapter.StateStarting:  {adapter.StateRunning, adapter.StateError},
-	adapter.StateRunning:   {adapter.StateStopping, adapter.StateMigrating, adapter.StateError, adapter.StateRunning},
-	adapter.StateStopping:  {adapter.StateStopped, adapter.StateError},
-	adapter.StateStopped:   {adapter.StateStarting, adapter.StateDestroyed},
-	adapter.StateError:     {adapter.StateStarting, adapter.StateDestroyed, adapter.StateMigrating},
-	adapter.StateMigrating: {adapter.StateRunning, adapter.StateError},
-	adapter.StateDestroyed: {},
+var validTransitions = map[orchestrator.BodyState][]orchestrator.BodyState{
+	orchestrator.StateCreated:   {orchestrator.StateStarting, orchestrator.StateError},
+	orchestrator.StateStarting:  {orchestrator.StateRunning, orchestrator.StateError},
+	orchestrator.StateRunning:   {orchestrator.StateStopping, orchestrator.StateMigrating, orchestrator.StateError, orchestrator.StateRunning},
+	orchestrator.StateStopping:  {orchestrator.StateStopped, orchestrator.StateError},
+	orchestrator.StateStopped:   {orchestrator.StateStarting, orchestrator.StateDestroyed},
+	orchestrator.StateError:     {orchestrator.StateStarting, orchestrator.StateDestroyed, orchestrator.StateMigrating},
+	orchestrator.StateMigrating: {orchestrator.StateRunning, orchestrator.StateError},
+	orchestrator.StateDestroyed: {},
 }
 
 // CanTransition reports whether transitioning to target is valid from current state.
-func (b *Body) CanTransition(target adapter.BodyState) bool {
+func (b *Body) CanTransition(target orchestrator.BodyState) bool {
 	allowed, ok := validTransitions[b.State]
 	if !ok {
 		return false
@@ -46,7 +46,7 @@ func (b *Body) CanTransition(target adapter.BodyState) bool {
 }
 
 // Transition moves the body to the target state if valid.
-func (b *Body) Transition(target adapter.BodyState) error {
+func (b *Body) Transition(target orchestrator.BodyState) error {
 	if !b.CanTransition(target) {
 		return fmt.Errorf("invalid transition: %s → %s", b.State, target)
 	}

@@ -13,7 +13,6 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/rethink-paradigms/mesh/internal/adapter"
 	"github.com/rethink-paradigms/mesh/internal/body"
 	"github.com/rethink-paradigms/mesh/internal/config"
 	"github.com/rethink-paradigms/mesh/internal/nomad"
@@ -230,9 +229,9 @@ func (d *Daemon) reconcile(ctx context.Context) error {
 		containerExists := err == nil
 
 		switch rec.State {
-		case adapter.StateRunning, adapter.StateStarting, adapter.StateStopping:
+		case orchestrator.StateRunning, orchestrator.StateStarting, orchestrator.StateStopping:
 			if !containerExists {
-				if transErr := d.bodyMgr.TransitionBody(ctx, rec.ID, adapter.StateError); transErr != nil {
+				if transErr := d.bodyMgr.TransitionBody(ctx, rec.ID, orchestrator.StateError); transErr != nil {
 					fmt.Fprintf(os.Stderr, "reconcile: failed to transition body %s to Error: %v\n", rec.ID, transErr)
 				} else {
 					fmt.Fprintf(os.Stderr, "reconcile: body %s container not found, transitioned to Error\n", rec.ID)
@@ -242,11 +241,11 @@ func (d *Daemon) reconcile(ctx context.Context) error {
 				d.mu.Unlock()
 			}
 
-		case adapter.StateError:
+		case orchestrator.StateError:
 			if containerExists {
 				status, _ := adp.GetBodyStatus(ctx, orchestrator.Handle(rec.InstanceID))
 				if status.State == orchestrator.StateRunning {
-					if transErr := d.bodyMgr.TransitionBody(ctx, rec.ID, adapter.StateRunning); transErr != nil {
+					if transErr := d.bodyMgr.TransitionBody(ctx, rec.ID, orchestrator.StateRunning); transErr != nil {
 						fmt.Fprintf(os.Stderr, "reconcile: failed to transition body %s to Running: %v\n", rec.ID, transErr)
 					} else {
 						fmt.Fprintf(os.Stderr, "reconcile: body %s verified running, transitioned to Running\n", rec.ID)
@@ -257,9 +256,9 @@ func (d *Daemon) reconcile(ctx context.Context) error {
 				}
 			}
 
-		case adapter.StateMigrating:
+		case orchestrator.StateMigrating:
 			if !d.hasActiveMigration(ctx, rec.ID) {
-				if transErr := d.bodyMgr.TransitionBody(ctx, rec.ID, adapter.StateError); transErr != nil {
+				if transErr := d.bodyMgr.TransitionBody(ctx, rec.ID, orchestrator.StateError); transErr != nil {
 					fmt.Fprintf(os.Stderr, "reconcile: failed to transition body %s from Migrating to Error: %v\n", rec.ID, transErr)
 				} else {
 					fmt.Fprintf(os.Stderr, "reconcile: body %s migration record missing, transitioned to Error\n", rec.ID)

@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/klauspost/compress/zstd"
-	"github.com/rethink-paradigms/mesh/internal/adapter"
 	"github.com/rethink-paradigms/mesh/internal/plugin"
 	"github.com/rethink-paradigms/mesh/internal/restore"
 	"github.com/rethink-paradigms/mesh/internal/store"
@@ -184,7 +183,7 @@ func (s *Server) handleCreateBody(ctx context.Context, params json.RawMessage) (
 		}
 	}
 
-	spec := adapter.BodySpec{
+	spec := orchestrator.BodySpec{
 		Image:     p.Image,
 		Workdir:   p.Workdir,
 		Env:       p.Env,
@@ -263,7 +262,7 @@ func (s *Server) handleExecCommand(ctx context.Context, params json.RawMessage) 
 		return nil, &RPCError{Code: -32603, Message: fmt.Sprintf("body not found: %s", p.BodyID)}
 	}
 
-	if adapter.BodyState(body.State) != adapter.StateRunning {
+	if orchestrator.BodyState(body.State) != orchestrator.StateRunning {
 		return nil, &RPCError{Code: -32603, Message: fmt.Sprintf("body %s is not running (state: %s)", p.BodyID, body.State)}
 	}
 
@@ -305,7 +304,7 @@ func (s *Server) handleCreateSnapshot(ctx context.Context, params json.RawMessag
 	if err != nil {
 		return nil, &RPCError{Code: -32603, Message: fmt.Sprintf("body not found: %s", p.BodyID)}
 	}
-	if body.State != adapter.StateRunning {
+	if body.State != orchestrator.StateRunning {
 		return nil, &RPCError{Code: -32603, Message: fmt.Sprintf("body not running: %s (state: %s)", p.BodyID, body.State)}
 	}
 
@@ -482,7 +481,7 @@ func (s *Server) handleStopBody(ctx context.Context, params json.RawMessage) (in
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 
-	if err := s.bodyMgr.Stop(ctx, p.BodyID, adapter.StopOpts{Timeout: 30 * time.Second}); err != nil {
+	if err := s.bodyMgr.Stop(ctx, p.BodyID, orchestrator.StopOpts{Timeout: 30 * time.Second}); err != nil {
 		return nil, &RPCError{Code: -32603, Message: err.Error()}
 	}
 
@@ -515,7 +514,7 @@ func (s *Server) handleGetBodyLogs(ctx context.Context, params json.RawMessage) 
 		return nil, &RPCError{Code: -32603, Message: fmt.Sprintf("body not found: %s", p.BodyID)}
 	}
 
-	if adapter.BodyState(body.State) != adapter.StateRunning {
+	if orchestrator.BodyState(body.State) != orchestrator.StateRunning {
 		return nil, &RPCError{Code: -32603, Message: fmt.Sprintf("body %s is not running (state: %s)", p.BodyID, body.State)}
 	}
 

@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/rethink-paradigms/mesh/internal/adapter"
 	"github.com/rethink-paradigms/mesh/internal/orchestrator"
 	"github.com/rethink-paradigms/mesh/internal/provisioner"
 	"github.com/rethink-paradigms/mesh/internal/store"
@@ -43,7 +42,7 @@ type migrationContext struct {
 	snapshotPath string
 	snapshotSize int64
 	snapshotSHA  string
-	newHandle    adapter.Handle
+	newHandle    orchestrator.Handle
 	mc           *MigrationCoordinator
 }
 
@@ -110,7 +109,7 @@ func (mc *MigrationCoordinator) BeginMigration(ctx context.Context, bodyID, targ
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
-	if err := mc.transitionBody(ctx, b, adapter.StateMigrating); err != nil {
+		if err := mc.transitionBody(ctx, b, orchestrator.StateMigrating); err != nil {
 		return "", fmt.Errorf("transition to migrating: %w", err)
 	}
 
@@ -119,7 +118,7 @@ func (mc *MigrationCoordinator) BeginMigration(ctx context.Context, bodyID, targ
 		stepNum := i + 1
 		if err := step.fn(ctx, mig); err != nil {
 			_ = mc.store.UpdateMigration(ctx, migID, stepNum, err.Error())
-			_ = mc.transitionBody(ctx, b, adapter.StateError)
+			_ = mc.transitionBody(ctx, b, orchestrator.StateError)
 			return migID, fmt.Errorf("migration step %d (%s) failed: %w", stepNum, step.name, err)
 		}
 		if stepNum == migrationSteps {
@@ -130,7 +129,7 @@ func (mc *MigrationCoordinator) BeginMigration(ctx context.Context, bodyID, targ
 		}
 	}
 
-	if err := mc.transitionBody(ctx, b, adapter.StateRunning); err != nil {
+	if err := mc.transitionBody(ctx, b, orchestrator.StateRunning); err != nil {
 		return migID, fmt.Errorf("transition to running after migration: %w", err)
 	}
 
@@ -162,15 +161,15 @@ func (mc *MigrationCoordinator) ResumeMigration(ctx context.Context, migrationID
 
 	bodyRec, err := mc.store.GetBody(ctx, rec.BodyID)
 	if err == nil && bodyRec.InstanceID != "" {
-		mig.newHandle = adapter.Handle(bodyRec.InstanceID)
+		mig.newHandle = orchestrator.Handle(bodyRec.InstanceID)
 	}
 
 	b := mc.bm.getOrCreateBody(rec.BodyID)
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
-	if b.State == adapter.StateError {
-		if err := mc.transitionBody(ctx, b, adapter.StateMigrating); err != nil {
+	if b.State == orchestrator.StateError {
+	if err := mc.transitionBody(ctx, b, orchestrator.StateMigrating); err != nil {
 			return fmt.Errorf("transition from error to migrating: %w", err)
 		}
 	}
@@ -180,7 +179,7 @@ func (mc *MigrationCoordinator) ResumeMigration(ctx context.Context, migrationID
 		stepNum := i + 1
 		if err := steps[i].fn(ctx, mig); err != nil {
 			_ = mc.store.UpdateMigration(ctx, migrationID, stepNum, err.Error())
-			_ = mc.transitionBody(ctx, b, adapter.StateError)
+			_ = mc.transitionBody(ctx, b, orchestrator.StateError)
 			return fmt.Errorf("migration step %d (%s) failed: %w", stepNum, steps[i].name, err)
 		}
 		if stepNum == migrationSteps {
@@ -191,7 +190,7 @@ func (mc *MigrationCoordinator) ResumeMigration(ctx context.Context, migrationID
 		}
 	}
 
-	return mc.transitionBody(ctx, b, adapter.StateRunning)
+	return mc.transitionBody(ctx, b, orchestrator.StateRunning)
 }
 
 func (mc *MigrationCoordinator) stepExport(ctx context.Context, mig *migrationContext) error {
@@ -260,7 +259,7 @@ func (mc *MigrationCoordinator) stepProvision(ctx context.Context, mig *migratio
 	if rec.CurrentStep >= 2 {
 		bodyRec, err := mc.store.GetBody(ctx, mig.bodyID)
 		if err == nil && bodyRec.InstanceID != "" {
-			mig.newHandle = adapter.Handle(bodyRec.InstanceID)
+		mig.newHandle = orchestrator.Handle(bodyRec.InstanceID)
 			return nil
 		}
 	}
@@ -296,9 +295,9 @@ func (mc *MigrationCoordinator) stepProvision(ctx context.Context, mig *migratio
 			return fmt.Errorf("create target container: %w", err)
 		}
 
-		mig.newHandle = adapter.Handle(targetHandle)
+		mig.newHandle = orchestrator.Handle(targetHandle)
 
-		if err := mc.store.UpdateBodyState(ctx, mig.bodyID, adapter.StateMigrating); err != nil {
+		if err := mc.store.UpdateBodyState(ctx, mig.bodyID, orchestrator.StateMigrating); err != nil {
 			_ = srcOrch.DestroyBody(ctx, targetHandle)
 			mig.newHandle = ""
 			return fmt.Errorf("persist target handle: %w", err)
@@ -359,9 +358,9 @@ func (mc *MigrationCoordinator) stepProvision(ctx context.Context, mig *migratio
 		return fmt.Errorf("schedule body on target orchestrator %q: %w", mig.target, err)
 	}
 
-	mig.newHandle = adapter.Handle(targetHandle)
+		mig.newHandle = orchestrator.Handle(targetHandle)
 
-	if err := mc.store.UpdateBodyState(ctx, mig.bodyID, adapter.StateMigrating); err != nil {
+		if err := mc.store.UpdateBodyState(ctx, mig.bodyID, orchestrator.StateMigrating); err != nil {
 		_ = targetOrch.DestroyBody(ctx, targetHandle)
 		mig.newHandle = ""
 		return fmt.Errorf("persist target handle: %w", err)
@@ -646,7 +645,7 @@ func (mc *MigrationCoordinator) stepCleanup(ctx context.Context, mig *migrationC
 	return nil
 }
 
-func (mc *MigrationCoordinator) transitionBody(ctx context.Context, b *Body, target adapter.BodyState) error {
+func (mc *MigrationCoordinator) transitionBody(ctx context.Context, b *Body, target orchestrator.BodyState) error {
 	if err := b.Transition(target); err != nil {
 		return err
 	}
