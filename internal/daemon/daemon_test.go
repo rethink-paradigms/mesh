@@ -14,7 +14,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rethink-paradigms/mesh/internal/adapter"
 	"github.com/rethink-paradigms/mesh/internal/body"
 	"github.com/rethink-paradigms/mesh/internal/config"
 	"github.com/rethink-paradigms/mesh/internal/orchestrator"
@@ -258,7 +257,7 @@ func TestReconcileMissingContainer(t *testing.T) {
 	defer s.Close()
 
 	ctx := context.Background()
-	if err := s.CreateBody(ctx, "b1", "body-1", adapter.StateRunning, "", "docker", "nonexistent-container-id"); err != nil {
+	if err := s.CreateBody(ctx, "b1", "body-1", orchestrator.StateRunning, "", "docker", "nonexistent-container-id"); err != nil {
 		t.Fatalf("CreateBody: %v", err)
 	}
 
@@ -276,7 +275,7 @@ func TestReconcileMissingContainer(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetBody: %v", err)
 	}
-	if rec.State != adapter.StateError {
+	if rec.State != orchestrator.StateError {
 		t.Fatalf("state = %q, want Error", rec.State)
 	}
 	if d.reconcileSteps != 1 {
@@ -299,7 +298,7 @@ func TestReconcileOrphanedStoreRecord(t *testing.T) {
 	defer s.Close()
 
 	ctx := context.Background()
-	if err := s.CreateBody(ctx, "b2", "body-2", adapter.StateError, "", "docker", "nonexistent-container-id"); err != nil {
+	if err := s.CreateBody(ctx, "b2", "body-2", orchestrator.StateError, "", "docker", "nonexistent-container-id"); err != nil {
 		t.Fatalf("CreateBody: %v", err)
 	}
 
@@ -317,7 +316,7 @@ func TestReconcileOrphanedStoreRecord(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetBody: %v", err)
 	}
-	if rec.State != adapter.StateError {
+	if rec.State != orchestrator.StateError {
 		t.Fatalf("state = %q, want Error (unchanged)", rec.State)
 	}
 	if d.reconcileSteps != 0 {
@@ -340,7 +339,7 @@ func TestReconcileStateMismatch(t *testing.T) {
 	defer s.Close()
 
 	ctx := context.Background()
-	if err := s.CreateBody(ctx, "b3", "body-3", adapter.StateRunning, "", "docker", ""); err != nil {
+	if err := s.CreateBody(ctx, "b3", "body-3", orchestrator.StateRunning, "", "docker", ""); err != nil {
 		t.Fatalf("CreateBody: %v", err)
 	}
 
@@ -357,7 +356,7 @@ func TestReconcileStateMismatch(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetBody: %v", err)
 	}
-	if rec.State != adapter.StateRunning {
+	if rec.State != orchestrator.StateRunning {
 		t.Fatalf("state = %q, want Running (unchanged, no instance_id)", rec.State)
 	}
 	if d.reconcileSteps != 0 {
@@ -380,7 +379,7 @@ func TestReconcileMigrationRecovery(t *testing.T) {
 	defer s.Close()
 
 	ctx := context.Background()
-	if err := s.CreateBody(ctx, "b4", "body-4", adapter.StateMigrating, "", "docker", "inst-4"); err != nil {
+	if err := s.CreateBody(ctx, "b4", "body-4", orchestrator.StateMigrating, "", "docker", "inst-4"); err != nil {
 		t.Fatalf("CreateBody: %v", err)
 	}
 
@@ -398,7 +397,7 @@ func TestReconcileMigrationRecovery(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetBody: %v", err)
 	}
-	if rec.State != adapter.StateError {
+	if rec.State != orchestrator.StateError {
 		t.Fatalf("state = %q, want Error (migration record missing)", rec.State)
 	}
 	if d.reconcileSteps != 1 {
@@ -422,7 +421,7 @@ func TestReconcileHealthSteps(t *testing.T) {
 	defer s.Close()
 
 	ctx := context.Background()
-	if err := s.CreateBody(ctx, "b5", "body-5", adapter.StateRunning, "", "docker", "nonexistent"); err != nil {
+	if err := s.CreateBody(ctx, "b5", "body-5", orchestrator.StateRunning, "", "docker", "nonexistent"); err != nil {
 		t.Fatalf("CreateBody: %v", err)
 	}
 
@@ -840,7 +839,7 @@ func TestDaemonReconcileDockerOrphan(t *testing.T) {
 	defer s.Close()
 
 	ctx := context.Background()
-	if err := s.CreateBody(ctx, "orphan-1", "orphan-body", adapter.StateRunning, "", "docker", "orphan-inst-1"); err != nil {
+	if err := s.CreateBody(ctx, "orphan-1", "orphan-body", orchestrator.StateRunning, "", "docker", "orphan-inst-1"); err != nil {
 		t.Fatalf("CreateBody: %v", err)
 	}
 
@@ -856,7 +855,7 @@ func TestDaemonReconcileDockerOrphan(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetBody: %v", err)
 	}
-	if rec.State != adapter.StateRunning {
+	if rec.State != orchestrator.StateRunning {
 		t.Fatalf("state = %q, want Running (skipped due to no adapter)", rec.State)
 	}
 	if d.reconcileSteps != 0 {

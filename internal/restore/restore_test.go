@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rethink-paradigms/mesh/internal/adapter"
 	"github.com/rethink-paradigms/mesh/internal/manifest"
+	"github.com/rethink-paradigms/mesh/internal/orchestrator"
 	"github.com/rethink-paradigms/mesh/internal/snapshot"
 	"github.com/rethink-paradigms/mesh/internal/store"
 )
@@ -363,7 +363,7 @@ func TestRestoreFromStore(t *testing.T) {
 	ctx := context.Background()
 
 	bodyID := "restore-test-body"
-	if err := s.CreateBody(ctx, bodyID, bodyID, adapter.StateCreated, "", "local", ""); err != nil {
+	if err := s.CreateBody(ctx, bodyID, bodyID, orchestrator.StateCreated, "", "local", ""); err != nil {
 		t.Fatalf("CreateBody: %v", err)
 	}
 
@@ -430,7 +430,7 @@ func TestRestoreFromStoreWithHook(t *testing.T) {
 	ctx := context.Background()
 
 	bodyID := "hook-body"
-	if err := s.CreateBody(ctx, bodyID, bodyID, adapter.StateCreated, "", "local", ""); err != nil {
+	if err := s.CreateBody(ctx, bodyID, bodyID, orchestrator.StateCreated, "", "local", ""); err != nil {
 		t.Fatalf("CreateBody: %v", err)
 	}
 
@@ -471,7 +471,7 @@ func TestRoundTripWithStore(t *testing.T) {
 
 	s := openTestStore(t)
 	bodyID := "roundtrip-body"
-	if err := s.CreateBody(ctx, bodyID, bodyID, adapter.StateCreated, "", "local", ""); err != nil {
+	if err := s.CreateBody(ctx, bodyID, bodyID, orchestrator.StateCreated, "", "local", ""); err != nil {
 		t.Fatalf("CreateBody: %v", err)
 	}
 

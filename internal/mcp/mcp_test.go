@@ -16,7 +16,6 @@ import (
 	"time"
 
 	"github.com/klauspost/compress/zstd"
-	"github.com/rethink-paradigms/mesh/internal/adapter"
 	"github.com/rethink-paradigms/mesh/internal/body"
 	"github.com/rethink-paradigms/mesh/internal/orchestrator"
 	"github.com/rethink-paradigms/mesh/internal/plugin"
@@ -262,7 +261,7 @@ func TestPing(t *testing.T) {
 func TestListBodies(t *testing.T) {
 	s := tempStore(t)
 	ctx := context.Background()
-	s.CreateBody(ctx, "b1", "test-body", adapter.StateRunning, `{"image":"alpine"}`, "docker", "inst-1")
+	s.CreateBody(ctx, "b1", "test-body", orchestrator.StateRunning, `{"image":"alpine"}`, "docker", "inst-1")
 
 	h := newHarness(t, s)
 	defer h.close()
@@ -291,7 +290,7 @@ func TestListBodies(t *testing.T) {
 func TestGetBody(t *testing.T) {
 	s := tempStore(t)
 	ctx := context.Background()
-	s.CreateBody(ctx, "b1", "my-body", adapter.StateRunning, `{"image":"alpine"}`, "docker", "inst-1")
+	s.CreateBody(ctx, "b1", "my-body", orchestrator.StateRunning, `{"image":"alpine"}`, "docker", "inst-1")
 
 	h := newHarness(t, s)
 	defer h.close()
@@ -347,7 +346,7 @@ func TestGetBodyNotFound(t *testing.T) {
 func TestGetSnapshot(t *testing.T) {
 	s := tempStore(t)
 	ctx := context.Background()
-	s.CreateBody(ctx, "b1", "body1", adapter.StateRunning, `{}`, "docker", "inst-1")
+	s.CreateBody(ctx, "b1", "body1", orchestrator.StateRunning, `{}`, "docker", "inst-1")
 	s.CreateSnapshot(ctx, "snap1", "b1", `{"checksum":"abc"}`, "/tmp/snap1.tar.zst", 1024)
 
 	h := newHarness(t, s)
@@ -379,7 +378,7 @@ func TestExecCommandSuccess(t *testing.T) {
 	bm := testBodyManager(t, s)
 	ctx := context.Background()
 
-	created, err := bm.Create(ctx, "exec-test", adapter.BodySpec{Image: "alpine"})
+	created, err := bm.Create(ctx, "exec-test", orchestrator.BodySpec{Image: "alpine"})
 	if err != nil {
 		t.Fatalf("create body: %v", err)
 	}
@@ -420,11 +419,11 @@ func TestExecCommandNotRunning(t *testing.T) {
 	bm := testBodyManager(t, s)
 	ctx := context.Background()
 
-	created, err := bm.Create(ctx, "exec-stopped", adapter.BodySpec{Image: "alpine"})
+	created, err := bm.Create(ctx, "exec-stopped", orchestrator.BodySpec{Image: "alpine"})
 	if err != nil {
 		t.Fatalf("create body: %v", err)
 	}
-	if err := bm.Stop(ctx, created.ID, adapter.StopOpts{}); err != nil {
+	if err := bm.Stop(ctx, created.ID, orchestrator.StopOpts{}); err != nil {
 		t.Fatalf("stop body: %v", err)
 	}
 
@@ -455,7 +454,7 @@ func TestExecCommandTimeout(t *testing.T) {
 	bm := testBodyManager(t, s)
 	ctx := context.Background()
 
-	created, err := bm.Create(ctx, "exec-timeout", adapter.BodySpec{Image: "alpine"})
+	created, err := bm.Create(ctx, "exec-timeout", orchestrator.BodySpec{Image: "alpine"})
 	if err != nil {
 		t.Fatalf("create body: %v", err)
 	}
@@ -487,7 +486,7 @@ func TestExecCommandEmptyCommand(t *testing.T) {
 	bm := testBodyManager(t, s)
 	ctx := context.Background()
 
-	created, err := bm.Create(ctx, "exec-empty", adapter.BodySpec{Image: "alpine"})
+	created, err := bm.Create(ctx, "exec-empty", orchestrator.BodySpec{Image: "alpine"})
 	if err != nil {
 		t.Fatalf("create body: %v", err)
 	}
@@ -754,12 +753,12 @@ func TestDeleteBody(t *testing.T) {
 	bm := testBodyManager(t, s)
 	ctx := context.Background()
 
-	created, err := bm.Create(ctx, "to-delete", adapter.BodySpec{Image: "alpine"})
+	created, err := bm.Create(ctx, "to-delete", orchestrator.BodySpec{Image: "alpine"})
 	if err != nil {
 		t.Fatalf("create body: %v", err)
 	}
 
-	_ = bm.Stop(ctx, created.ID, adapter.StopOpts{})
+	_ = bm.Stop(ctx, created.ID, orchestrator.StopOpts{})
 
 	h := newHarness(t, s)
 	h.srv.SetBodyManager(bm)
@@ -812,7 +811,7 @@ func TestMigrateBody(t *testing.T) {
 	mig := testMigrator(t, s, bm)
 
 	ctx := context.Background()
-	created, err := bm.Create(ctx, "to-migrate", adapter.BodySpec{Image: "alpine"})
+	created, err := bm.Create(ctx, "to-migrate", orchestrator.BodySpec{Image: "alpine"})
 	if err != nil {
 		t.Fatalf("create body: %v", err)
 	}
@@ -868,11 +867,11 @@ func TestStartBody(t *testing.T) {
 	bm := testBodyManager(t, s)
 	ctx := context.Background()
 
-	created, err := bm.Create(ctx, "to-start", adapter.BodySpec{Image: "alpine"})
+	created, err := bm.Create(ctx, "to-start", orchestrator.BodySpec{Image: "alpine"})
 	if err != nil {
 		t.Fatalf("create body: %v", err)
 	}
-	if err := bm.Stop(ctx, created.ID, adapter.StopOpts{}); err != nil {
+	if err := bm.Stop(ctx, created.ID, orchestrator.StopOpts{}); err != nil {
 		t.Fatalf("stop body: %v", err)
 	}
 
@@ -913,7 +912,7 @@ func TestStopBody(t *testing.T) {
 	bm := testBodyManager(t, s)
 	ctx := context.Background()
 
-	created, err := bm.Create(ctx, "to-stop", adapter.BodySpec{Image: "alpine"})
+	created, err := bm.Create(ctx, "to-stop", orchestrator.BodySpec{Image: "alpine"})
 	if err != nil {
 		t.Fatalf("create body: %v", err)
 	}
@@ -951,7 +950,7 @@ func TestStartBodyAlreadyRunning(t *testing.T) {
 	bm := testBodyManager(t, s)
 	ctx := context.Background()
 
-	created, err := bm.Create(ctx, "already-running", adapter.BodySpec{Image: "alpine"})
+	created, err := bm.Create(ctx, "already-running", orchestrator.BodySpec{Image: "alpine"})
 	if err != nil {
 		t.Fatalf("create body: %v", err)
 	}
@@ -980,11 +979,11 @@ func TestStopBodyAlreadyStopped(t *testing.T) {
 	bm := testBodyManager(t, s)
 	ctx := context.Background()
 
-	created, err := bm.Create(ctx, "already-stopped", adapter.BodySpec{Image: "alpine"})
+	created, err := bm.Create(ctx, "already-stopped", orchestrator.BodySpec{Image: "alpine"})
 	if err != nil {
 		t.Fatalf("create body: %v", err)
 	}
-	if err := bm.Stop(ctx, created.ID, adapter.StopOpts{}); err != nil {
+	if err := bm.Stop(ctx, created.ID, orchestrator.StopOpts{}); err != nil {
 		t.Fatalf("stop body: %v", err)
 	}
 
@@ -1142,7 +1141,7 @@ func TestCreateSnapshot(t *testing.T) {
 	bm := testBodyManager(t, s)
 	ctx := context.Background()
 
-	created, err := bm.Create(ctx, "snap-test", adapter.BodySpec{Image: "alpine"})
+	created, err := bm.Create(ctx, "snap-test", orchestrator.BodySpec{Image: "alpine"})
 	if err != nil {
 		t.Fatalf("create body: %v", err)
 	}
@@ -1206,11 +1205,11 @@ func TestCreateSnapshotBodyNotRunning(t *testing.T) {
 	bm := testBodyManager(t, s)
 	ctx := context.Background()
 
-	created, err := bm.Create(ctx, "stopped-body", adapter.BodySpec{Image: "alpine"})
+	created, err := bm.Create(ctx, "stopped-body", orchestrator.BodySpec{Image: "alpine"})
 	if err != nil {
 		t.Fatalf("create body: %v", err)
 	}
-	_ = bm.Stop(ctx, created.ID, adapter.StopOpts{})
+	_ = bm.Stop(ctx, created.ID, orchestrator.StopOpts{})
 
 	h := newHarness(t, s)
 	h.srv.SetBodyManager(bm)
@@ -1254,7 +1253,7 @@ func TestCreateSnapshotNoBodyManager(t *testing.T) {
 func TestListSnapshots(t *testing.T) {
 	s := tempStore(t)
 	ctx := context.Background()
-	s.CreateBody(ctx, "b1", "body1", adapter.StateRunning, `{}`, "docker", "inst-1")
+	s.CreateBody(ctx, "b1", "body1", orchestrator.StateRunning, `{}`, "docker", "inst-1")
 	s.CreateSnapshot(ctx, "snap1", "b1", `{"checksum":"abc"}`, "/tmp/snap1.tar.zst", 1024)
 	s.CreateSnapshot(ctx, "snap2", "b1", `{"checksum":"def"}`, "/tmp/snap2.tar.zst", 2048)
 
@@ -1285,8 +1284,8 @@ func TestListSnapshots(t *testing.T) {
 func TestListSnapshotsAllBodies(t *testing.T) {
 	s := tempStore(t)
 	ctx := context.Background()
-	s.CreateBody(ctx, "b1", "body1", adapter.StateRunning, `{}`, "docker", "inst-1")
-	s.CreateBody(ctx, "b2", "body2", adapter.StateRunning, `{}`, "docker", "inst-2")
+	s.CreateBody(ctx, "b1", "body1", orchestrator.StateRunning, `{}`, "docker", "inst-1")
+	s.CreateBody(ctx, "b2", "body2", orchestrator.StateRunning, `{}`, "docker", "inst-2")
 	s.CreateSnapshot(ctx, "snap1", "b1", `{"checksum":"abc"}`, "/tmp/snap1.tar.zst", 1024)
 	s.CreateSnapshot(ctx, "snap2", "b2", `{"checksum":"def"}`, "/tmp/snap2.tar.zst", 2048)
 
@@ -1319,7 +1318,7 @@ func TestRestoreBody(t *testing.T) {
 	bm := testBodyManager(t, s)
 	ctx := context.Background()
 
-	created, err := bm.Create(ctx, "restore-test", adapter.BodySpec{Image: "alpine"})
+	created, err := bm.Create(ctx, "restore-test", orchestrator.BodySpec{Image: "alpine"})
 	if err != nil {
 		t.Fatalf("create body: %v", err)
 	}
@@ -1402,7 +1401,7 @@ func TestRestoreBody(t *testing.T) {
 func TestRestoreBodyNoBodyManager(t *testing.T) {
 	s := tempStore(t)
 	ctx := context.Background()
-	s.CreateBody(ctx, "b1", "body1", adapter.StateRunning, `{}`, "docker", "inst-1")
+	s.CreateBody(ctx, "b1", "body1", orchestrator.StateRunning, `{}`, "docker", "inst-1")
 	s.CreateSnapshot(ctx, "snap1", "b1", `{"checksum":"abc"}`, "/tmp/snap1.tar.zst", 1024)
 
 	h := newHarness(t, s)
@@ -1451,7 +1450,7 @@ func TestGetBodyLogsRunningBody(t *testing.T) {
 	bm := testBodyManager(t, s)
 	ctx := context.Background()
 
-	created, err := bm.Create(ctx, "logs-test", adapter.BodySpec{Image: "alpine"})
+	created, err := bm.Create(ctx, "logs-test", orchestrator.BodySpec{Image: "alpine"})
 	if err != nil {
 		t.Fatalf("create body: %v", err)
 	}
@@ -1492,11 +1491,11 @@ func TestGetBodyLogsStoppedBody(t *testing.T) {
 	bm := testBodyManager(t, s)
 	ctx := context.Background()
 
-	created, err := bm.Create(ctx, "logs-stopped", adapter.BodySpec{Image: "alpine"})
+	created, err := bm.Create(ctx, "logs-stopped", orchestrator.BodySpec{Image: "alpine"})
 	if err != nil {
 		t.Fatalf("create body: %v", err)
 	}
-	if err := bm.Stop(ctx, created.ID, adapter.StopOpts{}); err != nil {
+	if err := bm.Stop(ctx, created.ID, orchestrator.StopOpts{}); err != nil {
 		t.Fatalf("stop body: %v", err)
 	}
 
@@ -1576,7 +1575,7 @@ func TestGetBodyStatusRunningBody(t *testing.T) {
 	bm := testBodyManager(t, s)
 	ctx := context.Background()
 
-	created, err := bm.Create(ctx, "status-test", adapter.BodySpec{Image: "alpine"})
+	created, err := bm.Create(ctx, "status-test", orchestrator.BodySpec{Image: "alpine"})
 	if err != nil {
 		t.Fatalf("create body: %v", err)
 	}

@@ -69,10 +69,10 @@ Blocks: (none)
 [Implementation note: Tarball+manifest format works. Not yet a unified OCI+tarball composite. Separate concerns in code.]
 
 **Relationships:**
-- related_to → D2
 - enables → D2
 - enables → D4
 - enables → D2
+- related_to → D2
 - constrains → D2
 
 ---
@@ -93,10 +93,10 @@ Enables: edge deployment, cheap fleet nodes
 Blocks: adopting k8s-sigs/agent-sandbox directly (must reimplement concepts over Nomad)
 
 **Relationships:**
-- related_to → D3
-- related_to → D3
-- related_to → D3
 - enables → D3
+- related_to → D3
+- related_to → D3
+- related_to → D3
 - constrains → D3
 - constrains → D3
 
@@ -118,11 +118,11 @@ Enables: substrate adapter contract stays tiny (6 verbs)
 Blocks: sub-second cross-substrate migration (explicitly out of scope)
 
 **Relationships:**
-- related_to → D4
-- related_to → D4
-- related_to → D4
 - enables → D4
 - enables → D4
+- related_to → D4
+- related_to → D4
+- related_to → D4
 - constrains → D4
 
 ---
@@ -170,8 +170,8 @@ Rationale: Less code, fewer bugs, fewer security issues. Users own their provide
 - related_to → D6
 - related_to → D6
 - related_to → D6
-- supersedes → D6
 - constrains → D6
+- supersedes → D6
 
 ---
 
@@ -191,9 +191,9 @@ Enables: D2 (OCI image format), substrate adapter simplicity
 Blocks: microVM-native features (memory snapshot at VM boundary)
 
 **Relationships:**
-- related_to → D7
-- related_to → D7
 - enables → D2
+- related_to → D7
+- related_to → D7
 
 ---
 
@@ -435,9 +435,9 @@ Enables: clean adapter interface, gradual capability addition, plugin-specific f
 Blocks: unified 'call any method' API (must check capability first)
 
 **Relationships:**
+- enables → DE14
 - related_to → D6
 - related_to → DE14
-- enables → DE14
 
 ---
 
@@ -471,8 +471,8 @@ Blocks: direct Pulumi integration (DE4), custom codegen tooling
 Context: When a plugin doesn't support a capability (e.g., ListMachines, GetLogs), there are two error-handling patterns: (1) return ErrNotImplemented from every unsupported method, or (2) don't implement the method at all — use extension interfaces and type assertion. Decision: Mesh uses extension interfaces and type assertion, NOT ErrNotImplemented passthrough. Optional capabilities are defined as separate interfaces (Exporter, Importer, Inspector, Executor for orchestrator; Snapshotter, NetworkConfigurator, LogFetcher for provisioner). Core code checks capability availability via type assertion before calling methods. If the extension is not implemented, the feature is simply unavailable. Generic helper: HasCapability[T any](adapter) bool. Implemented in internal/orchestrator/extensions.go and internal/provisioner/extensions.go.
 
 **Relationships:**
-- related_to → DE14
 - enables → DE16
+- related_to → DE14
 
 ---
 
@@ -484,8 +484,6 @@ Context: When a plugin doesn't support a capability (e.g., ListMachines, GetLogs
 Split monolithic SubstrateAdapter into two independent pools: OrchestratorAdapter (ScheduleBody, StartBody, StopBody, DestroyBody, GetBodyStatus) and ProvisionerAdapter (CreateMachine, DestroyMachine, GetMachineStatus, ListMachines). Extension interfaces via type assertion. database/sql-style registries for both.
 
 **Relationships:**
-- related_to → DE17
-- related_to → DE17
 - enables → DE14
 - enables → DE16
 - enables → DE17
@@ -493,6 +491,8 @@ Split monolithic SubstrateAdapter into two independent pools: OrchestratorAdapte
 - enables → DE17
 - enables → DE17
 - enables → DE17
+- related_to → DE17
+- related_to → DE17
 
 ---
 
@@ -504,8 +504,8 @@ Split monolithic SubstrateAdapter into two independent pools: OrchestratorAdapte
 Deleted internal/docker/ package entirely. Nomad adapter is the sole v1 OrchestratorAdapter. Docker is managed by Nomad's task driver, not by Mesh. Bodies with substrate=docker in store are orphans handled gracefully (log + skip).
 
 **Relationships:**
-- supersedes → DE8
 - enables → DE17
+- supersedes → DE8
 
 ---
 
@@ -547,13 +547,14 @@ Config.Orchestrators and Config.Provisioners are map[string]map[string]string. R
 
 ## DE22: Adapter shim retained for backward compatibility — internal/adapter/ kept as deprecated type-alias package
 
-**Status**: implemented
+**Status**: superseded
 **Date**: 2026-05-04T05:41:43Z
 
 internal/adapter/adapter.go retained as a thin deprecated shim: type aliases pointing to orchestrator types (Handle, BodySpec, BodyStatus, etc.) and SubstrateAdapter/MultiAdapter interfaces for the gRPC plugin layer. Will be removed when plugin layer is refactored in Phase 2.
 
 **Relationships:**
 - enables → DE17
+- supersedes → DE22
 
 ---
 
@@ -578,6 +579,18 @@ The create_body MCP tool accepts an optional 'substrate' parameter. If omitted a
 
 **Relationships:**
 - enables → DE17
+
+---
+
+## DE25: gRPC plugin layer deleted; out-of-process plugins deferred
+
+**Status**: accepted
+**Date**: 2026-05-04T08:03:49Z
+
+The hashicorp/go-plugin gRPC transport was dead code — every body method returned 'not implemented'. Adapters run in-process via the Registry pattern. Out-of-process plugins will be redesigned when needed, using a protocol aligned with the two-pool architecture (separate protos for orchestrator vs provisioner).
+
+**Relationships:**
+- supersedes → DE22
 
 ---
 
