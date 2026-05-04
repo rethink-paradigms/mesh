@@ -2,7 +2,6 @@ package plugin
 
 import (
 	"os"
-	"os/exec"
 	"path/filepath"
 	"runtime"
 	"testing"
@@ -218,31 +217,15 @@ func TestPluginManagerScanSkipsNonExecutable(t *testing.T) {
 }
 
 func TestPluginManagerScanSkipsNonPluginBinary(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("shell script test not supported on Windows")
+	}
 	pluginDir := t.TempDir()
 	badBin := filepath.Join(pluginDir, "bad-binary")
-	if runtime.GOOS == "windows" {
-		badBin += ".exe"
-	}
 
-	badCode := `package main
-import "time"
-func main() {
-	time.Sleep(10 * time.Millisecond)
-}
-`
-	tmpDir := t.TempDir()
-	srcFile := filepath.Join(tmpDir, "main.go")
-	if err := os.WriteFile(srcFile, []byte(badCode), 0644); err != nil {
-		t.Fatalf("failed to write bad source: %v", err)
-	}
-
-	cmd := exec.Command("go", "build", "-o", badBin, srcFile)
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		t.Fatalf("failed to build bad binary: %v\n%s", err, out)
-	}
-	if err := os.Chmod(badBin, 0755); err != nil {
-		t.Fatalf("failed to chmod bad binary: %v", err)
+	// A shell script that exits immediately — Scan() skips binaries that exit before 800ms
+	if err := os.WriteFile(badBin, []byte("#!/bin/sh\nexit 0\n"), 0755); err != nil {
+		t.Fatalf("failed to create shell script: %v", err)
 	}
 
 	pm := NewPluginManager(pluginDir, []string{})
