@@ -53,3 +53,9 @@ tmpal_*.db-*
 CLAUDE.md
 DESIGN.md
 scripts/gemini-opinion.sh
+
+# AI agent session artifacts
+.opencode/
+
+# Mesh daemon binary
+mesh-daemon
