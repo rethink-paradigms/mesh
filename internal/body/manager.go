@@ -8,7 +8,6 @@ import (
 	"sync"
 
 	"github.com/google/uuid"
-	"github.com/rethink-paradigms/mesh/internal/adapter"
 	"github.com/rethink-paradigms/mesh/internal/orchestrator"
 	"github.com/rethink-paradigms/mesh/internal/store"
 )
@@ -41,14 +40,14 @@ func (bm *BodyManager) getOrCreateBody(id string) *Body {
 	return b
 }
 
-func specToJSON(spec adapter.BodySpec) string {
+func specToJSON(spec orchestrator.BodySpec) string {
 	data, _ := json.Marshal(spec)
 	return string(data)
 }
 
 // Create creates a new body: inserts a store record, provisions on the substrate,
 // and transitions from Created → Starting → Running.
-func (bm *BodyManager) Create(ctx context.Context, name string, spec adapter.BodySpec) (*Body, error) {
+func (bm *BodyManager) Create(ctx context.Context, name string, spec orchestrator.BodySpec) (*Body, error) {
 	id := uuid.New().String()
 
 	b := bm.getOrCreateBody(id)
@@ -69,14 +68,14 @@ func (bm *BodyManager) Create(ctx context.Context, name string, spec adapter.Bod
 	}
 
 	specJSON := specToJSON(spec)
-	if err := bm.store.CreateBody(ctx, id, name, adapter.StateCreated, specJSON, "local", string(handle)); err != nil {
+	if err := bm.store.CreateBody(ctx, id, name, orchestrator.StateCreated, specJSON, "local", string(handle)); err != nil {
 		return nil, fmt.Errorf("store create body: %w", err)
 	}
 
 	b.ID = id
 	b.Name = name
-	b.State = adapter.StateCreated
-	b.InstanceID = adapter.Handle(handle)
+	b.State = orchestrator.StateCreated
+	b.InstanceID = orchestrator.Handle(handle)
 	b.Spec = spec
 	b.Substrate = "local"
 
@@ -89,7 +88,7 @@ func (bm *BodyManager) Create(ctx context.Context, name string, spec adapter.Bod
 		return nil, fmt.Errorf("orchestrator start body: %w", err)
 	}
 
-	if err := bm.transitionPersisted(ctx, b, adapter.StateRunning); err != nil {
+	if err := bm.transitionPersisted(ctx, b, orchestrator.StateRunning); err != nil {
 		return nil, err
 	}
 
@@ -102,7 +101,7 @@ func (bm *BodyManager) Start(ctx context.Context, bodyID string) error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
-	if b.State != adapter.StateStopped && b.State != adapter.StateCreated {
+	if b.State != orchestrator.StateStopped && b.State != orchestrator.StateCreated {
 		return fmt.Errorf("cannot start body in state %s (must be Stopped or Created)", b.State)
 	}
 
