@@ -348,14 +348,15 @@ P4 DEFER to v2.0:
 
 ## DE8: Docker adapter is a plugin, not built-in (EQ1)
 
-**Status**: accepted
+**Status**: superseded
 **Date**: 2026-05-03T13:58:38Z
 
-Resolves EQ1: Docker should be a PLUGIN, not built-in, consistent with Nomad being a plugin. This creates architectural consistency — all substrate adapters are plugins, loaded by the daemon at startup. The only built-in adapter is the 'local' filesystem adapter (for A5 developer agent, writes bodies directly to local disk). Rationale: (1) If Nomad is a plugin, Docker should be too. The current inconsistency (Docker built-in, Nomad plugin) is an accident of development order, not a design choice. (2) Making Docker a plugin forces the plugin loading system to be robust — if the first plugin loaded is Docker, the plugin infrastructure must work from day one. (3) Users who don't need Docker (e.g., Fly Machines only users) don't load it. (4) The daemon startup sequence becomes: init config -> init store -> load enabled plugins -> start MCP server. If Docker plugin fails to load, daemon still starts (with a warning). This change requires moving the existing internal/docker/ code into a plugin package with the SubstrateAdapter interface. The Docker plugin is special only in that it ships with Mesh (included in the default install), but it uses the same plugin loading mechanism as any third-party adapter.
+Superseded by DE18: Docker adapter was deleted entirely rather than made into a plugin. Nomad manages Docker via its task driver.
 
 **Relationships:**
 - related_to → D7
 - related_to → D6
+- supersedes → DE8
 
 ---
 
@@ -436,6 +437,7 @@ Blocks: unified 'call any method' API (must check capability first)
 **Relationships:**
 - related_to → D6
 - related_to → DE14
+- enables → DE14
 
 ---
 
@@ -463,25 +465,119 @@ Blocks: direct Pulumi integration (DE4), custom codegen tooling
 
 ## DE16: Extension interfaces for optional capabilities, not ErrNotImplemented passthrough
 
-**Status**: accepted
+**Status**: implemented
 **Date**: 2026-05-03T14:00:35Z
 
-Context: When a plugin doesn't support a capability (e.g., ListMachines, GetLogs), there are two error-handling patterns: (1) return ErrNotImplemented from every unsupported method, or (2) don't implement the method at all — use extension interfaces and type assertion.
-
-Decision: Mesh uses extension interfaces and type assertion, NOT ErrNotImplemented passthrough. Optional capabilities are defined as separate interfaces (SubstrateLister, SubstrateLogger, SubstrateExecutor, etc.). Core code checks capability availability via type assertion before calling methods. If the extension is not implemented, the feature is simply unavailable.
-
-Rationale: (1) No silent failures — ErrNotImplemented can be ignored or mishandled. (2) Compile-time safety — the compiler enforces that implemented methods have correct signatures. (3) Clear intent — implementing an extension interface signals explicit support. (4) Easier testing — mock adapters only implement the interfaces they need. (5) Matches Go best practices — database/sql, io package, and standard library all use this pattern.
-
-Anti-pattern rejected: Fat interface with ErrNotImplemented — leads to boilerplate, unclear capability boundaries, and runtime errors that should be compile-time checks.
-
-Conflicts with: (none)
-Enables: clean capability discovery, safe feature gating, plugin-specific extensions without core changes
-Blocks: universal 'call any method' without capability checks
-
-[Implementation note: Capabilities struct with boolean flags exists (functionally equivalent). Does NOT use Go optional interface pattern with type assertions as specified.]
+Context: When a plugin doesn't support a capability (e.g., ListMachines, GetLogs), there are two error-handling patterns: (1) return ErrNotImplemented from every unsupported method, or (2) don't implement the method at all — use extension interfaces and type assertion. Decision: Mesh uses extension interfaces and type assertion, NOT ErrNotImplemented passthrough. Optional capabilities are defined as separate interfaces (Exporter, Importer, Inspector, Executor for orchestrator; Snapshotter, NetworkConfigurator, LogFetcher for provisioner). Core code checks capability availability via type assertion before calling methods. If the extension is not implemented, the feature is simply unavailable. Generic helper: HasCapability[T any](adapter) bool. Implemented in internal/orchestrator/extensions.go and internal/provisioner/extensions.go.
 
 **Relationships:**
 - related_to → DE14
+- enables → DE16
+
+---
+
+## DE17: Two-pool adapter architecture — OrchestratorAdapter (body lifecycle) + ProvisionerAdapter (compute lifecycle) as independent pools
+
+**Status**: implemented
+**Date**: 2026-05-04T05:40:44Z
+
+Split monolithic SubstrateAdapter into two independent pools: OrchestratorAdapter (ScheduleBody, StartBody, StopBody, DestroyBody, GetBodyStatus) and ProvisionerAdapter (CreateMachine, DestroyMachine, GetMachineStatus, ListMachines). Extension interfaces via type assertion. database/sql-style registries for both.
+
+**Relationships:**
+- related_to → DE17
+- related_to → DE17
+- enables → DE14
+- enables → DE16
+- enables → DE17
+- enables → DE17
+- enables → DE17
+- enables → DE17
+- enables → DE17
+
+---
+
+## DE18: Remove direct Docker access — Mesh never touches Docker directly, Nomad manages Docker via task driver
+
+**Status**: implemented
+**Date**: 2026-05-04T05:40:54Z
+
+Deleted internal/docker/ package entirely. Nomad adapter is the sole v1 OrchestratorAdapter. Docker is managed by Nomad's task driver, not by Mesh. Bodies with substrate=docker in store are orphans handled gracefully (log + skip).
+
+**Relationships:**
+- supersedes → DE8
+- enables → DE17
+
+---
+
+## DE19: Bootstrap flow deferred — needs more design before implementation
+
+**Status**: deferred
+**Date**: 2026-05-04T05:41:09Z
+
+The bootstrap flow (how a new node joins a Nomad cluster with user-data from provisioner) requires design work. Not implemented in the two-pool refactor.
+
+**Relationships:**
+- related_to → DE17
+
+---
+
+## DE20: Local Docker support deferred — no Docker-on-laptop orchestrator, focus on fleet (Nomad) only
+
+**Status**: deferred
+**Date**: 2026-05-04T05:41:18Z
+
+Local substrate pool (run on laptop/Pi via Docker directly) is deferred. The v1 architecture only supports fleet orchestration via Nomad. Local support may be added later as a separate OrchestratorAdapter implementation.
+
+**Relationships:**
+- related_to → DE17
+
+---
+
+## DE21: Generic map-based config for orchestrators and provisioners — map[string]map[string]string replaces hardcoded structs
+
+**Status**: implemented
+**Date**: 2026-05-04T05:41:29Z
+
+Config.Orchestrators and Config.Provisioners are map[string]map[string]string. Replaces hardcoded DockerConfig/NomadConfig structs. Backward compatible: legacy [nomad] YAML section auto-migrates to orchestrators.nomad.* entries. Provisioners map starts empty.
+
+**Relationships:**
+- enables → DE17
+
+---
+
+## DE22: Adapter shim retained for backward compatibility — internal/adapter/ kept as deprecated type-alias package
+
+**Status**: implemented
+**Date**: 2026-05-04T05:41:43Z
+
+internal/adapter/adapter.go retained as a thin deprecated shim: type aliases pointing to orchestrator types (Handle, BodySpec, BodyStatus, etc.) and SubstrateAdapter/MultiAdapter interfaces for the gRPC plugin layer. Will be removed when plugin layer is refactored in Phase 2.
+
+**Relationships:**
+- enables → DE17
+
+---
+
+## DE23: UpdateBodySubstrate store method enables cross-substrate migration
+
+**Status**: implemented
+**Date**: 2026-05-04T05:41:52Z
+
+Added store.UpdateBodySubstrate(ctx, id, substrate) to persist substrate changes during migration stepSwitch. When a body migrates from Nomad-A to Nomad-B (or cross-provider), the body's substrate field is updated in the store to reflect the new location.
+
+**Relationships:**
+- enables → DE17
+
+---
+
+## DE24: MCP create_body substrate parameter is optional — auto-selects when exactly 1 orchestrator registered
+
+**Status**: implemented
+**Date**: 2026-05-04T05:42:01Z
+
+The create_body MCP tool accepts an optional 'substrate' parameter. If omitted and exactly 1 orchestrator is registered, it auto-selects that one. If omitted and 0 or 2+ orchestrators exist, returns an error listing available options. Maintains backward compatibility with existing clients.
+
+**Relationships:**
+- enables → DE17
 
 ---
 
