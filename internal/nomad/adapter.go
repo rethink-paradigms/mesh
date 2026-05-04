@@ -18,6 +18,8 @@ var _ orchestrator.Exporter = (*Adapter)(nil)
 var _ orchestrator.Importer = (*Adapter)(nil)
 var _ orchestrator.Inspector = (*Adapter)(nil)
 var _ orchestrator.Executor = (*Adapter)(nil)
+var _ orchestrator.NodeLister = (*Adapter)(nil)
+var _ orchestrator.AllocQuerier = (*Adapter)(nil)
 
 type Adapter struct {
 	mu     sync.Mutex
@@ -371,6 +373,55 @@ func (a *Adapter) IsHealthy(ctx context.Context) bool {
 	return err == nil
 }
 
+func (a *Adapter) ListNodes(ctx context.Context) ([]orchestrator.NodeInfo, error) {
+	client, err := a.getClient()
+	if err != nil {
+		return nil, err
+	}
+	stubs, _, err := client.Nodes().List(nil)
+	if err != nil {
+		return nil, fmt.Errorf("nomad: list nodes: %w", err)
+	}
+	nodes := make([]orchestrator.NodeInfo, 0, len(stubs))
+	for _, n := range stubs {
+		info := orchestrator.NodeInfo{
+			ID:      n.ID,
+			Name:    n.Name,
+			Address: n.Address,
+			State:   n.Status,
+		}
+		if n.NodeResources != nil {
+			info.Capacity.CPUMHZ = int(n.NodeResources.Cpu.CpuShares)
+			info.Capacity.MemoryMB = int(n.NodeResources.Memory.MemoryMB)
+			info.Capacity.DiskGB = int(n.NodeResources.Disk.DiskMB / 1024)
+		}
+		nodes = append(nodes, info)
+	}
+	return nodes, nil
+}
+
+func (a *Adapter) GetAllocations(ctx context.Context, jobID string) ([]orchestrator.Allocation, error) {
+	client, err := a.getClient()
+	if err != nil {
+		return nil, err
+	}
+	allocs, _, err := client.Jobs().Allocations(jobID, false, nil)
+	if err != nil {
+		return nil, fmt.Errorf("nomad: get allocations for %s: %w", jobID, err)
+	}
+	result := make([]orchestrator.Allocation, 0, len(allocs))
+	for _, alloc := range allocs {
+		al := orchestrator.Allocation{
+			ID:     alloc.ID,
+			JobID:  alloc.JobID,
+			NodeID: alloc.NodeID,
+			State:  alloc.ClientStatus,
+		}
+		result = append(result, al)
+	}
+	return result, nil
+}
+
 func generateJobID(image string) string {
 	id := strings.ReplaceAll(image, "/", "-")
 	id = strings.ReplaceAll(id, ":", "-")
@@ -409,14 +460,4 @@ func intToPtr(n int) *int {
 	return &n
 }
 
-type bytesWriter struct {
-	buf strings.Builder
-}
 
-func (w *bytesWriter) Write(p []byte) (int, error) {
-	return w.buf.Write(p)
-}
-
-func (w *bytesWriter) String() string {
-	return w.buf.String()
-}
