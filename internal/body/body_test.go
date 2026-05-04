@@ -10,7 +10,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rethink-paradigms/mesh/internal/adapter"
 	"github.com/rethink-paradigms/mesh/internal/orchestrator"
 	"github.com/rethink-paradigms/mesh/internal/provisioner"
 	"github.com/rethink-paradigms/mesh/internal/store"
@@ -142,59 +141,6 @@ func (m *mockOrchAdapter) Inspect(_ context.Context, _ orchestrator.Handle) (orc
 
 func (m *mockOrchAdapter) Exec(_ context.Context, _ orchestrator.Handle, _ []string) (orchestrator.ExecResult, error) {
 	return orchestrator.ExecResult{ExitCode: 0, Stdout: "ok"}, nil
-}
-
-func (m *mockOrchAdapter) Create(_ context.Context, spec adapter.BodySpec) (adapter.Handle, error) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	if m.failCreate {
-		return "", errors.New("create failed")
-	}
-	m.handleSeq++
-	h := adapter.Handle(fmt.Sprintf("handle-%d", m.handleSeq))
-	m.created = append(m.created, orchestrator.Handle(h))
-	m.statuses[string(h)] = orchestrator.BodyStatus{State: orchestrator.StateCreated}
-	return h, nil
-}
-
-func (m *mockOrchAdapter) Start(_ context.Context, id adapter.Handle) error {
-	return m.StartBody(context.Background(), orchestrator.Handle(id))
-}
-
-func (m *mockOrchAdapter) Stop(_ context.Context, id adapter.Handle, _ adapter.StopOpts) error {
-	return m.StopBody(context.Background(), orchestrator.Handle(id))
-}
-
-func (m *mockOrchAdapter) Destroy(_ context.Context, id adapter.Handle) error {
-	return m.DestroyBody(context.Background(), orchestrator.Handle(id))
-}
-
-func (m *mockOrchAdapter) GetStatus(_ context.Context, id adapter.Handle) (adapter.BodyStatus, error) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	s, ok := m.statuses[string(id)]
-	if !ok {
-		return adapter.BodyStatus{}, fmt.Errorf("handle %s not found", id)
-	}
-	return adapter.BodyStatus{
-		State:      adapter.BodyState(s.State),
-		Uptime:     s.Uptime,
-		MemoryMB:   s.MemoryMB,
-		CPUPercent: s.CPUPercent,
-		StartedAt:  s.StartedAt,
-	}, nil
-}
-
-func (m *mockOrchAdapter) Capabilities() adapter.AdapterCapabilities {
-	return adapter.AdapterCapabilities{
-		ExportFilesystem: true,
-		ImportFilesystem: true,
-		Inspect:          true,
-	}
-}
-
-func (m *mockOrchAdapter) SubstrateName() string {
-	return m.Name()
 }
 
 type minimalOrchAdapter struct{}
@@ -330,23 +276,23 @@ func setupMigrationCoordinator(t *testing.T, s *store.Store, bm *BodyManager, ma
 
 func TestValidTransitions(t *testing.T) {
 	tests := []struct {
-		from, to adapter.BodyState
+		from, to orchestrator.BodyState
 	}{
-		{adapter.StateCreated, adapter.StateStarting},
-		{adapter.StateCreated, adapter.StateError},
-		{adapter.StateStarting, adapter.StateRunning},
-		{adapter.StateStarting, adapter.StateError},
-		{adapter.StateRunning, adapter.StateStopping},
-		{adapter.StateRunning, adapter.StateMigrating},
-		{adapter.StateRunning, adapter.StateError},
-		{adapter.StateStopping, adapter.StateStopped},
-		{adapter.StateStopping, adapter.StateError},
-		{adapter.StateStopped, adapter.StateStarting},
-		{adapter.StateStopped, adapter.StateDestroyed},
-		{adapter.StateError, adapter.StateStarting},
-		{adapter.StateError, adapter.StateDestroyed},
-		{adapter.StateMigrating, adapter.StateRunning},
-		{adapter.StateMigrating, adapter.StateError},
+		{orchestrator.StateCreated, orchestrator.StateStarting},
+		{orchestrator.StateCreated, orchestrator.StateError},
+		{orchestrator.StateStarting, orchestrator.StateRunning},
+		{orchestrator.StateStarting, orchestrator.StateError},
+		{orchestrator.StateRunning, orchestrator.StateStopping},
+		{orchestrator.StateRunning, orchestrator.StateMigrating},
+		{orchestrator.StateRunning, orchestrator.StateError},
+		{orchestrator.StateStopping, orchestrator.StateStopped},
+		{orchestrator.StateStopping, orchestrator.StateError},
+		{orchestrator.StateStopped, orchestrator.StateStarting},
+		{orchestrator.StateStopped, orchestrator.StateDestroyed},
+		{orchestrator.StateError, orchestrator.StateStarting},
+		{orchestrator.StateError, orchestrator.StateDestroyed},
+		{orchestrator.StateMigrating, orchestrator.StateRunning},
+		{orchestrator.StateMigrating, orchestrator.StateError},
 	}
 	for _, tt := range tests {
 		t.Run(string(tt.from)+"->"+string(tt.to), func(t *testing.T) {
@@ -363,16 +309,16 @@ func TestValidTransitions(t *testing.T) {
 
 func TestInvalidTransitions(t *testing.T) {
 	tests := []struct {
-		from, to adapter.BodyState
+		from, to orchestrator.BodyState
 	}{
-		{adapter.StateRunning, adapter.StateDestroyed},
-		{adapter.StateCreated, adapter.StateStopped},
-		{adapter.StateCreated, adapter.StateRunning},
-		{adapter.StateStopped, adapter.StateRunning},
-		{adapter.StateDestroyed, adapter.StateRunning},
-		{adapter.StateDestroyed, adapter.StateCreated},
-		{adapter.StateRunning, adapter.StateStarting},
-		{adapter.StateMigrating, adapter.StateStopped},
+		{orchestrator.StateRunning, orchestrator.StateDestroyed},
+		{orchestrator.StateCreated, orchestrator.StateStopped},
+		{orchestrator.StateCreated, orchestrator.StateRunning},
+		{orchestrator.StateStopped, orchestrator.StateRunning},
+		{orchestrator.StateDestroyed, orchestrator.StateRunning},
+		{orchestrator.StateDestroyed, orchestrator.StateCreated},
+		{orchestrator.StateRunning, orchestrator.StateStarting},
+		{orchestrator.StateMigrating, orchestrator.StateStopped},
 	}
 	for _, tt := range tests {
 		t.Run(string(tt.from)+"->"+string(tt.to), func(t *testing.T) {
@@ -392,36 +338,36 @@ func TestFullLifecycle(t *testing.T) {
 
 	ctx := context.Background()
 
-	b, err := bm.Create(ctx, "test-body", adapter.BodySpec{Image: "alpine"})
+	b, err := bm.Create(ctx, "test-body", orchestrator.BodySpec{Image: "alpine"})
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
-	if b.State != adapter.StateRunning {
+	if b.State != orchestrator.StateRunning {
 		t.Fatalf("after Create, state = %s, want Running", b.State)
 	}
 
-	if err := bm.Stop(ctx, b.ID, adapter.StopOpts{Signal: "SIGTERM", Timeout: 10 * time.Second}); err != nil {
+	if err := bm.Stop(ctx, b.ID, orchestrator.StopOpts{Signal: "SIGTERM", Timeout: 10 * time.Second}); err != nil {
 		t.Fatalf("Stop: %v", err)
 	}
-	if b.State != adapter.StateStopped {
+	if b.State != orchestrator.StateStopped {
 		t.Fatalf("after Stop, state = %s, want Stopped", b.State)
 	}
 
 	if err := bm.Start(ctx, b.ID); err != nil {
 		t.Fatalf("Start: %v", err)
 	}
-	if b.State != adapter.StateRunning {
+	if b.State != orchestrator.StateRunning {
 		t.Fatalf("after Start, state = %s, want Running", b.State)
 	}
 
-	if err := bm.Stop(ctx, b.ID, adapter.StopOpts{}); err != nil {
+	if err := bm.Stop(ctx, b.ID, orchestrator.StopOpts{}); err != nil {
 		t.Fatalf("Stop(2): %v", err)
 	}
 
 	if err := bm.Destroy(ctx, b.ID); err != nil {
 		t.Fatalf("Destroy: %v", err)
 	}
-	if b.State != adapter.StateDestroyed {
+	if b.State != orchestrator.StateDestroyed {
 		t.Fatalf("after Destroy, state = %s, want Destroyed", b.State)
 	}
 
@@ -438,7 +384,7 @@ func TestCreatePersistsToStore(t *testing.T) {
 	bm := NewBodyManager(s, ma)
 
 	ctx := context.Background()
-	b, err := bm.Create(ctx, "persist-test", adapter.BodySpec{Image: "alpine"})
+	b, err := bm.Create(ctx, "persist-test", orchestrator.BodySpec{Image: "alpine"})
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
@@ -447,7 +393,7 @@ func TestCreatePersistsToStore(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetBody: %v", err)
 	}
-	if rec.State != adapter.StateRunning {
+	if rec.State != orchestrator.StateRunning {
 		t.Errorf("stored state = %s, want Running", rec.State)
 	}
 	if rec.Name != "persist-test" {
@@ -461,7 +407,7 @@ func TestDestroyRemovesSnapshots(t *testing.T) {
 	bm := NewBodyManager(s, ma)
 	ctx := context.Background()
 
-	b, err := bm.Create(ctx, "snap-test", adapter.BodySpec{Image: "alpine"})
+	b, err := bm.Create(ctx, "snap-test", orchestrator.BodySpec{Image: "alpine"})
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
@@ -471,7 +417,7 @@ func TestDestroyRemovesSnapshots(t *testing.T) {
 		t.Fatalf("CreateSnapshot: %v", err)
 	}
 
-	if err := bm.Stop(ctx, b.ID, adapter.StopOpts{}); err != nil {
+	if err := bm.Stop(ctx, b.ID, orchestrator.StopOpts{}); err != nil {
 		t.Fatalf("Stop: %v", err)
 	}
 
@@ -494,7 +440,7 @@ func TestCannotDestroyRunningBody(t *testing.T) {
 	bm := NewBodyManager(s, ma)
 	ctx := context.Background()
 
-	b, err := bm.Create(ctx, "running-test", adapter.BodySpec{Image: "alpine"})
+	b, err := bm.Create(ctx, "running-test", orchestrator.BodySpec{Image: "alpine"})
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
@@ -511,7 +457,7 @@ func TestCannotStartRunningBody(t *testing.T) {
 	bm := NewBodyManager(s, ma)
 	ctx := context.Background()
 
-	b, err := bm.Create(ctx, "double-start", adapter.BodySpec{Image: "alpine"})
+	b, err := bm.Create(ctx, "double-start", orchestrator.BodySpec{Image: "alpine"})
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
@@ -528,15 +474,15 @@ func TestCannotStopStoppedBody(t *testing.T) {
 	bm := NewBodyManager(s, ma)
 	ctx := context.Background()
 
-	b, err := bm.Create(ctx, "double-stop", adapter.BodySpec{Image: "alpine"})
+	b, err := bm.Create(ctx, "double-stop", orchestrator.BodySpec{Image: "alpine"})
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
-	if err := bm.Stop(ctx, b.ID, adapter.StopOpts{}); err != nil {
+	if err := bm.Stop(ctx, b.ID, orchestrator.StopOpts{}); err != nil {
 		t.Fatalf("Stop: %v", err)
 	}
 
-	err = bm.Stop(ctx, b.ID, adapter.StopOpts{})
+	err = bm.Stop(ctx, b.ID, orchestrator.StopOpts{})
 	if err == nil {
 		t.Fatal("Stop on stopped body should fail")
 	}
@@ -548,7 +494,7 @@ func TestGetStatus(t *testing.T) {
 	bm := NewBodyManager(s, ma)
 	ctx := context.Background()
 
-	b, err := bm.Create(ctx, "status-test", adapter.BodySpec{Image: "alpine"})
+	b, err := bm.Create(ctx, "status-test", orchestrator.BodySpec{Image: "alpine"})
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
@@ -557,7 +503,7 @@ func TestGetStatus(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetStatus: %v", err)
 	}
-	if status.State != adapter.StateRunning {
+	if status.State != orchestrator.StateRunning {
 		t.Errorf("status state = %s, want Running", status.State)
 	}
 }
@@ -568,11 +514,11 @@ func TestList(t *testing.T) {
 	bm := NewBodyManager(s, ma)
 	ctx := context.Background()
 
-	_, err := bm.Create(ctx, "body-1", adapter.BodySpec{Image: "alpine"})
+	_, err := bm.Create(ctx, "body-1", orchestrator.BodySpec{Image: "alpine"})
 	if err != nil {
 		t.Fatalf("Create body-1: %v", err)
 	}
-	_, err = bm.Create(ctx, "body-2", adapter.BodySpec{Image: "nginx"})
+	_, err = bm.Create(ctx, "body-2", orchestrator.BodySpec{Image: "nginx"})
 	if err != nil {
 		t.Fatalf("Create body-2: %v", err)
 	}
@@ -592,7 +538,7 @@ func TestConcurrentStartStop(t *testing.T) {
 	bm := NewBodyManager(s, ma)
 	ctx := context.Background()
 
-	b, err := bm.Create(ctx, "concurrent-test", adapter.BodySpec{Image: "alpine"})
+	b, err := bm.Create(ctx, "concurrent-test", orchestrator.BodySpec{Image: "alpine"})
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
@@ -606,9 +552,9 @@ func TestConcurrentStartStop(t *testing.T) {
 			defer wg.Done()
 			var err error
 			if idx == 0 {
-				err = bm.Stop(ctx, b.ID, adapter.StopOpts{})
+				err = bm.Stop(ctx, b.ID, orchestrator.StopOpts{})
 			} else {
-				err = bm.Stop(ctx, b.ID, adapter.StopOpts{})
+				err = bm.Stop(ctx, b.ID, orchestrator.StopOpts{})
 			}
 			errs <- err
 		}(i)
@@ -627,7 +573,7 @@ func TestConcurrentStartStop(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetBody after concurrent ops: %v", err)
 	}
-	if rec.State != adapter.StateStopped {
+	if rec.State != orchestrator.StateStopped {
 		t.Errorf("final state = %s, want Stopped", rec.State)
 	}
 }
@@ -638,7 +584,7 @@ func TestBodyManagerLifecycle(t *testing.T) {
 	bm := NewBodyManager(s, ma)
 	ctx := context.Background()
 
-	b, err := bm.Create(ctx, "lifecycle-test", adapter.BodySpec{Image: "alpine"})
+	b, err := bm.Create(ctx, "lifecycle-test", orchestrator.BodySpec{Image: "alpine"})
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
@@ -652,7 +598,7 @@ func TestBodyManagerLifecycle(t *testing.T) {
 	}
 	ma.mu.Unlock()
 
-	if err := bm.Stop(ctx, b.ID, adapter.StopOpts{}); err != nil {
+	if err := bm.Stop(ctx, b.ID, orchestrator.StopOpts{}); err != nil {
 		t.Fatalf("Stop: %v", err)
 	}
 
@@ -679,7 +625,7 @@ func TestBodyManagerNoExporter(t *testing.T) {
 	bm := NewBodyManager(s, minAdapter)
 	ctx := context.Background()
 
-	b, err := bm.Create(ctx, "no-export-test", adapter.BodySpec{Image: "alpine"})
+	b, err := bm.Create(ctx, "no-export-test", orchestrator.BodySpec{Image: "alpine"})
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
@@ -700,7 +646,7 @@ func TestMigrationDurability(t *testing.T) {
 	bm := NewBodyManager(s, ma)
 	ctx := context.Background()
 
-	b, err := bm.Create(ctx, "mig-test", adapter.BodySpec{Image: "alpine"})
+	b, err := bm.Create(ctx, "mig-test", orchestrator.BodySpec{Image: "alpine"})
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
@@ -720,7 +666,7 @@ func TestMigrationDurability(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetBody after migration: %v", err)
 	}
-	if bodyRec.State != adapter.StateRunning {
+	if bodyRec.State != orchestrator.StateRunning {
 		t.Errorf("body state after migration = %s, want Running", bodyRec.State)
 	}
 }
@@ -731,7 +677,7 @@ func TestMigrationCreatesSnapshot(t *testing.T) {
 	bm := NewBodyManager(s, ma)
 	ctx := context.Background()
 
-	b, err := bm.Create(ctx, "mig-snap-test", adapter.BodySpec{Image: "alpine"})
+	b, err := bm.Create(ctx, "mig-snap-test", orchestrator.BodySpec{Image: "alpine"})
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
@@ -758,12 +704,12 @@ func TestAdapterFailureTransitionsToError(t *testing.T) {
 	bm := NewBodyManager(s, ma)
 	ctx := context.Background()
 
-	b, err := bm.Create(ctx, "fail-test", adapter.BodySpec{Image: "alpine"})
+	b, err := bm.Create(ctx, "fail-test", orchestrator.BodySpec{Image: "alpine"})
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
 
-	if err := bm.Stop(ctx, b.ID, adapter.StopOpts{}); err != nil {
+	if err := bm.Stop(ctx, b.ID, orchestrator.StopOpts{}); err != nil {
 		t.Fatalf("Stop: %v", err)
 	}
 
@@ -773,7 +719,7 @@ func TestAdapterFailureTransitionsToError(t *testing.T) {
 		t.Fatal("Start should have failed")
 	}
 
-	if b.State != adapter.StateError {
+	if b.State != orchestrator.StateError {
 		t.Errorf("state after failed start = %s, want Error", b.State)
 	}
 }
@@ -784,18 +730,18 @@ func TestStopFailureTransitionsToError(t *testing.T) {
 	bm := NewBodyManager(s, ma)
 	ctx := context.Background()
 
-	b, err := bm.Create(ctx, "stop-fail-test", adapter.BodySpec{Image: "alpine"})
+	b, err := bm.Create(ctx, "stop-fail-test", orchestrator.BodySpec{Image: "alpine"})
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
 
 	ma.failStop = true
-	err = bm.Stop(ctx, b.ID, adapter.StopOpts{})
+	err = bm.Stop(ctx, b.ID, orchestrator.StopOpts{})
 	if err == nil {
 		t.Fatal("Stop should have failed")
 	}
 
-	if b.State != adapter.StateError {
+	if b.State != orchestrator.StateError {
 		t.Errorf("state after failed stop = %s, want Error", b.State)
 	}
 }
@@ -806,7 +752,7 @@ func TestGetBodyFromStore(t *testing.T) {
 	bm := NewBodyManager(s, ma)
 	ctx := context.Background()
 
-	created, err := bm.Create(ctx, "get-test", adapter.BodySpec{Image: "alpine"})
+	created, err := bm.Create(ctx, "get-test", orchestrator.BodySpec{Image: "alpine"})
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
@@ -818,7 +764,7 @@ func TestGetBodyFromStore(t *testing.T) {
 	if fetched.ID != created.ID {
 		t.Errorf("fetched ID = %s, want %s", fetched.ID, created.ID)
 	}
-	if fetched.State != adapter.StateRunning {
+	if fetched.State != orchestrator.StateRunning {
 		t.Errorf("fetched state = %s, want Running", fetched.State)
 	}
 }
@@ -836,14 +782,14 @@ func TestGetNonexistentBody(t *testing.T) {
 }
 
 func TestCanTransitionMethod(t *testing.T) {
-	b := &Body{State: adapter.StateRunning}
-	if !b.CanTransition(adapter.StateStopping) {
+	b := &Body{State: orchestrator.StateRunning}
+	if !b.CanTransition(orchestrator.StateStopping) {
 		t.Error("Running → Stopping should be valid")
 	}
-	if b.CanTransition(adapter.StateDestroyed) {
+	if b.CanTransition(orchestrator.StateDestroyed) {
 		t.Error("Running → Destroyed should be invalid")
 	}
-	if b.CanTransition(adapter.StateStarting) {
+	if b.CanTransition(orchestrator.StateStarting) {
 		t.Error("Running → Starting should be invalid")
 	}
 }
@@ -860,7 +806,7 @@ func TestMigrationStepProvisionCreatesContainer(t *testing.T) {
 	bm := NewBodyManager(s, ma)
 	ctx := context.Background()
 
-	b, err := bm.Create(ctx, "provision-test", adapter.BodySpec{Image: "alpine"})
+	b, err := bm.Create(ctx, "provision-test", orchestrator.BodySpec{Image: "alpine"})
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
@@ -889,7 +835,7 @@ func TestMigrationStepProvisionIdempotent(t *testing.T) {
 	bm := NewBodyManager(s, ma)
 	ctx := context.Background()
 
-	b, err := bm.Create(ctx, "provision-idem-test", adapter.BodySpec{Image: "alpine"})
+	b, err := bm.Create(ctx, "provision-idem-test", orchestrator.BodySpec{Image: "alpine"})
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
@@ -922,7 +868,7 @@ func TestMigrationStepTransferCopiesFiles(t *testing.T) {
 	bm := NewBodyManager(s, ma)
 	ctx := context.Background()
 
-	b, err := bm.Create(ctx, "transfer-test", adapter.BodySpec{Image: "alpine"})
+	b, err := bm.Create(ctx, "transfer-test", orchestrator.BodySpec{Image: "alpine"})
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
@@ -951,7 +897,7 @@ func TestMigrationStepTransferIdempotent(t *testing.T) {
 	bm := NewBodyManager(s, ma)
 	ctx := context.Background()
 
-	b, err := bm.Create(ctx, "transfer-idem-test", adapter.BodySpec{Image: "alpine"})
+	b, err := bm.Create(ctx, "transfer-idem-test", orchestrator.BodySpec{Image: "alpine"})
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
@@ -984,7 +930,7 @@ func TestMigrationRetryAfterPartialFailure(t *testing.T) {
 	bm := NewBodyManager(s, ma)
 	ctx := context.Background()
 
-	b, err := bm.Create(ctx, "retry-test", adapter.BodySpec{Image: "alpine"})
+	b, err := bm.Create(ctx, "retry-test", orchestrator.BodySpec{Image: "alpine"})
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
@@ -1032,7 +978,7 @@ func TestMigrationStepImportRestoresFiles(t *testing.T) {
 	bm := NewBodyManager(s, ma)
 	ctx := context.Background()
 
-	b, err := bm.Create(ctx, "import-test", adapter.BodySpec{Image: "alpine"})
+	b, err := bm.Create(ctx, "import-test", orchestrator.BodySpec{Image: "alpine"})
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
@@ -1061,7 +1007,7 @@ func TestMigrationStepImportIdempotent(t *testing.T) {
 	bm := NewBodyManager(s, ma)
 	ctx := context.Background()
 
-	b, err := bm.Create(ctx, "import-idem-test", adapter.BodySpec{Image: "alpine"})
+	b, err := bm.Create(ctx, "import-idem-test", orchestrator.BodySpec{Image: "alpine"})
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
@@ -1094,7 +1040,7 @@ func TestMigrationStepVerifyDetectsMissingFiles(t *testing.T) {
 	bm := NewBodyManager(s, ma)
 	ctx := context.Background()
 
-	b, err := bm.Create(ctx, "verify-missing-test", adapter.BodySpec{Image: "alpine"})
+	b, err := bm.Create(ctx, "verify-missing-test", orchestrator.BodySpec{Image: "alpine"})
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
@@ -1139,7 +1085,7 @@ func TestMigrationStepVerifyDetectsUnhealthyContainer(t *testing.T) {
 	bm := NewBodyManager(s, ma)
 	ctx := context.Background()
 
-	b, err := bm.Create(ctx, "verify-unhealthy-test", adapter.BodySpec{Image: "alpine"})
+	b, err := bm.Create(ctx, "verify-unhealthy-test", orchestrator.BodySpec{Image: "alpine"})
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
@@ -1171,7 +1117,7 @@ func TestMigrationProvisionFailsWithoutRollback(t *testing.T) {
 	bm := NewBodyManager(s, ma)
 	ctx := context.Background()
 
-	b, err := bm.Create(ctx, "provision-fail-test", adapter.BodySpec{Image: "alpine"})
+	b, err := bm.Create(ctx, "provision-fail-test", orchestrator.BodySpec{Image: "alpine"})
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
@@ -1201,7 +1147,7 @@ func TestMigrationStepSwitchUpdatesBodyInstanceID(t *testing.T) {
 	bm := NewBodyManager(s, ma)
 	ctx := context.Background()
 
-	b, err := bm.Create(ctx, "switch-test", adapter.BodySpec{Image: "alpine"})
+	b, err := bm.Create(ctx, "switch-test", orchestrator.BodySpec{Image: "alpine"})
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
@@ -1252,7 +1198,7 @@ func TestMigrationStepSwitchIdempotent(t *testing.T) {
 	bm := NewBodyManager(s, ma)
 	ctx := context.Background()
 
-	b, err := bm.Create(ctx, "switch-idem-test", adapter.BodySpec{Image: "alpine"})
+	b, err := bm.Create(ctx, "switch-idem-test", orchestrator.BodySpec{Image: "alpine"})
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
@@ -1271,7 +1217,7 @@ func TestMigrationStepSwitchIdempotent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetBody after resume: %v", err)
 	}
-	if bodyRec.State != adapter.StateRunning {
+	if bodyRec.State != orchestrator.StateRunning {
 		t.Errorf("body state after resume = %s, want Running", bodyRec.State)
 	}
 }
@@ -1286,7 +1232,7 @@ func TestMigrationStepCleanupRemovesSnapshotFile(t *testing.T) {
 	bm := NewBodyManager(s, ma)
 	ctx := context.Background()
 
-	b, err := bm.Create(ctx, "cleanup-test", adapter.BodySpec{Image: "alpine"})
+	b, err := bm.Create(ctx, "cleanup-test", orchestrator.BodySpec{Image: "alpine"})
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
@@ -1321,7 +1267,7 @@ func TestMigrationStepSwitchRollbackOnFailure(t *testing.T) {
 	bm := NewBodyManager(s, ma)
 	ctx := context.Background()
 
-	b, err := bm.Create(ctx, "rollback-test", adapter.BodySpec{Image: "alpine"})
+	b, err := bm.Create(ctx, "rollback-test", orchestrator.BodySpec{Image: "alpine"})
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
@@ -1346,7 +1292,7 @@ func TestMigrationStepSwitchRollbackOnFailure(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Get body after migration: %v", err)
 	}
-	if b2.State != adapter.StateRunning {
+	if b2.State != orchestrator.StateRunning {
 		t.Errorf("body state after migration = %s, want Running", b2.State)
 	}
 }
@@ -1362,7 +1308,7 @@ func TestMigrationCrossMachineUsesRegistry(t *testing.T) {
 	bm := NewBodyManager(s, ma)
 	ctx := context.Background()
 
-	b, err := bm.Create(ctx, "cross-test", adapter.BodySpec{Image: "alpine"})
+	b, err := bm.Create(ctx, "cross-test", orchestrator.BodySpec{Image: "alpine"})
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
@@ -1404,7 +1350,7 @@ func TestMigrationCrossMachineSHA256Mismatch(t *testing.T) {
 	bm := NewBodyManager(s, ma)
 	ctx := context.Background()
 
-	b, err := bm.Create(ctx, "cross-sha-test", adapter.BodySpec{Image: "alpine"})
+	b, err := bm.Create(ctx, "cross-sha-test", orchestrator.BodySpec{Image: "alpine"})
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
@@ -1429,7 +1375,7 @@ func TestMigrationCrossMachineRetryPush(t *testing.T) {
 	bm := NewBodyManager(s, ma)
 	ctx := context.Background()
 
-	b, err := bm.Create(ctx, "cross-retry-test", adapter.BodySpec{Image: "alpine"})
+	b, err := bm.Create(ctx, "cross-retry-test", orchestrator.BodySpec{Image: "alpine"})
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
@@ -1461,7 +1407,7 @@ func TestMigrationSameMachineIgnoresRegistry(t *testing.T) {
 	bm := NewBodyManager(s, ma)
 	ctx := context.Background()
 
-	b, err := bm.Create(ctx, "same-test", adapter.BodySpec{Image: "alpine"})
+	b, err := bm.Create(ctx, "same-test", orchestrator.BodySpec{Image: "alpine"})
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
@@ -1492,7 +1438,7 @@ func TestMigrationCrossMachineResumeAfterTransfer(t *testing.T) {
 	bm := NewBodyManager(s, ma)
 	ctx := context.Background()
 
-	b, err := bm.Create(ctx, "cross-resume-test", adapter.BodySpec{Image: "alpine"})
+	b, err := bm.Create(ctx, "cross-resume-test", orchestrator.BodySpec{Image: "alpine"})
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
