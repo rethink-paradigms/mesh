@@ -221,7 +221,18 @@ func (d *Daemon) reconcile(ctx context.Context) error {
 
 		adp, err := d.orchRegistry.Open(rec.Substrate)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "reconcile: body %s substrate %q not found, skipping\n", rec.ID, rec.Substrate)
+			switch rec.State {
+			case orchestrator.StateRunning, orchestrator.StateStarting, orchestrator.StateStopping:
+				fmt.Fprintf(os.Stderr, "reconcile: body %s substrate %q not found, transitioning to Error\n", rec.ID, rec.Substrate)
+				if transErr := d.bodyMgr.TransitionBody(ctx, rec.ID, orchestrator.StateError); transErr != nil {
+					fmt.Fprintf(os.Stderr, "reconcile: failed to transition body %s to Error: %v\n", rec.ID, transErr)
+				}
+				d.mu.Lock()
+				d.reconcileSteps++
+				d.mu.Unlock()
+			default:
+				fmt.Fprintf(os.Stderr, "reconcile: body %s substrate %q not found, skipping\n", rec.ID, rec.Substrate)
+			}
 			continue
 		}
 
