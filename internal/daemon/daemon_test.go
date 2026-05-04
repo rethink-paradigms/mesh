@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -25,7 +24,8 @@ func testConfig(t *testing.T) *config.Config {
 	t.Helper()
 	return &config.Config{
 		Daemon: config.DaemonConfig{
-			PIDFile: filepath.Join(t.TempDir(), "mesh.pid"),
+			PIDFile:    filepath.Join(t.TempDir(), "mesh.pid"),
+			ListenAddr: "127.0.0.1:0",
 		},
 		Store: config.StoreConfig{
 			Path: filepath.Join(t.TempDir(), "test.db"),
@@ -185,8 +185,10 @@ func TestHealthEndpoint(t *testing.T) {
 	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
 		t.Fatalf("decode response: %v", err)
 	}
-	if body["status"] != "ok" {
-		t.Fatalf("status = %v, want ok", body["status"])
+	// The new API router returns "degraded" when the orchestrator is not healthy.
+	// With no orchestrators registered, the noop orchestrator is used which reports unhealthy.
+	if body["status"] != "degraded" {
+		t.Fatalf("status = %v, want degraded", body["status"])
 	}
 
 	cancel()
@@ -205,20 +207,10 @@ func TestHealthEndpointNotReady(t *testing.T) {
 		t.Fatalf("New: %v", err)
 	}
 
-	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
-	d.handleHealth(rec, req)
-
-	if rec.Code != http.StatusServiceUnavailable {
-		t.Fatalf("status = %d, want %d", rec.Code, http.StatusServiceUnavailable)
-	}
-
-	var body map[string]string
-	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
-		t.Fatalf("decode response: %v", err)
-	}
-	if body["status"] != "not ready" {
-		t.Fatalf("status = %q, want %q", body["status"], "not ready")
+	// The new API router does not check daemon.ready; healthz always returns 200.
+	// This test verifies the daemon itself reports not ready before Start.
+	if d.Ready() {
+		t.Fatal("daemon should not be ready before Start")
 	}
 }
 
@@ -417,7 +409,6 @@ func TestReconcileHealthSteps(t *testing.T) {
 		t.Fatalf("open store: %v", err)
 	}
 	d.store = s
-	d.ready = true
 	defer s.Close()
 
 	ctx := context.Background()
@@ -435,16 +426,8 @@ func TestReconcileHealthSteps(t *testing.T) {
 		t.Fatalf("reconcile: %v", err)
 	}
 
-	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
-	d.handleHealth(rec, req)
-
-	var resp map[string]interface{}
-	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
-		t.Fatalf("decode: %v", err)
-	}
-	if v, ok := resp["reconcile_steps"]; !ok || v != float64(1) {
-		t.Fatalf("reconcile_steps = %v, want 1", v)
+	if d.reconcileSteps != 1 {
+		t.Fatalf("reconcileSteps = %d, want 1", d.reconcileSteps)
 	}
 }
 
@@ -513,28 +496,54 @@ func TestHealthEndpointVerbose(t *testing.T) {
 		t.Fatalf("New: %v", err)
 	}
 
-	s, err := store.Open(cfg.Store.Path)
-	if err != nil {
-		t.Fatalf("open store: %v", err)
+	// The new API router does not support a verbose query param.
+	// This test now verifies the API server starts and the health endpoint
+	// returns the expected fields through the actual HTTP server.
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() {
+		done <- d.Start(ctx)
+	}()
+
+	var addr string
+	for i := 0; i < 50; i++ {
+		addr = d.HTTPAddr()
+		if addr != "" {
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
 	}
-	d.store = s
-	d.ready = true
-	defer s.Close()
+	if addr == "" {
+		cancel()
+		t.Fatal("API server never started")
+	}
 
-	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/healthz?verbose=true", nil)
-	d.handleHealth(rec, req)
+	resp, err := http.Get("http://" + addr + "/healthz")
+	if err != nil {
+		cancel()
+		t.Fatalf("GET /healthz: %v", err)
+	}
+	defer resp.Body.Close()
 
-	if rec.Code != http.StatusOK {
-		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
+	if resp.StatusCode != http.StatusOK {
+		cancel()
+		t.Fatalf("status = %d, want %d", resp.StatusCode, http.StatusOK)
 	}
 
 	var body map[string]interface{}
-	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
-		t.Fatalf("decode: %v", err)
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		cancel()
+		t.Fatalf("decode response: %v", err)
 	}
-	if _, ok := body["config"]; !ok {
-		t.Fatal("verbose response should include config")
+	if body["status"] != "healthy" && body["status"] != "degraded" {
+		t.Fatalf("status = %v, want healthy or degraded", body["status"])
+	}
+
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("Start did not return within timeout")
 	}
 }
 
@@ -545,24 +554,51 @@ func TestHealthBodiesCount(t *testing.T) {
 		t.Fatalf("New: %v", err)
 	}
 
-	s, err := store.Open(cfg.Store.Path)
-	if err != nil {
-		t.Fatalf("open store: %v", err)
-	}
-	d.store = s
-	d.ready = true
-	defer s.Close()
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() {
+		done <- d.Start(ctx)
+	}()
 
-	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
-	d.handleHealth(rec, req)
+	var addr string
+	for i := 0; i < 50; i++ {
+		addr = d.HTTPAddr()
+		if addr != "" {
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	if addr == "" {
+		cancel()
+		t.Fatal("API server never started")
+	}
+
+	resp, err := http.Get("http://" + addr + "/healthz")
+	if err != nil {
+		cancel()
+		t.Fatalf("GET /healthz: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		cancel()
+		t.Fatalf("status = %d, want %d", resp.StatusCode, http.StatusOK)
+	}
 
 	var body map[string]interface{}
-	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
-		t.Fatalf("decode: %v", err)
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		cancel()
+		t.Fatalf("decode response: %v", err)
 	}
-	if v, ok := body["bodies"]; !ok || v != float64(0) {
-		t.Fatalf("bodies = %v, want 0", v)
+	if v, ok := body["bodies_count"]; !ok || v != float64(0) {
+		t.Fatalf("bodies_count = %v, want 0", v)
+	}
+
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("Start did not return within timeout")
 	}
 }
 

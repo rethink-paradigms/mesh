@@ -2,7 +2,6 @@ package daemon
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"net"
 	"net/http"
@@ -13,8 +12,10 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/rethink-paradigms/mesh/internal/api"
 	"github.com/rethink-paradigms/mesh/internal/body"
 	"github.com/rethink-paradigms/mesh/internal/config"
+	"github.com/rethink-paradigms/mesh/internal/ingress"
 	"github.com/rethink-paradigms/mesh/internal/nomad"
 	"github.com/rethink-paradigms/mesh/internal/orchestrator"
 	"github.com/rethink-paradigms/mesh/internal/plugin"
@@ -45,6 +46,7 @@ type Daemon struct {
 	httpAddr   string
 
 	reconcileSteps int
+	version        string
 }
 
 func New(cfg *config.Config) (*Daemon, error) {
@@ -53,6 +55,7 @@ func New(cfg *config.Config) (*Daemon, error) {
 		sigs:      make(chan os.Signal, 1),
 		done:      make(chan struct{}),
 		startedAt: time.Now(),
+		version:   "dev",
 	}
 	return d, nil
 }
@@ -73,6 +76,10 @@ func (d *Daemon) SetMCP(srv interface{ Stop(context.Context) error }) {
 	d.mcpServerMu.Lock()
 	defer d.mcpServerMu.Unlock()
 	d.mcpServer = srv
+}
+
+func (d *Daemon) SetVersion(v string) {
+	d.version = v
 }
 
 func (d *Daemon) HTTPAddr() string {
@@ -156,10 +163,16 @@ func (d *Daemon) Start(ctx context.Context) error {
 	}
 	defer d.removePIDFile()
 
-	if err := d.startHealthServer(); err != nil {
-		return fmt.Errorf("daemon: health server: %w", err)
+	if d.cfg.Daemon.AuthToken == "" {
+		fmt.Fprintf(os.Stderr, "WARNING: auth_token not set, API endpoints are unprotected\n")
 	}
-	defer d.stopHealthServer()
+
+	if err := d.startAPIServer(); err != nil {
+		return fmt.Errorf("daemon: API server: %w", err)
+	}
+	defer d.stopAPIServer()
+
+	fmt.Fprintf(os.Stderr, "daemon: API server listening on %s\n", d.httpAddr)
 
 	signal.Notify(d.sigs, syscall.SIGTERM, syscall.SIGINT)
 
@@ -188,9 +201,13 @@ func (d *Daemon) Stop(ctx context.Context) error {
 	d.mu.Unlock()
 	signal.Reset(syscall.SIGTERM, syscall.SIGINT)
 
+	d.stopAPIServer()
+
 	d.mcpServerMu.Lock()
 	if d.mcpServer != nil {
-		d.mcpServer.Stop(ctx)
+		if err := d.mcpServer.Stop(ctx); err != nil {
+			fmt.Fprintf(os.Stderr, "daemon: mcp stop: %v\n", err)
+		}
 	}
 	d.mcpServerMu.Unlock()
 
@@ -293,16 +310,34 @@ func (d *Daemon) hasActiveMigration(ctx context.Context, bodyID string) bool {
 	return count > 0
 }
 
-func (d *Daemon) startHealthServer() error {
-	mux := http.NewServeMux()
-	mux.HandleFunc("/healthz", d.handleHealth)
+func (d *Daemon) startAPIServer() error {
+	var primaryOrch orchestrator.OrchestratorAdapter
+	if names := d.orchRegistry.List(); len(names) > 0 {
+		primaryOrch, _ = d.orchRegistry.Open(names[0])
+	}
+	if primaryOrch == nil {
+		primaryOrch = &noopOrchestrator{}
+	}
 
-	addr := "127.0.0.1:0"
-	srv := &http.Server{Addr: addr, Handler: mux}
+	router := api.NewRouter(api.RouterConfig{
+		BodyManager:  d.bodyMgr,
+		Store:        d.store,
+		Orchestrator: primaryOrch,
+		Ingress:      ingress.NewNoopAdapter(),
+		AuthToken:    d.cfg.Daemon.AuthToken,
+		Version:      d.version,
+	})
 
-	ln, err := net.Listen("tcp", addr)
+	listenAddr := d.cfg.Daemon.ListenAddr
+	if listenAddr == "" {
+		listenAddr = "127.0.0.1:8080"
+	}
+
+	srv := &http.Server{Addr: listenAddr, Handler: router}
+
+	ln, err := net.Listen("tcp", listenAddr)
 	if err != nil {
-		return fmt.Errorf("health listen: %w", err)
+		return fmt.Errorf("api listen on %s: %w", listenAddr, err)
 	}
 
 	d.mu.Lock()
@@ -314,50 +349,14 @@ func (d *Daemon) startHealthServer() error {
 	return nil
 }
 
-func (d *Daemon) stopHealthServer() {
+func (d *Daemon) stopAPIServer() {
 	if d.httpServer != nil {
-		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
-		d.httpServer.Shutdown(ctx)
-	}
-}
-
-func (d *Daemon) handleHealth(w http.ResponseWriter, r *http.Request) {
-	d.mu.RLock()
-	isReady := d.ready
-	d.mu.RUnlock()
-
-	if !isReady {
-		w.WriteHeader(http.StatusServiceUnavailable)
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]string{"status": "not ready"})
-		return
-	}
-
-	resp := map[string]interface{}{
-		"status":     "ok",
-		"uptime_sec": int(time.Since(d.startedAt).Seconds()),
-	}
-
-	if d.store != nil {
-		bodies, err := d.store.ListBodies(r.Context())
-		if err == nil {
-			resp["bodies"] = len(bodies)
+		if err := d.httpServer.Shutdown(ctx); err != nil {
+			fmt.Fprintf(os.Stderr, "daemon: api server shutdown: %v\n", err)
 		}
 	}
-
-	d.mu.RLock()
-	steps := d.reconcileSteps
-	d.mu.RUnlock()
-	resp["reconcile_steps"] = steps
-
-	if r.URL.Query().Get("verbose") == "true" {
-		resp["config"] = d.cfg
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(resp)
 }
 
 func (d *Daemon) checkPIDConflict() error {
