@@ -10,17 +10,18 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rethink-paradigms/mesh/internal/adapter"
+	"github.com/rethink-paradigms/mesh/internal/orchestrator"
+	"github.com/rethink-paradigms/mesh/internal/provisioner"
 	"github.com/rethink-paradigms/mesh/internal/store"
 )
 
-type mockAdapter struct {
+type mockOrchAdapter struct {
 	mu           sync.Mutex
-	created      []adapter.Handle
-	started      []adapter.Handle
-	stopped      []adapter.Handle
-	destroyed    []adapter.Handle
-	statuses     map[string]adapter.BodyStatus
+	created      []orchestrator.Handle
+	started      []orchestrator.Handle
+	stopped      []orchestrator.Handle
+	destroyed    []orchestrator.Handle
+	statuses     map[string]orchestrator.BodyStatus
 	failStart    bool
 	failStop     bool
 	failCreate   bool
@@ -28,35 +29,167 @@ type mockAdapter struct {
 	failImport   bool
 	exportErr    error
 	handleSeq    int
-	inspectMeta  adapter.ContainerMetadata
-	importedTo   []adapter.Handle
+	inspectMeta  orchestrator.ContainerMetadata
+	importedTo   []orchestrator.Handle
 	importedData []string
 	substrate    string
 }
 
-func (m *mockAdapter) SubstrateName() string {
+func newMockOrchAdapter() *mockOrchAdapter {
+	return &mockOrchAdapter{
+		statuses: make(map[string]orchestrator.BodyStatus),
+	}
+}
+
+func (m *mockOrchAdapter) Name() string {
 	if m.substrate != "" {
 		return m.substrate
 	}
 	return "mock"
 }
 
-func newMockAdapter() *mockAdapter {
-	return &mockAdapter{
-		statuses: make(map[string]adapter.BodyStatus),
-	}
+func (m *mockOrchAdapter) IsHealthy(_ context.Context) bool {
+	return true
 }
 
+func (m *mockOrchAdapter) nextHandle() orchestrator.Handle {
+	m.handleSeq++
+	return orchestrator.Handle(fmt.Sprintf("handle-%d", m.handleSeq))
+}
+
+func (m *mockOrchAdapter) ScheduleBody(_ context.Context, _ orchestrator.BodySpec) (orchestrator.Handle, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.failCreate {
+		return "", errors.New("create failed")
+	}
+	h := m.nextHandle()
+	m.created = append(m.created, h)
+	m.statuses[string(h)] = orchestrator.BodyStatus{State: orchestrator.StateCreated}
+	return h, nil
+}
+
+func (m *mockOrchAdapter) StartBody(_ context.Context, id orchestrator.Handle) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.failStart {
+		return errors.New("start failed")
+	}
+	m.started = append(m.started, id)
+	m.statuses[string(id)] = orchestrator.BodyStatus{State: orchestrator.StateRunning, StartedAt: time.Now()}
+	return nil
+}
+
+func (m *mockOrchAdapter) StopBody(_ context.Context, id orchestrator.Handle) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.failStop {
+		return errors.New("stop failed")
+	}
+	m.stopped = append(m.stopped, id)
+	m.statuses[string(id)] = orchestrator.BodyStatus{State: orchestrator.StateStopped}
+	return nil
+}
+
+func (m *mockOrchAdapter) DestroyBody(_ context.Context, id orchestrator.Handle) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.destroyed = append(m.destroyed, id)
+	delete(m.statuses, string(id))
+	return nil
+}
+
+func (m *mockOrchAdapter) GetBodyStatus(_ context.Context, id orchestrator.Handle) (orchestrator.BodyStatus, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	s, ok := m.statuses[string(id)]
+	if !ok {
+		return orchestrator.BodyStatus{}, fmt.Errorf("handle %s not found", id)
+	}
+	return s, nil
+}
+
+func (m *mockOrchAdapter) ExportFilesystem(_ context.Context, id orchestrator.Handle) (io.ReadCloser, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.exportErr != nil {
+		return nil, m.exportErr
+	}
+	return nopCloser{strings.NewReader("fake-tar-data")}, nil
+}
+
+func (m *mockOrchAdapter) ImportFilesystem(_ context.Context, id orchestrator.Handle, tarball io.Reader) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.failImport {
+		return errors.New("import failed")
+	}
+	m.importedTo = append(m.importedTo, id)
+	data, _ := io.ReadAll(tarball)
+	m.importedData = append(m.importedData, string(data))
+	return nil
+}
+
+func (m *mockOrchAdapter) Inspect(_ context.Context, _ orchestrator.Handle) (orchestrator.ContainerMetadata, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.failInspect {
+		return orchestrator.ContainerMetadata{}, errors.New("inspect failed")
+	}
+	return m.inspectMeta, nil
+}
+
+func (m *mockOrchAdapter) Exec(_ context.Context, _ orchestrator.Handle, _ []string) (orchestrator.ExecResult, error) {
+	return orchestrator.ExecResult{ExitCode: 0, Stdout: "ok"}, nil
+}
+
+type minimalOrchAdapter struct{}
+
+func (m *minimalOrchAdapter) Name() string                     { return "minimal" }
+func (m *minimalOrchAdapter) IsHealthy(_ context.Context) bool { return true }
+func (m *minimalOrchAdapter) ScheduleBody(_ context.Context, _ orchestrator.BodySpec) (orchestrator.Handle, error) {
+	return "h1", nil
+}
+func (m *minimalOrchAdapter) StartBody(_ context.Context, _ orchestrator.Handle) error   { return nil }
+func (m *minimalOrchAdapter) StopBody(_ context.Context, _ orchestrator.Handle) error    { return nil }
+func (m *minimalOrchAdapter) DestroyBody(_ context.Context, _ orchestrator.Handle) error { return nil }
+func (m *minimalOrchAdapter) GetBodyStatus(_ context.Context, _ orchestrator.Handle) (orchestrator.BodyStatus, error) {
+	return orchestrator.BodyStatus{State: orchestrator.StateRunning}, nil
+}
+
+type nopCloser struct{ io.Reader }
+
+func (nopCloser) Close() error { return nil }
+
+type mockProvisioner struct {
+	name string
+}
+
+func (m *mockProvisioner) CreateMachine(_ context.Context, _ provisioner.MachineSpec, _ string) (provisioner.MachineID, error) {
+	return "machine-1", nil
+}
+func (m *mockProvisioner) DestroyMachine(_ context.Context, _ provisioner.MachineID) error {
+	return nil
+}
+func (m *mockProvisioner) GetMachineStatus(_ context.Context, _ provisioner.MachineID) (provisioner.MachineStatus, error) {
+	return provisioner.MachineStatus{State: "running", ID: "machine-1"}, nil
+}
+func (m *mockProvisioner) ListMachines(_ context.Context) ([]provisioner.MachineInfo, error) {
+	return nil, nil
+}
+func (m *mockProvisioner) Name() string                     { return m.name }
+func (m *mockProvisioner) IsHealthy(_ context.Context) bool { return true }
+
 type mockRegistry struct {
-	mu         sync.Mutex
-	pushed     map[string]string
-	pulled     []string
-	pushErr    error
-	pullErr    error
-	verifyErr  error
-	failCount  int
-	failAfter  int
-	pullSHA    string
+	mu        sync.Mutex
+	pushed    map[string]string
+	pulled    []string
+	pushErr   error
+	pullErr   error
+	verifyErr error
+	failCount int
+	failAfter int
+	pullSHA   string
 }
 
 func newMockRegistry() *mockRegistry {
@@ -113,115 +246,6 @@ func (m *mockRegistry) Verify(_ context.Context, key, expectedSHA256 string) err
 	return nil
 }
 
-func (m *mockAdapter) nextHandle() adapter.Handle {
-	m.handleSeq++
-	return adapter.Handle(fmt.Sprintf("handle-%d", m.handleSeq))
-}
-
-func (m *mockAdapter) Create(_ context.Context, spec adapter.BodySpec) (adapter.Handle, error) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	if m.failCreate {
-		return "", errors.New("create failed")
-	}
-	h := m.nextHandle()
-	m.created = append(m.created, h)
-	m.statuses[string(h)] = adapter.BodyStatus{State: adapter.StateCreated}
-	return h, nil
-}
-
-func (m *mockAdapter) Start(_ context.Context, id adapter.Handle) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	if m.failStart {
-		return errors.New("start failed")
-	}
-	m.started = append(m.started, id)
-	m.statuses[string(id)] = adapter.BodyStatus{State: adapter.StateRunning, StartedAt: time.Now()}
-	return nil
-}
-
-func (m *mockAdapter) Stop(_ context.Context, id adapter.Handle, _ adapter.StopOpts) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	if m.failStop {
-		return errors.New("stop failed")
-	}
-	m.stopped = append(m.stopped, id)
-	m.statuses[string(id)] = adapter.BodyStatus{State: adapter.StateStopped}
-	return nil
-}
-
-func (m *mockAdapter) Destroy(_ context.Context, id adapter.Handle) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	m.destroyed = append(m.destroyed, id)
-	delete(m.statuses, string(id))
-	return nil
-}
-
-func (m *mockAdapter) GetStatus(_ context.Context, id adapter.Handle) (adapter.BodyStatus, error) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	s, ok := m.statuses[string(id)]
-	if !ok {
-		return adapter.BodyStatus{}, fmt.Errorf("handle %s not found", id)
-	}
-	return s, nil
-}
-
-func (m *mockAdapter) Exec(_ context.Context, _ adapter.Handle, _ []string) (adapter.ExecResult, error) {
-	return adapter.ExecResult{ExitCode: 0, Stdout: "ok"}, nil
-}
-
-type nopCloser struct{ io.Reader }
-
-func (nopCloser) Close() error { return nil }
-
-func (m *mockAdapter) ExportFilesystem(_ context.Context, id adapter.Handle) (io.ReadCloser, error) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	if m.exportErr != nil {
-		return nil, m.exportErr
-	}
-	return nopCloser{strings.NewReader("fake-tar-data")}, nil
-}
-
-func (m *mockAdapter) ImportFilesystem(_ context.Context, id adapter.Handle, r io.Reader, _ adapter.ImportOpts) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	if m.failImport {
-		return errors.New("import failed")
-	}
-	m.importedTo = append(m.importedTo, id)
-	data, _ := io.ReadAll(r)
-	m.importedData = append(m.importedData, string(data))
-	return nil
-}
-
-func (m *mockAdapter) Inspect(_ context.Context, _ adapter.Handle) (adapter.ContainerMetadata, error) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	if m.failInspect {
-		return adapter.ContainerMetadata{}, errors.New("inspect failed")
-	}
-	return m.inspectMeta, nil
-}
-
-func (m *mockAdapter) Capabilities() adapter.AdapterCapabilities {
-	return adapter.AdapterCapabilities{
-		ExportFilesystem: true,
-		ImportFilesystem: true,
-		Inspect:          true,
-	}
-}
-
-
-
-func (m *mockAdapter) IsHealthy(_ context.Context) bool {
-	return true
-}
-
 func openTestStore(t *testing.T) *store.Store {
 	t.Helper()
 	s, err := store.Open(":memory:")
@@ -232,27 +256,43 @@ func openTestStore(t *testing.T) *store.Store {
 	return s
 }
 
-// --- State machine tests ---
+func setupMigrationCoordinator(t *testing.T, s *store.Store, bm *BodyManager, ma *mockOrchAdapter, reg Registry) *MigrationCoordinator {
+	t.Helper()
+	orchReg := orchestrator.NewRegistry()
+	if err := orchReg.Register(ma.Name(), ma); err != nil {
+		t.Fatalf("register orchestrator %q: %v", ma.Name(), err)
+	}
+	for _, name := range []string{"local", "docker", "fleet", "remote-host"} {
+		if name != ma.Name() {
+			_ = orchReg.Register(name, ma)
+		}
+	}
+	provReg := provisioner.NewRegistry()
+	for _, name := range []string{"docker", "fleet", "remote-host"} {
+		_ = provReg.Register(name, &mockProvisioner{name: name})
+	}
+	return NewMigrationCoordinator(s, bm, orchReg, provReg, reg)
+}
 
 func TestValidTransitions(t *testing.T) {
 	tests := []struct {
-		from, to adapter.BodyState
+		from, to orchestrator.BodyState
 	}{
-		{adapter.StateCreated, adapter.StateStarting},
-		{adapter.StateCreated, adapter.StateError},
-		{adapter.StateStarting, adapter.StateRunning},
-		{adapter.StateStarting, adapter.StateError},
-		{adapter.StateRunning, adapter.StateStopping},
-		{adapter.StateRunning, adapter.StateMigrating},
-		{adapter.StateRunning, adapter.StateError},
-		{adapter.StateStopping, adapter.StateStopped},
-		{adapter.StateStopping, adapter.StateError},
-		{adapter.StateStopped, adapter.StateStarting},
-		{adapter.StateStopped, adapter.StateDestroyed},
-		{adapter.StateError, adapter.StateStarting},
-		{adapter.StateError, adapter.StateDestroyed},
-		{adapter.StateMigrating, adapter.StateRunning},
-		{adapter.StateMigrating, adapter.StateError},
+		{orchestrator.StateCreated, orchestrator.StateStarting},
+		{orchestrator.StateCreated, orchestrator.StateError},
+		{orchestrator.StateStarting, orchestrator.StateRunning},
+		{orchestrator.StateStarting, orchestrator.StateError},
+		{orchestrator.StateRunning, orchestrator.StateStopping},
+		{orchestrator.StateRunning, orchestrator.StateMigrating},
+		{orchestrator.StateRunning, orchestrator.StateError},
+		{orchestrator.StateStopping, orchestrator.StateStopped},
+		{orchestrator.StateStopping, orchestrator.StateError},
+		{orchestrator.StateStopped, orchestrator.StateStarting},
+		{orchestrator.StateStopped, orchestrator.StateDestroyed},
+		{orchestrator.StateError, orchestrator.StateStarting},
+		{orchestrator.StateError, orchestrator.StateDestroyed},
+		{orchestrator.StateMigrating, orchestrator.StateRunning},
+		{orchestrator.StateMigrating, orchestrator.StateError},
 	}
 	for _, tt := range tests {
 		t.Run(string(tt.from)+"->"+string(tt.to), func(t *testing.T) {
@@ -269,16 +309,16 @@ func TestValidTransitions(t *testing.T) {
 
 func TestInvalidTransitions(t *testing.T) {
 	tests := []struct {
-		from, to adapter.BodyState
+		from, to orchestrator.BodyState
 	}{
-		{adapter.StateRunning, adapter.StateDestroyed},
-		{adapter.StateCreated, adapter.StateStopped},
-		{adapter.StateCreated, adapter.StateRunning},
-		{adapter.StateStopped, adapter.StateRunning},
-		{adapter.StateDestroyed, adapter.StateRunning},
-		{adapter.StateDestroyed, adapter.StateCreated},
-		{adapter.StateRunning, adapter.StateStarting},
-		{adapter.StateMigrating, adapter.StateStopped},
+		{orchestrator.StateRunning, orchestrator.StateDestroyed},
+		{orchestrator.StateCreated, orchestrator.StateStopped},
+		{orchestrator.StateCreated, orchestrator.StateRunning},
+		{orchestrator.StateStopped, orchestrator.StateRunning},
+		{orchestrator.StateDestroyed, orchestrator.StateRunning},
+		{orchestrator.StateDestroyed, orchestrator.StateCreated},
+		{orchestrator.StateRunning, orchestrator.StateStarting},
+		{orchestrator.StateMigrating, orchestrator.StateStopped},
 	}
 	for _, tt := range tests {
 		t.Run(string(tt.from)+"->"+string(tt.to), func(t *testing.T) {
@@ -291,45 +331,43 @@ func TestInvalidTransitions(t *testing.T) {
 	}
 }
 
-// --- Lifecycle tests ---
-
 func TestFullLifecycle(t *testing.T) {
 	s := openTestStore(t)
-	ma := newMockAdapter()
+	ma := newMockOrchAdapter()
 	bm := NewBodyManager(s, ma)
 
 	ctx := context.Background()
 
-	b, err := bm.Create(ctx, "test-body", adapter.BodySpec{Image: "alpine"})
+	b, err := bm.Create(ctx, "test-body", orchestrator.BodySpec{Image: "alpine"})
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
-	if b.State != adapter.StateRunning {
+	if b.State != orchestrator.StateRunning {
 		t.Fatalf("after Create, state = %s, want Running", b.State)
 	}
 
-	if err := bm.Stop(ctx, b.ID, adapter.StopOpts{Signal: "SIGTERM", Timeout: 10 * time.Second}); err != nil {
+	if err := bm.Stop(ctx, b.ID, orchestrator.StopOpts{Signal: "SIGTERM", Timeout: 10 * time.Second}); err != nil {
 		t.Fatalf("Stop: %v", err)
 	}
-	if b.State != adapter.StateStopped {
+	if b.State != orchestrator.StateStopped {
 		t.Fatalf("after Stop, state = %s, want Stopped", b.State)
 	}
 
 	if err := bm.Start(ctx, b.ID); err != nil {
 		t.Fatalf("Start: %v", err)
 	}
-	if b.State != adapter.StateRunning {
+	if b.State != orchestrator.StateRunning {
 		t.Fatalf("after Start, state = %s, want Running", b.State)
 	}
 
-	if err := bm.Stop(ctx, b.ID, adapter.StopOpts{}); err != nil {
+	if err := bm.Stop(ctx, b.ID, orchestrator.StopOpts{}); err != nil {
 		t.Fatalf("Stop(2): %v", err)
 	}
 
 	if err := bm.Destroy(ctx, b.ID); err != nil {
 		t.Fatalf("Destroy: %v", err)
 	}
-	if b.State != adapter.StateDestroyed {
+	if b.State != orchestrator.StateDestroyed {
 		t.Fatalf("after Destroy, state = %s, want Destroyed", b.State)
 	}
 
@@ -342,11 +380,11 @@ func TestFullLifecycle(t *testing.T) {
 
 func TestCreatePersistsToStore(t *testing.T) {
 	s := openTestStore(t)
-	ma := newMockAdapter()
+	ma := newMockOrchAdapter()
 	bm := NewBodyManager(s, ma)
 
 	ctx := context.Background()
-	b, err := bm.Create(ctx, "persist-test", adapter.BodySpec{Image: "alpine"})
+	b, err := bm.Create(ctx, "persist-test", orchestrator.BodySpec{Image: "alpine"})
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
@@ -355,7 +393,7 @@ func TestCreatePersistsToStore(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetBody: %v", err)
 	}
-	if rec.State != adapter.StateRunning {
+	if rec.State != orchestrator.StateRunning {
 		t.Errorf("stored state = %s, want Running", rec.State)
 	}
 	if rec.Name != "persist-test" {
@@ -365,11 +403,11 @@ func TestCreatePersistsToStore(t *testing.T) {
 
 func TestDestroyRemovesSnapshots(t *testing.T) {
 	s := openTestStore(t)
-	ma := newMockAdapter()
+	ma := newMockOrchAdapter()
 	bm := NewBodyManager(s, ma)
 	ctx := context.Background()
 
-	b, err := bm.Create(ctx, "snap-test", adapter.BodySpec{Image: "alpine"})
+	b, err := bm.Create(ctx, "snap-test", orchestrator.BodySpec{Image: "alpine"})
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
@@ -379,7 +417,7 @@ func TestDestroyRemovesSnapshots(t *testing.T) {
 		t.Fatalf("CreateSnapshot: %v", err)
 	}
 
-	if err := bm.Stop(ctx, b.ID, adapter.StopOpts{}); err != nil {
+	if err := bm.Stop(ctx, b.ID, orchestrator.StopOpts{}); err != nil {
 		t.Fatalf("Stop: %v", err)
 	}
 
@@ -398,11 +436,11 @@ func TestDestroyRemovesSnapshots(t *testing.T) {
 
 func TestCannotDestroyRunningBody(t *testing.T) {
 	s := openTestStore(t)
-	ma := newMockAdapter()
+	ma := newMockOrchAdapter()
 	bm := NewBodyManager(s, ma)
 	ctx := context.Background()
 
-	b, err := bm.Create(ctx, "running-test", adapter.BodySpec{Image: "alpine"})
+	b, err := bm.Create(ctx, "running-test", orchestrator.BodySpec{Image: "alpine"})
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
@@ -415,11 +453,11 @@ func TestCannotDestroyRunningBody(t *testing.T) {
 
 func TestCannotStartRunningBody(t *testing.T) {
 	s := openTestStore(t)
-	ma := newMockAdapter()
+	ma := newMockOrchAdapter()
 	bm := NewBodyManager(s, ma)
 	ctx := context.Background()
 
-	b, err := bm.Create(ctx, "double-start", adapter.BodySpec{Image: "alpine"})
+	b, err := bm.Create(ctx, "double-start", orchestrator.BodySpec{Image: "alpine"})
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
@@ -432,19 +470,19 @@ func TestCannotStartRunningBody(t *testing.T) {
 
 func TestCannotStopStoppedBody(t *testing.T) {
 	s := openTestStore(t)
-	ma := newMockAdapter()
+	ma := newMockOrchAdapter()
 	bm := NewBodyManager(s, ma)
 	ctx := context.Background()
 
-	b, err := bm.Create(ctx, "double-stop", adapter.BodySpec{Image: "alpine"})
+	b, err := bm.Create(ctx, "double-stop", orchestrator.BodySpec{Image: "alpine"})
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
-	if err := bm.Stop(ctx, b.ID, adapter.StopOpts{}); err != nil {
+	if err := bm.Stop(ctx, b.ID, orchestrator.StopOpts{}); err != nil {
 		t.Fatalf("Stop: %v", err)
 	}
 
-	err = bm.Stop(ctx, b.ID, adapter.StopOpts{})
+	err = bm.Stop(ctx, b.ID, orchestrator.StopOpts{})
 	if err == nil {
 		t.Fatal("Stop on stopped body should fail")
 	}
@@ -452,11 +490,11 @@ func TestCannotStopStoppedBody(t *testing.T) {
 
 func TestGetStatus(t *testing.T) {
 	s := openTestStore(t)
-	ma := newMockAdapter()
+	ma := newMockOrchAdapter()
 	bm := NewBodyManager(s, ma)
 	ctx := context.Background()
 
-	b, err := bm.Create(ctx, "status-test", adapter.BodySpec{Image: "alpine"})
+	b, err := bm.Create(ctx, "status-test", orchestrator.BodySpec{Image: "alpine"})
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
@@ -465,22 +503,22 @@ func TestGetStatus(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetStatus: %v", err)
 	}
-	if status.State != adapter.StateRunning {
+	if status.State != orchestrator.StateRunning {
 		t.Errorf("status state = %s, want Running", status.State)
 	}
 }
 
 func TestList(t *testing.T) {
 	s := openTestStore(t)
-	ma := newMockAdapter()
+	ma := newMockOrchAdapter()
 	bm := NewBodyManager(s, ma)
 	ctx := context.Background()
 
-	_, err := bm.Create(ctx, "body-1", adapter.BodySpec{Image: "alpine"})
+	_, err := bm.Create(ctx, "body-1", orchestrator.BodySpec{Image: "alpine"})
 	if err != nil {
 		t.Fatalf("Create body-1: %v", err)
 	}
-	_, err = bm.Create(ctx, "body-2", adapter.BodySpec{Image: "nginx"})
+	_, err = bm.Create(ctx, "body-2", orchestrator.BodySpec{Image: "nginx"})
 	if err != nil {
 		t.Fatalf("Create body-2: %v", err)
 	}
@@ -494,15 +532,13 @@ func TestList(t *testing.T) {
 	}
 }
 
-// --- Concurrent access tests ---
-
 func TestConcurrentStartStop(t *testing.T) {
 	s := openTestStore(t)
-	ma := newMockAdapter()
+	ma := newMockOrchAdapter()
 	bm := NewBodyManager(s, ma)
 	ctx := context.Background()
 
-	b, err := bm.Create(ctx, "concurrent-test", adapter.BodySpec{Image: "alpine"})
+	b, err := bm.Create(ctx, "concurrent-test", orchestrator.BodySpec{Image: "alpine"})
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
@@ -516,9 +552,9 @@ func TestConcurrentStartStop(t *testing.T) {
 			defer wg.Done()
 			var err error
 			if idx == 0 {
-				err = bm.Stop(ctx, b.ID, adapter.StopOpts{})
+				err = bm.Stop(ctx, b.ID, orchestrator.StopOpts{})
 			} else {
-				err = bm.Stop(ctx, b.ID, adapter.StopOpts{})
+				err = bm.Stop(ctx, b.ID, orchestrator.StopOpts{})
 			}
 			errs <- err
 		}(i)
@@ -537,25 +573,85 @@ func TestConcurrentStartStop(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetBody after concurrent ops: %v", err)
 	}
-	if rec.State != adapter.StateStopped {
+	if rec.State != orchestrator.StateStopped {
 		t.Errorf("final state = %s, want Stopped", rec.State)
 	}
 }
 
-// --- Migration tests ---
-
-func TestMigrationDurability(t *testing.T) {
+func TestBodyManagerLifecycle(t *testing.T) {
 	s := openTestStore(t)
-	ma := newMockAdapter()
+	ma := newMockOrchAdapter()
 	bm := NewBodyManager(s, ma)
 	ctx := context.Background()
 
-	b, err := bm.Create(ctx, "mig-test", adapter.BodySpec{Image: "alpine"})
+	b, err := bm.Create(ctx, "lifecycle-test", orchestrator.BodySpec{Image: "alpine"})
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
 
-	mc := NewMigrationCoordinator(s, ma, bm, nil)
+	ma.mu.Lock()
+	if len(ma.created) != 1 {
+		t.Errorf("created = %d, want 1", len(ma.created))
+	}
+	if len(ma.started) != 1 {
+		t.Errorf("started = %d, want 1", len(ma.started))
+	}
+	ma.mu.Unlock()
+
+	if err := bm.Stop(ctx, b.ID, orchestrator.StopOpts{}); err != nil {
+		t.Fatalf("Stop: %v", err)
+	}
+
+	ma.mu.Lock()
+	if len(ma.stopped) != 1 {
+		t.Errorf("stopped = %d, want 1", len(ma.stopped))
+	}
+	ma.mu.Unlock()
+
+	if err := bm.Destroy(ctx, b.ID); err != nil {
+		t.Fatalf("Destroy: %v", err)
+	}
+
+	ma.mu.Lock()
+	if len(ma.destroyed) != 1 {
+		t.Errorf("destroyed = %d, want 1", len(ma.destroyed))
+	}
+	ma.mu.Unlock()
+}
+
+func TestBodyManagerNoExporter(t *testing.T) {
+	s := openTestStore(t)
+	minAdapter := &minimalOrchAdapter{}
+	bm := NewBodyManager(s, minAdapter)
+	ctx := context.Background()
+
+	b, err := bm.Create(ctx, "no-export-test", orchestrator.BodySpec{Image: "alpine"})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	_, err = bm.ExportFilesystem(ctx, b.ID)
+	if err == nil {
+		t.Fatal("ExportFilesystem should fail when adapter does not implement Exporter")
+	}
+	want := "does not support ExportFilesystem"
+	if !strings.Contains(err.Error(), want) {
+		t.Errorf("error = %q, want containing %q", err.Error(), want)
+	}
+}
+
+func TestMigrationDurability(t *testing.T) {
+	s := openTestStore(t)
+	ma := newMockOrchAdapter()
+	bm := NewBodyManager(s, ma)
+	ctx := context.Background()
+
+	b, err := bm.Create(ctx, "mig-test", orchestrator.BodySpec{Image: "alpine"})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	mc := setupMigrationCoordinator(t, s, bm, ma, nil)
 	migID, err := mc.BeginMigration(ctx, b.ID, "remote-host")
 	if err != nil {
 		t.Fatalf("BeginMigration: %v", err)
@@ -570,23 +666,23 @@ func TestMigrationDurability(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetBody after migration: %v", err)
 	}
-	if bodyRec.State != adapter.StateRunning {
+	if bodyRec.State != orchestrator.StateRunning {
 		t.Errorf("body state after migration = %s, want Running", bodyRec.State)
 	}
 }
 
 func TestMigrationCreatesSnapshot(t *testing.T) {
 	s := openTestStore(t)
-	ma := newMockAdapter()
+	ma := newMockOrchAdapter()
 	bm := NewBodyManager(s, ma)
 	ctx := context.Background()
 
-	b, err := bm.Create(ctx, "mig-snap-test", adapter.BodySpec{Image: "alpine"})
+	b, err := bm.Create(ctx, "mig-snap-test", orchestrator.BodySpec{Image: "alpine"})
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
 
-	mc := NewMigrationCoordinator(s, ma, bm, nil)
+	mc := setupMigrationCoordinator(t, s, bm, ma, nil)
 	_, err = mc.BeginMigration(ctx, b.ID, "remote-host")
 	if err != nil {
 		t.Fatalf("BeginMigration: %v", err)
@@ -604,16 +700,16 @@ func TestMigrationCreatesSnapshot(t *testing.T) {
 
 func TestAdapterFailureTransitionsToError(t *testing.T) {
 	s := openTestStore(t)
-	ma := newMockAdapter()
+	ma := newMockOrchAdapter()
 	bm := NewBodyManager(s, ma)
 	ctx := context.Background()
 
-	b, err := bm.Create(ctx, "fail-test", adapter.BodySpec{Image: "alpine"})
+	b, err := bm.Create(ctx, "fail-test", orchestrator.BodySpec{Image: "alpine"})
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
 
-	if err := bm.Stop(ctx, b.ID, adapter.StopOpts{}); err != nil {
+	if err := bm.Stop(ctx, b.ID, orchestrator.StopOpts{}); err != nil {
 		t.Fatalf("Stop: %v", err)
 	}
 
@@ -623,40 +719,40 @@ func TestAdapterFailureTransitionsToError(t *testing.T) {
 		t.Fatal("Start should have failed")
 	}
 
-	if b.State != adapter.StateError {
+	if b.State != orchestrator.StateError {
 		t.Errorf("state after failed start = %s, want Error", b.State)
 	}
 }
 
 func TestStopFailureTransitionsToError(t *testing.T) {
 	s := openTestStore(t)
-	ma := newMockAdapter()
+	ma := newMockOrchAdapter()
 	bm := NewBodyManager(s, ma)
 	ctx := context.Background()
 
-	b, err := bm.Create(ctx, "stop-fail-test", adapter.BodySpec{Image: "alpine"})
+	b, err := bm.Create(ctx, "stop-fail-test", orchestrator.BodySpec{Image: "alpine"})
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
 
 	ma.failStop = true
-	err = bm.Stop(ctx, b.ID, adapter.StopOpts{})
+	err = bm.Stop(ctx, b.ID, orchestrator.StopOpts{})
 	if err == nil {
 		t.Fatal("Stop should have failed")
 	}
 
-	if b.State != adapter.StateError {
+	if b.State != orchestrator.StateError {
 		t.Errorf("state after failed stop = %s, want Error", b.State)
 	}
 }
 
 func TestGetBodyFromStore(t *testing.T) {
 	s := openTestStore(t)
-	ma := newMockAdapter()
+	ma := newMockOrchAdapter()
 	bm := NewBodyManager(s, ma)
 	ctx := context.Background()
 
-	created, err := bm.Create(ctx, "get-test", adapter.BodySpec{Image: "alpine"})
+	created, err := bm.Create(ctx, "get-test", orchestrator.BodySpec{Image: "alpine"})
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
@@ -668,14 +764,14 @@ func TestGetBodyFromStore(t *testing.T) {
 	if fetched.ID != created.ID {
 		t.Errorf("fetched ID = %s, want %s", fetched.ID, created.ID)
 	}
-	if fetched.State != adapter.StateRunning {
+	if fetched.State != orchestrator.StateRunning {
 		t.Errorf("fetched state = %s, want Running", fetched.State)
 	}
 }
 
 func TestGetNonexistentBody(t *testing.T) {
 	s := openTestStore(t)
-	ma := newMockAdapter()
+	ma := newMockOrchAdapter()
 	bm := NewBodyManager(s, ma)
 	ctx := context.Background()
 
@@ -686,22 +782,22 @@ func TestGetNonexistentBody(t *testing.T) {
 }
 
 func TestCanTransitionMethod(t *testing.T) {
-	b := &Body{State: adapter.StateRunning}
-	if !b.CanTransition(adapter.StateStopping) {
+	b := &Body{State: orchestrator.StateRunning}
+	if !b.CanTransition(orchestrator.StateStopping) {
 		t.Error("Running → Stopping should be valid")
 	}
-	if b.CanTransition(adapter.StateDestroyed) {
+	if b.CanTransition(orchestrator.StateDestroyed) {
 		t.Error("Running → Destroyed should be invalid")
 	}
-	if b.CanTransition(adapter.StateStarting) {
+	if b.CanTransition(orchestrator.StateStarting) {
 		t.Error("Running → Starting should be invalid")
 	}
 }
 
 func TestMigrationStepProvisionCreatesContainer(t *testing.T) {
 	s := openTestStore(t)
-	ma := newMockAdapter()
-	ma.inspectMeta = adapter.ContainerMetadata{
+	ma := newMockOrchAdapter()
+	ma.inspectMeta = orchestrator.ContainerMetadata{
 		Image:   "alpine:latest",
 		Workdir: "/app",
 		Env:     map[string]string{"FOO": "bar"},
@@ -710,12 +806,12 @@ func TestMigrationStepProvisionCreatesContainer(t *testing.T) {
 	bm := NewBodyManager(s, ma)
 	ctx := context.Background()
 
-	b, err := bm.Create(ctx, "provision-test", adapter.BodySpec{Image: "alpine"})
+	b, err := bm.Create(ctx, "provision-test", orchestrator.BodySpec{Image: "alpine"})
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
 
-	mc := NewMigrationCoordinator(s, ma, bm, nil)
+	mc := setupMigrationCoordinator(t, s, bm, ma, nil)
 	_, err = mc.BeginMigration(ctx, b.ID, "docker")
 	if err != nil {
 		t.Fatalf("BeginMigration: %v", err)
@@ -731,20 +827,20 @@ func TestMigrationStepProvisionCreatesContainer(t *testing.T) {
 
 func TestMigrationStepProvisionIdempotent(t *testing.T) {
 	s := openTestStore(t)
-	ma := newMockAdapter()
-	ma.inspectMeta = adapter.ContainerMetadata{
+	ma := newMockOrchAdapter()
+	ma.inspectMeta = orchestrator.ContainerMetadata{
 		Image:   "alpine:latest",
 		Workdir: "/app",
 	}
 	bm := NewBodyManager(s, ma)
 	ctx := context.Background()
 
-	b, err := bm.Create(ctx, "provision-idem-test", adapter.BodySpec{Image: "alpine"})
+	b, err := bm.Create(ctx, "provision-idem-test", orchestrator.BodySpec{Image: "alpine"})
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
 
-	mc := NewMigrationCoordinator(s, ma, bm, nil)
+	mc := setupMigrationCoordinator(t, s, bm, ma, nil)
 	migID, err := mc.BeginMigration(ctx, b.ID, "docker")
 	if err != nil {
 		t.Fatalf("BeginMigration: %v", err)
@@ -764,20 +860,20 @@ func TestMigrationStepProvisionIdempotent(t *testing.T) {
 
 func TestMigrationStepTransferCopiesFiles(t *testing.T) {
 	s := openTestStore(t)
-	ma := newMockAdapter()
-	ma.inspectMeta = adapter.ContainerMetadata{
+	ma := newMockOrchAdapter()
+	ma.inspectMeta = orchestrator.ContainerMetadata{
 		Image:   "alpine:latest",
 		Workdir: "/app",
 	}
 	bm := NewBodyManager(s, ma)
 	ctx := context.Background()
 
-	b, err := bm.Create(ctx, "transfer-test", adapter.BodySpec{Image: "alpine"})
+	b, err := bm.Create(ctx, "transfer-test", orchestrator.BodySpec{Image: "alpine"})
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
 
-	mc := NewMigrationCoordinator(s, ma, bm, nil)
+	mc := setupMigrationCoordinator(t, s, bm, ma, nil)
 	_, err = mc.BeginMigration(ctx, b.ID, "docker")
 	if err != nil {
 		t.Fatalf("BeginMigration: %v", err)
@@ -793,20 +889,20 @@ func TestMigrationStepTransferCopiesFiles(t *testing.T) {
 
 func TestMigrationStepTransferIdempotent(t *testing.T) {
 	s := openTestStore(t)
-	ma := newMockAdapter()
-	ma.inspectMeta = adapter.ContainerMetadata{
+	ma := newMockOrchAdapter()
+	ma.inspectMeta = orchestrator.ContainerMetadata{
 		Image:   "alpine:latest",
 		Workdir: "/app",
 	}
 	bm := NewBodyManager(s, ma)
 	ctx := context.Background()
 
-	b, err := bm.Create(ctx, "transfer-idem-test", adapter.BodySpec{Image: "alpine"})
+	b, err := bm.Create(ctx, "transfer-idem-test", orchestrator.BodySpec{Image: "alpine"})
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
 
-	mc := NewMigrationCoordinator(s, ma, bm, nil)
+	mc := setupMigrationCoordinator(t, s, bm, ma, nil)
 	migID, err := mc.BeginMigration(ctx, b.ID, "docker")
 	if err != nil {
 		t.Fatalf("BeginMigration: %v", err)
@@ -826,21 +922,21 @@ func TestMigrationStepTransferIdempotent(t *testing.T) {
 
 func TestMigrationRetryAfterPartialFailure(t *testing.T) {
 	s := openTestStore(t)
-	ma := newMockAdapter()
-	ma.inspectMeta = adapter.ContainerMetadata{
+	ma := newMockOrchAdapter()
+	ma.inspectMeta = orchestrator.ContainerMetadata{
 		Image:   "alpine:latest",
 		Workdir: "/app",
 	}
 	bm := NewBodyManager(s, ma)
 	ctx := context.Background()
 
-	b, err := bm.Create(ctx, "retry-test", adapter.BodySpec{Image: "alpine"})
+	b, err := bm.Create(ctx, "retry-test", orchestrator.BodySpec{Image: "alpine"})
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
 
 	ma.failImport = true
-	mc := NewMigrationCoordinator(s, ma, bm, nil)
+	mc := setupMigrationCoordinator(t, s, bm, ma, nil)
 	migID, err := mc.BeginMigration(ctx, b.ID, "docker")
 	if err == nil {
 		t.Fatal("BeginMigration should have failed")
@@ -874,20 +970,20 @@ func TestMigrationRetryAfterPartialFailure(t *testing.T) {
 
 func TestMigrationStepImportRestoresFiles(t *testing.T) {
 	s := openTestStore(t)
-	ma := newMockAdapter()
-	ma.inspectMeta = adapter.ContainerMetadata{
+	ma := newMockOrchAdapter()
+	ma.inspectMeta = orchestrator.ContainerMetadata{
 		Image:   "alpine:latest",
 		Workdir: "/app",
 	}
 	bm := NewBodyManager(s, ma)
 	ctx := context.Background()
 
-	b, err := bm.Create(ctx, "import-test", adapter.BodySpec{Image: "alpine"})
+	b, err := bm.Create(ctx, "import-test", orchestrator.BodySpec{Image: "alpine"})
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
 
-	mc := NewMigrationCoordinator(s, ma, bm, nil)
+	mc := setupMigrationCoordinator(t, s, bm, ma, nil)
 	_, err = mc.BeginMigration(ctx, b.ID, "docker")
 	if err != nil {
 		t.Fatalf("BeginMigration: %v", err)
@@ -903,20 +999,20 @@ func TestMigrationStepImportRestoresFiles(t *testing.T) {
 
 func TestMigrationStepImportIdempotent(t *testing.T) {
 	s := openTestStore(t)
-	ma := newMockAdapter()
-	ma.inspectMeta = adapter.ContainerMetadata{
+	ma := newMockOrchAdapter()
+	ma.inspectMeta = orchestrator.ContainerMetadata{
 		Image:   "alpine:latest",
 		Workdir: "/app",
 	}
 	bm := NewBodyManager(s, ma)
 	ctx := context.Background()
 
-	b, err := bm.Create(ctx, "import-idem-test", adapter.BodySpec{Image: "alpine"})
+	b, err := bm.Create(ctx, "import-idem-test", orchestrator.BodySpec{Image: "alpine"})
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
 
-	mc := NewMigrationCoordinator(s, ma, bm, nil)
+	mc := setupMigrationCoordinator(t, s, bm, ma, nil)
 	migID, err := mc.BeginMigration(ctx, b.ID, "docker")
 	if err != nil {
 		t.Fatalf("BeginMigration: %v", err)
@@ -936,21 +1032,21 @@ func TestMigrationStepImportIdempotent(t *testing.T) {
 
 func TestMigrationStepVerifyDetectsMissingFiles(t *testing.T) {
 	s := openTestStore(t)
-	ma := newMockAdapter()
-	ma.inspectMeta = adapter.ContainerMetadata{
+	ma := newMockOrchAdapter()
+	ma.inspectMeta = orchestrator.ContainerMetadata{
 		Image:   "alpine:latest",
 		Workdir: "/app",
 	}
 	bm := NewBodyManager(s, ma)
 	ctx := context.Background()
 
-	b, err := bm.Create(ctx, "verify-missing-test", adapter.BodySpec{Image: "alpine"})
+	b, err := bm.Create(ctx, "verify-missing-test", orchestrator.BodySpec{Image: "alpine"})
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
 
 	ma.failImport = true
-	mc := NewMigrationCoordinator(s, ma, bm, nil)
+	mc := setupMigrationCoordinator(t, s, bm, ma, nil)
 	migID, err := mc.BeginMigration(ctx, b.ID, "docker")
 	if err == nil {
 		t.Fatal("BeginMigration should have failed")
@@ -981,20 +1077,20 @@ func TestMigrationStepVerifyDetectsMissingFiles(t *testing.T) {
 
 func TestMigrationStepVerifyDetectsUnhealthyContainer(t *testing.T) {
 	s := openTestStore(t)
-	ma := newMockAdapter()
-	ma.inspectMeta = adapter.ContainerMetadata{
+	ma := newMockOrchAdapter()
+	ma.inspectMeta = orchestrator.ContainerMetadata{
 		Image:   "alpine:latest",
 		Workdir: "/app",
 	}
 	bm := NewBodyManager(s, ma)
 	ctx := context.Background()
 
-	b, err := bm.Create(ctx, "verify-unhealthy-test", adapter.BodySpec{Image: "alpine"})
+	b, err := bm.Create(ctx, "verify-unhealthy-test", orchestrator.BodySpec{Image: "alpine"})
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
 
-	mc := NewMigrationCoordinator(s, ma, bm, nil)
+	mc := setupMigrationCoordinator(t, s, bm, ma, nil)
 	_, err = mc.BeginMigration(ctx, b.ID, "docker")
 	if err != nil {
 		t.Fatalf("BeginMigration: %v", err)
@@ -1006,28 +1102,28 @@ func TestMigrationStepVerifyDetectsUnhealthyContainer(t *testing.T) {
 	if !ok {
 		t.Fatal("target container status not found")
 	}
-	if status.State != adapter.StateRunning && status.State != adapter.StateCreated {
+	if status.State != orchestrator.StateRunning && status.State != orchestrator.StateCreated {
 		t.Errorf("target container state = %s, want Running or Created", status.State)
 	}
 }
 
 func TestMigrationProvisionFailsWithoutRollback(t *testing.T) {
 	s := openTestStore(t)
-	ma := newMockAdapter()
-	ma.inspectMeta = adapter.ContainerMetadata{
+	ma := newMockOrchAdapter()
+	ma.inspectMeta = orchestrator.ContainerMetadata{
 		Image:   "alpine:latest",
 		Workdir: "/app",
 	}
 	bm := NewBodyManager(s, ma)
 	ctx := context.Background()
 
-	b, err := bm.Create(ctx, "provision-fail-test", adapter.BodySpec{Image: "alpine"})
+	b, err := bm.Create(ctx, "provision-fail-test", orchestrator.BodySpec{Image: "alpine"})
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
 
 	ma.failCreate = true
-	mc := NewMigrationCoordinator(s, ma, bm, nil)
+	mc := setupMigrationCoordinator(t, s, bm, ma, nil)
 	_, err = mc.BeginMigration(ctx, b.ID, "docker")
 	if err == nil {
 		t.Fatal("BeginMigration should have failed")
@@ -1043,22 +1139,22 @@ func TestMigrationProvisionFailsWithoutRollback(t *testing.T) {
 
 func TestMigrationStepSwitchUpdatesBodyInstanceID(t *testing.T) {
 	s := openTestStore(t)
-	ma := newMockAdapter()
-	ma.inspectMeta = adapter.ContainerMetadata{
+	ma := newMockOrchAdapter()
+	ma.inspectMeta = orchestrator.ContainerMetadata{
 		Image:   "alpine:latest",
 		Workdir: "/app",
 	}
 	bm := NewBodyManager(s, ma)
 	ctx := context.Background()
 
-	b, err := bm.Create(ctx, "switch-test", adapter.BodySpec{Image: "alpine"})
+	b, err := bm.Create(ctx, "switch-test", orchestrator.BodySpec{Image: "alpine"})
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
 
 	srcHandle := b.InstanceID
 
-	mc := NewMigrationCoordinator(s, ma, bm, nil)
+	mc := setupMigrationCoordinator(t, s, bm, ma, nil)
 	_, err = mc.BeginMigration(ctx, b.ID, "docker")
 	if err != nil {
 		t.Fatalf("BeginMigration: %v", err)
@@ -1094,20 +1190,20 @@ func TestMigrationStepSwitchUpdatesBodyInstanceID(t *testing.T) {
 
 func TestMigrationStepSwitchIdempotent(t *testing.T) {
 	s := openTestStore(t)
-	ma := newMockAdapter()
-	ma.inspectMeta = adapter.ContainerMetadata{
+	ma := newMockOrchAdapter()
+	ma.inspectMeta = orchestrator.ContainerMetadata{
 		Image:   "alpine:latest",
 		Workdir: "/app",
 	}
 	bm := NewBodyManager(s, ma)
 	ctx := context.Background()
 
-	b, err := bm.Create(ctx, "switch-idem-test", adapter.BodySpec{Image: "alpine"})
+	b, err := bm.Create(ctx, "switch-idem-test", orchestrator.BodySpec{Image: "alpine"})
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
 
-	mc := NewMigrationCoordinator(s, ma, bm, nil)
+	mc := setupMigrationCoordinator(t, s, bm, ma, nil)
 	migID, err := mc.BeginMigration(ctx, b.ID, "docker")
 	if err != nil {
 		t.Fatalf("BeginMigration: %v", err)
@@ -1121,27 +1217,27 @@ func TestMigrationStepSwitchIdempotent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetBody after resume: %v", err)
 	}
-	if bodyRec.State != adapter.StateRunning {
+	if bodyRec.State != orchestrator.StateRunning {
 		t.Errorf("body state after resume = %s, want Running", bodyRec.State)
 	}
 }
 
 func TestMigrationStepCleanupRemovesSnapshotFile(t *testing.T) {
 	s := openTestStore(t)
-	ma := newMockAdapter()
-	ma.inspectMeta = adapter.ContainerMetadata{
+	ma := newMockOrchAdapter()
+	ma.inspectMeta = orchestrator.ContainerMetadata{
 		Image:   "alpine:latest",
 		Workdir: "/app",
 	}
 	bm := NewBodyManager(s, ma)
 	ctx := context.Background()
 
-	b, err := bm.Create(ctx, "cleanup-test", adapter.BodySpec{Image: "alpine"})
+	b, err := bm.Create(ctx, "cleanup-test", orchestrator.BodySpec{Image: "alpine"})
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
 
-	mc := NewMigrationCoordinator(s, ma, bm, nil)
+	mc := setupMigrationCoordinator(t, s, bm, ma, nil)
 	migID, err := mc.BeginMigration(ctx, b.ID, "docker")
 	if err != nil {
 		t.Fatalf("BeginMigration: %v", err)
@@ -1163,22 +1259,22 @@ func TestMigrationStepCleanupRemovesSnapshotFile(t *testing.T) {
 
 func TestMigrationStepSwitchRollbackOnFailure(t *testing.T) {
 	s := openTestStore(t)
-	ma := newMockAdapter()
-	ma.inspectMeta = adapter.ContainerMetadata{
+	ma := newMockOrchAdapter()
+	ma.inspectMeta = orchestrator.ContainerMetadata{
 		Image:   "alpine:latest",
 		Workdir: "/app",
 	}
 	bm := NewBodyManager(s, ma)
 	ctx := context.Background()
 
-	b, err := bm.Create(ctx, "rollback-test", adapter.BodySpec{Image: "alpine"})
+	b, err := bm.Create(ctx, "rollback-test", orchestrator.BodySpec{Image: "alpine"})
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
 
 	srcHandle := b.InstanceID
 
-	mc := NewMigrationCoordinator(s, ma, bm, nil)
+	mc := setupMigrationCoordinator(t, s, bm, ma, nil)
 	_, err = mc.BeginMigration(ctx, b.ID, "docker")
 	if err != nil {
 		t.Fatalf("BeginMigration: %v", err)
@@ -1196,17 +1292,15 @@ func TestMigrationStepSwitchRollbackOnFailure(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Get body after migration: %v", err)
 	}
-	if b2.State != adapter.StateRunning {
+	if b2.State != orchestrator.StateRunning {
 		t.Errorf("body state after migration = %s, want Running", b2.State)
 	}
 }
 
-// --- Cross-machine migration tests ---
-
 func TestMigrationCrossMachineUsesRegistry(t *testing.T) {
 	s := openTestStore(t)
-	ma := newMockAdapter()
-	ma.inspectMeta = adapter.ContainerMetadata{
+	ma := newMockOrchAdapter()
+	ma.inspectMeta = orchestrator.ContainerMetadata{
 		Image:   "alpine:latest",
 		Workdir: "/app",
 	}
@@ -1214,13 +1308,13 @@ func TestMigrationCrossMachineUsesRegistry(t *testing.T) {
 	bm := NewBodyManager(s, ma)
 	ctx := context.Background()
 
-	b, err := bm.Create(ctx, "cross-test", adapter.BodySpec{Image: "alpine"})
+	b, err := bm.Create(ctx, "cross-test", orchestrator.BodySpec{Image: "alpine"})
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
 
 	reg := newMockRegistry()
-	mc := NewMigrationCoordinator(s, ma, bm, reg)
+	mc := setupMigrationCoordinator(t, s, bm, ma, reg)
 	_, err = mc.BeginMigration(ctx, b.ID, "fleet")
 	if err != nil {
 		t.Fatalf("BeginMigration: %v", err)
@@ -1247,8 +1341,8 @@ func TestMigrationCrossMachineUsesRegistry(t *testing.T) {
 
 func TestMigrationCrossMachineSHA256Mismatch(t *testing.T) {
 	s := openTestStore(t)
-	ma := newMockAdapter()
-	ma.inspectMeta = adapter.ContainerMetadata{
+	ma := newMockOrchAdapter()
+	ma.inspectMeta = orchestrator.ContainerMetadata{
 		Image:   "alpine:latest",
 		Workdir: "/app",
 	}
@@ -1256,14 +1350,14 @@ func TestMigrationCrossMachineSHA256Mismatch(t *testing.T) {
 	bm := NewBodyManager(s, ma)
 	ctx := context.Background()
 
-	b, err := bm.Create(ctx, "cross-sha-test", adapter.BodySpec{Image: "alpine"})
+	b, err := bm.Create(ctx, "cross-sha-test", orchestrator.BodySpec{Image: "alpine"})
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
 
 	reg := newMockRegistry()
 	reg.pullSHA = "mismatched-sha256-abc123"
-	mc := NewMigrationCoordinator(s, ma, bm, reg)
+	mc := setupMigrationCoordinator(t, s, bm, ma, reg)
 	_, err = mc.BeginMigration(ctx, b.ID, "fleet")
 	if err == nil {
 		t.Fatal("BeginMigration should have failed on SHA mismatch")
@@ -1272,8 +1366,8 @@ func TestMigrationCrossMachineSHA256Mismatch(t *testing.T) {
 
 func TestMigrationCrossMachineRetryPush(t *testing.T) {
 	s := openTestStore(t)
-	ma := newMockAdapter()
-	ma.inspectMeta = adapter.ContainerMetadata{
+	ma := newMockOrchAdapter()
+	ma.inspectMeta = orchestrator.ContainerMetadata{
 		Image:   "alpine:latest",
 		Workdir: "/app",
 	}
@@ -1281,14 +1375,14 @@ func TestMigrationCrossMachineRetryPush(t *testing.T) {
 	bm := NewBodyManager(s, ma)
 	ctx := context.Background()
 
-	b, err := bm.Create(ctx, "cross-retry-test", adapter.BodySpec{Image: "alpine"})
+	b, err := bm.Create(ctx, "cross-retry-test", orchestrator.BodySpec{Image: "alpine"})
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
 
 	reg := newMockRegistry()
 	reg.failAfter = 2
-	mc := NewMigrationCoordinator(s, ma, bm, reg)
+	mc := setupMigrationCoordinator(t, s, bm, ma, reg)
 	_, err = mc.BeginMigration(ctx, b.ID, "fleet")
 	if err != nil {
 		t.Fatalf("BeginMigration should succeed after retries: %v", err)
@@ -1304,8 +1398,8 @@ func TestMigrationCrossMachineRetryPush(t *testing.T) {
 
 func TestMigrationSameMachineIgnoresRegistry(t *testing.T) {
 	s := openTestStore(t)
-	ma := newMockAdapter()
-	ma.inspectMeta = adapter.ContainerMetadata{
+	ma := newMockOrchAdapter()
+	ma.inspectMeta = orchestrator.ContainerMetadata{
 		Image:   "alpine:latest",
 		Workdir: "/app",
 	}
@@ -1313,14 +1407,14 @@ func TestMigrationSameMachineIgnoresRegistry(t *testing.T) {
 	bm := NewBodyManager(s, ma)
 	ctx := context.Background()
 
-	b, err := bm.Create(ctx, "same-test", adapter.BodySpec{Image: "alpine"})
+	b, err := bm.Create(ctx, "same-test", orchestrator.BodySpec{Image: "alpine"})
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
 
 	reg := newMockRegistry()
-	mc := NewMigrationCoordinator(s, ma, bm, reg)
-	_, err = mc.BeginMigration(ctx, b.ID, "docker")
+	mc := setupMigrationCoordinator(t, s, bm, ma, reg)
+	_, err = mc.BeginMigration(ctx, b.ID, "local")
 	if err != nil {
 		t.Fatalf("BeginMigration: %v", err)
 	}
@@ -1335,8 +1429,8 @@ func TestMigrationSameMachineIgnoresRegistry(t *testing.T) {
 
 func TestMigrationCrossMachineResumeAfterTransfer(t *testing.T) {
 	s := openTestStore(t)
-	ma := newMockAdapter()
-	ma.inspectMeta = adapter.ContainerMetadata{
+	ma := newMockOrchAdapter()
+	ma.inspectMeta = orchestrator.ContainerMetadata{
 		Image:   "alpine:latest",
 		Workdir: "/app",
 	}
@@ -1344,13 +1438,13 @@ func TestMigrationCrossMachineResumeAfterTransfer(t *testing.T) {
 	bm := NewBodyManager(s, ma)
 	ctx := context.Background()
 
-	b, err := bm.Create(ctx, "cross-resume-test", adapter.BodySpec{Image: "alpine"})
+	b, err := bm.Create(ctx, "cross-resume-test", orchestrator.BodySpec{Image: "alpine"})
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
 
 	reg := newMockRegistry()
-	mc := NewMigrationCoordinator(s, ma, bm, reg)
+	mc := setupMigrationCoordinator(t, s, bm, ma, reg)
 	migID, err := mc.BeginMigration(ctx, b.ID, "fleet")
 	if err != nil {
 		t.Fatalf("BeginMigration: %v", err)

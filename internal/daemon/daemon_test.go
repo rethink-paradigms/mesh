@@ -14,10 +14,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rethink-paradigms/mesh/internal/adapter"
 	"github.com/rethink-paradigms/mesh/internal/body"
 	"github.com/rethink-paradigms/mesh/internal/config"
-	"github.com/rethink-paradigms/mesh/internal/docker"
+	"github.com/rethink-paradigms/mesh/internal/orchestrator"
+	"github.com/rethink-paradigms/mesh/internal/provisioner"
 	"github.com/rethink-paradigms/mesh/internal/store"
 )
 
@@ -30,11 +30,34 @@ func testConfig(t *testing.T) *config.Config {
 		Store: config.StoreConfig{
 			Path: filepath.Join(t.TempDir(), "test.db"),
 		},
-		Docker: config.DockerConfig{
-			Host: "unix:///var/run/docker.sock",
-		},
 	}
 }
+
+type mockOrchestrator struct{}
+
+func (m *mockOrchestrator) ScheduleBody(_ context.Context, _ orchestrator.BodySpec) (orchestrator.Handle, error) {
+	return "mock-handle", nil
+}
+
+func (m *mockOrchestrator) StartBody(_ context.Context, _ orchestrator.Handle) error {
+	return nil
+}
+
+func (m *mockOrchestrator) StopBody(_ context.Context, _ orchestrator.Handle) error {
+	return nil
+}
+
+func (m *mockOrchestrator) DestroyBody(_ context.Context, _ orchestrator.Handle) error {
+	return nil
+}
+
+func (m *mockOrchestrator) GetBodyStatus(_ context.Context, _ orchestrator.Handle) (orchestrator.BodyStatus, error) {
+	return orchestrator.BodyStatus{}, fmt.Errorf("not found")
+}
+
+func (m *mockOrchestrator) Name() string { return "docker" }
+
+func (m *mockOrchestrator) IsHealthy(_ context.Context) bool { return true }
 
 func TestDaemonNew(t *testing.T) {
 	cfg := testConfig(t)
@@ -211,6 +234,7 @@ func TestReconcileEmpty(t *testing.T) {
 		t.Fatalf("open store: %v", err)
 	}
 	d.store = s
+	d.orchRegistry = orchestrator.NewRegistry()
 	defer s.Close()
 
 	if err := d.reconcile(context.Background()); err != nil {
@@ -233,15 +257,15 @@ func TestReconcileMissingContainer(t *testing.T) {
 	defer s.Close()
 
 	ctx := context.Background()
-	if err := s.CreateBody(ctx, "b1", "body-1", adapter.StateRunning, "", "docker", "nonexistent-container-id"); err != nil {
+	if err := s.CreateBody(ctx, "b1", "body-1", orchestrator.StateRunning, "", "docker", "nonexistent-container-id"); err != nil {
 		t.Fatalf("CreateBody: %v", err)
 	}
 
-	dockerAdp := docker.New()
-	multi := adapter.NewMultiAdapter()
-	multi.Register("docker", dockerAdp)
-	d.adapters = multi
-	d.bodyMgr = body.NewBodyManager(d.store, d.adapters)
+	mockOrch := &mockOrchestrator{}
+	reg := orchestrator.NewRegistry()
+	reg.Register("docker", mockOrch)
+	d.orchRegistry = reg
+	d.bodyMgr = body.NewBodyManager(d.store, mockOrch)
 
 	if err := d.reconcile(ctx); err != nil {
 		t.Fatalf("reconcile: %v", err)
@@ -251,7 +275,7 @@ func TestReconcileMissingContainer(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetBody: %v", err)
 	}
-	if rec.State != adapter.StateError {
+	if rec.State != orchestrator.StateError {
 		t.Fatalf("state = %q, want Error", rec.State)
 	}
 	if d.reconcileSteps != 1 {
@@ -274,15 +298,15 @@ func TestReconcileOrphanedStoreRecord(t *testing.T) {
 	defer s.Close()
 
 	ctx := context.Background()
-	if err := s.CreateBody(ctx, "b2", "body-2", adapter.StateError, "", "docker", "nonexistent-container-id"); err != nil {
+	if err := s.CreateBody(ctx, "b2", "body-2", orchestrator.StateError, "", "docker", "nonexistent-container-id"); err != nil {
 		t.Fatalf("CreateBody: %v", err)
 	}
 
-	dockerAdp := docker.New()
-	multi := adapter.NewMultiAdapter()
-	multi.Register("docker", dockerAdp)
-	d.adapters = multi
-	d.bodyMgr = body.NewBodyManager(d.store, d.adapters)
+	mockOrch := &mockOrchestrator{}
+	reg := orchestrator.NewRegistry()
+	reg.Register("docker", mockOrch)
+	d.orchRegistry = reg
+	d.bodyMgr = body.NewBodyManager(d.store, mockOrch)
 
 	if err := d.reconcile(ctx); err != nil {
 		t.Fatalf("reconcile: %v", err)
@@ -292,7 +316,7 @@ func TestReconcileOrphanedStoreRecord(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetBody: %v", err)
 	}
-	if rec.State != adapter.StateError {
+	if rec.State != orchestrator.StateError {
 		t.Fatalf("state = %q, want Error (unchanged)", rec.State)
 	}
 	if d.reconcileSteps != 0 {
@@ -315,15 +339,14 @@ func TestReconcileStateMismatch(t *testing.T) {
 	defer s.Close()
 
 	ctx := context.Background()
-	if err := s.CreateBody(ctx, "b3", "body-3", adapter.StateRunning, "", "docker", ""); err != nil {
+	if err := s.CreateBody(ctx, "b3", "body-3", orchestrator.StateRunning, "", "docker", ""); err != nil {
 		t.Fatalf("CreateBody: %v", err)
 	}
 
-	dockerAdp := docker.New()
-	multi := adapter.NewMultiAdapter()
-	multi.Register("docker", dockerAdp)
-	d.adapters = multi
-	d.bodyMgr = body.NewBodyManager(d.store, d.adapters)
+	reg := orchestrator.NewRegistry()
+	reg.Register("docker", &mockOrchestrator{})
+	d.orchRegistry = reg
+	d.bodyMgr = body.NewBodyManager(d.store, &mockOrchestrator{})
 
 	if err := d.reconcile(ctx); err != nil {
 		t.Fatalf("reconcile: %v", err)
@@ -333,7 +356,7 @@ func TestReconcileStateMismatch(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetBody: %v", err)
 	}
-	if rec.State != adapter.StateRunning {
+	if rec.State != orchestrator.StateRunning {
 		t.Fatalf("state = %q, want Running (unchanged, no instance_id)", rec.State)
 	}
 	if d.reconcileSteps != 0 {
@@ -356,15 +379,15 @@ func TestReconcileMigrationRecovery(t *testing.T) {
 	defer s.Close()
 
 	ctx := context.Background()
-	if err := s.CreateBody(ctx, "b4", "body-4", adapter.StateMigrating, "", "docker", "inst-4"); err != nil {
+	if err := s.CreateBody(ctx, "b4", "body-4", orchestrator.StateMigrating, "", "docker", "inst-4"); err != nil {
 		t.Fatalf("CreateBody: %v", err)
 	}
 
-	dockerAdp := docker.New()
-	multi := adapter.NewMultiAdapter()
-	multi.Register("docker", dockerAdp)
-	d.adapters = multi
-	d.bodyMgr = body.NewBodyManager(d.store, d.adapters)
+	mockOrch := &mockOrchestrator{}
+	reg := orchestrator.NewRegistry()
+	reg.Register("docker", mockOrch)
+	d.orchRegistry = reg
+	d.bodyMgr = body.NewBodyManager(d.store, mockOrch)
 
 	if err := d.reconcile(ctx); err != nil {
 		t.Fatalf("reconcile: %v", err)
@@ -374,7 +397,7 @@ func TestReconcileMigrationRecovery(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetBody: %v", err)
 	}
-	if rec.State != adapter.StateError {
+	if rec.State != orchestrator.StateError {
 		t.Fatalf("state = %q, want Error (migration record missing)", rec.State)
 	}
 	if d.reconcileSteps != 1 {
@@ -398,15 +421,15 @@ func TestReconcileHealthSteps(t *testing.T) {
 	defer s.Close()
 
 	ctx := context.Background()
-	if err := s.CreateBody(ctx, "b5", "body-5", adapter.StateRunning, "", "docker", "nonexistent"); err != nil {
+	if err := s.CreateBody(ctx, "b5", "body-5", orchestrator.StateRunning, "", "docker", "nonexistent"); err != nil {
 		t.Fatalf("CreateBody: %v", err)
 	}
 
-	dockerAdp := docker.New()
-	multi := adapter.NewMultiAdapter()
-	multi.Register("docker", dockerAdp)
-	d.adapters = multi
-	d.bodyMgr = body.NewBodyManager(d.store, d.adapters)
+	mockOrch := &mockOrchestrator{}
+	reg := orchestrator.NewRegistry()
+	reg.Register("docker", mockOrch)
+	d.orchRegistry = reg
+	d.bodyMgr = body.NewBodyManager(d.store, mockOrch)
 
 	if err := d.reconcile(ctx); err != nil {
 		t.Fatalf("reconcile: %v", err)
@@ -571,7 +594,7 @@ func TestStopIdempotent(t *testing.T) {
 	}
 }
 
-func TestDaemonWiresDockerAdapter(t *testing.T) {
+func TestDaemonWiresOrchRegistry(t *testing.T) {
 	cfg := testConfig(t)
 	d, err := New(cfg)
 	if err != nil {
@@ -595,18 +618,11 @@ func TestDaemonWiresDockerAdapter(t *testing.T) {
 		t.Fatal("daemon never became ready")
 	}
 
-	if d.adapters == nil {
-		t.Fatal("adapters should be initialized")
+	if d.orchRegistry == nil {
+		t.Fatal("orchRegistry should be initialized")
 	}
-	adp, err := d.adapters.GetAdapter("docker")
-	if err != nil {
-		t.Fatalf("get docker adapter: %v", err)
-	}
-	if adp == nil {
-		t.Fatal("docker adapter should not be nil")
-	}
-	if adp.SubstrateName() != "docker" {
-		t.Fatalf("substrate = %q, want docker", adp.SubstrateName())
+	if d.provRegistry == nil {
+		t.Fatal("provRegistry should be initialized")
 	}
 
 	cancel()
@@ -656,7 +672,6 @@ func TestDaemonInitializesBodyManager(t *testing.T) {
 func TestDaemonRefusesDuplicateStart(t *testing.T) {
 	cfg := testConfig(t)
 
-	// Spawn a real child process and write its PID to the PID file.
 	cmd := exec.Command("sleep", "30")
 	if err := cmd.Start(); err != nil {
 		t.Fatalf("start child process: %v", err)
@@ -766,5 +781,84 @@ func TestDaemonStopsPluginManagerOnShutdown(t *testing.T) {
 	case <-d.Done():
 	default:
 		t.Fatal("Done channel should be closed after stop")
+	}
+}
+
+func TestDaemonStartOrchOnly(t *testing.T) {
+	cfg := testConfig(t)
+	d, err := New(cfg)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	s, err := store.Open(cfg.Store.Path)
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	d.store = s
+	defer s.Close()
+
+	mockOrch := &mockOrchestrator{}
+	reg := orchestrator.NewRegistry()
+	if err := reg.Register("nomad", mockOrch); err != nil {
+		t.Fatalf("Register: %v", err)
+	}
+	d.orchRegistry = reg
+	d.provRegistry = provisioner.NewRegistry()
+	d.bodyMgr = body.NewBodyManager(d.store, mockOrch)
+
+	if len(reg.List()) != 1 {
+		t.Fatalf("expected 1 orchestrator, got %d", len(reg.List()))
+	}
+
+	if err := d.reconcile(context.Background()); err != nil {
+		t.Fatalf("reconcile with empty store: %v", err)
+	}
+
+	adp, err := reg.Open("nomad")
+	if err != nil {
+		t.Fatalf("Open nomad: %v", err)
+	}
+	if !adp.IsHealthy(context.Background()) {
+		t.Fatal("mock orchestrator should report healthy")
+	}
+}
+
+func TestDaemonReconcileDockerOrphan(t *testing.T) {
+	cfg := testConfig(t)
+	d, err := New(cfg)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	s, err := store.Open(cfg.Store.Path)
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	d.store = s
+	defer s.Close()
+
+	ctx := context.Background()
+	if err := s.CreateBody(ctx, "orphan-1", "orphan-body", orchestrator.StateRunning, "", "docker", "orphan-inst-1"); err != nil {
+		t.Fatalf("CreateBody: %v", err)
+	}
+
+	reg := orchestrator.NewRegistry()
+	d.orchRegistry = reg
+	d.bodyMgr = body.NewBodyManager(d.store, &mockOrchestrator{})
+
+	if err := d.reconcile(ctx); err != nil {
+		t.Fatalf("reconcile: %v", err)
+	}
+
+	rec, err := s.GetBody(ctx, "orphan-1")
+	if err != nil {
+		t.Fatalf("GetBody: %v", err)
+	}
+	if rec.State != orchestrator.StateError {
+		t.Fatalf("state = %q, want Error (orphaned Running body with missing substrate)", rec.State)
+	}
+	if d.reconcileSteps != 1 {
+		t.Fatalf("reconcileSteps = %d, want 1", d.reconcileSteps)
 	}
 }

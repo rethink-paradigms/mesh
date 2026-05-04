@@ -1,0 +1,4 @@
+=== RUN   TestBodyManagerNoExporter
+--- PASS: TestBodyManagerNoExporter (0.02s)
+PASS
+ok  	github.com/rethink-paradigms/mesh/internal/body	1.323s

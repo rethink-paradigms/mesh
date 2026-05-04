@@ -1,6 +1,3 @@
-// Package daemon implements the long-running Mesh daemon process with signal
-// handling, PID file management, startup reconciliation, health checks,
-// and graceful shutdown orchestration.
 package daemon
 
 import (
@@ -16,22 +13,23 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/rethink-paradigms/mesh/internal/adapter"
 	"github.com/rethink-paradigms/mesh/internal/body"
 	"github.com/rethink-paradigms/mesh/internal/config"
-	"github.com/rethink-paradigms/mesh/internal/docker"
+	"github.com/rethink-paradigms/mesh/internal/nomad"
+	"github.com/rethink-paradigms/mesh/internal/orchestrator"
 	"github.com/rethink-paradigms/mesh/internal/plugin"
+	"github.com/rethink-paradigms/mesh/internal/provisioner"
 	"github.com/rethink-paradigms/mesh/internal/store"
 )
 
-// Daemon is the long-running mesh process that manages bodies and exposes MCP tools.
 type Daemon struct {
 	cfg   *config.Config
 	store *store.Store
 
-	adapters    *adapter.MultiAdapter
-	bodyMgr     *body.BodyManager
-	pluginMgr   *plugin.PluginManager
+	orchRegistry *orchestrator.Registry
+	provRegistry *provisioner.Registry
+	bodyMgr      *body.BodyManager
+	pluginMgr    *plugin.PluginManager
 
 	mcpServer   interface{ Stop(context.Context) error }
 	mcpServerMu sync.Mutex
@@ -49,7 +47,6 @@ type Daemon struct {
 	reconcileSteps int
 }
 
-// New creates a new Daemon from the given config.
 func New(cfg *config.Config) (*Daemon, error) {
 	d := &Daemon{
 		cfg:       cfg,
@@ -60,17 +57,18 @@ func New(cfg *config.Config) (*Daemon, error) {
 	return d, nil
 }
 
-// Adapters returns the daemon's multi-adapter router.
-func (d *Daemon) Adapters() *adapter.MultiAdapter {
-	return d.adapters
+func (d *Daemon) OrchRegistry() *orchestrator.Registry {
+	return d.orchRegistry
 }
 
-// BodyManager returns the daemon's body manager.
+func (d *Daemon) ProvRegistry() *provisioner.Registry {
+	return d.provRegistry
+}
+
 func (d *Daemon) BodyManager() *body.BodyManager {
 	return d.bodyMgr
 }
 
-// SetMCP injects an MCP server. Called by whoever wires the daemon together (Task 9).
 func (d *Daemon) SetMCP(srv interface{ Stop(context.Context) error }) {
 	d.mcpServerMu.Lock()
 	defer d.mcpServerMu.Unlock()
@@ -89,37 +87,59 @@ func (d *Daemon) Ready() bool {
 	return d.ready
 }
 
-// Done returns a channel that is closed when the daemon has fully stopped.
 func (d *Daemon) Done() <-chan struct{} {
 	return d.done
 }
 
-// Start begins the daemon's main loop. It opens the store, initializes adapters,
-// writes the PID file, starts the health server, registers signal handlers, and
-// blocks until a termination signal or context cancellation.
 func (d *Daemon) Start(ctx context.Context) error {
-	// 1. Check PID file for conflicts
 	if err := d.checkPIDConflict(); err != nil {
 		return fmt.Errorf("daemon: PID conflict: %w", err)
 	}
 
-	// 2. Open SQLite store
 	s, err := store.Open(d.cfg.Store.Path)
 	if err != nil {
 		return fmt.Errorf("daemon: open store: %w", err)
 	}
 	d.store = s
 
-	// 3. Initialize Docker adapter and MultiAdapter
-	dockerAdp := docker.New()
-	multi := adapter.NewMultiAdapter()
-	multi.Register("docker", dockerAdp)
-	d.adapters = multi
+	orchRegistry := orchestrator.NewRegistry()
+	d.orchRegistry = orchRegistry
 
-	// 4. Initialize BodyManager
-	d.bodyMgr = body.NewBodyManager(d.store, d.adapters)
+	for name, settings := range d.cfg.Orchestrators {
+		switch name {
+		case "nomad":
+			adp := nomad.New(nomad.Config{
+				Address:   settings["address"],
+				Token:     settings["token"],
+				Region:    settings["region"],
+				Namespace: settings["namespace"],
+			})
+			if err := orchRegistry.Register("nomad", adp); err != nil {
+				fmt.Fprintf(os.Stderr, "daemon: register orchestrator %q: %v\n", name, err)
+			}
+		}
+	}
 
-	// 5. Initialize PluginManager
+	if len(orchRegistry.List()) == 0 {
+		fmt.Fprintf(os.Stderr, "daemon: warning: no orchestrators registered\n")
+	}
+
+	provRegistry := provisioner.NewRegistry()
+	d.provRegistry = provRegistry
+
+	if len(d.cfg.Provisioners) == 0 {
+		fmt.Fprintf(os.Stderr, "daemon: info: no provisioners registered\n")
+	}
+
+	var primaryOrch orchestrator.OrchestratorAdapter
+	if names := orchRegistry.List(); len(names) > 0 {
+		primaryOrch, _ = orchRegistry.Open(names[0])
+	}
+	if primaryOrch == nil {
+		primaryOrch = &noopOrchestrator{}
+	}
+	d.bodyMgr = body.NewBodyManager(d.store, primaryOrch)
+
 	pm := plugin.NewPluginManager(d.cfg.Plugin.Dir, d.cfg.Plugin.Enabled)
 	if err := pm.StartScanAndLoad(); err != nil {
 		fmt.Fprintf(os.Stderr, "daemon: plugin scan and load: %v\n", err)
@@ -127,69 +147,57 @@ func (d *Daemon) Start(ctx context.Context) error {
 	pm.StartHealthChecks()
 	d.pluginMgr = pm
 
-	// 6. Startup reconciliation
 	if err := d.reconcile(ctx); err != nil {
 		return fmt.Errorf("daemon: reconcile: %w", err)
 	}
 
-	// 7. Write PID file
 	if err := d.writePIDFile(); err != nil {
 		return fmt.Errorf("daemon: write PID: %w", err)
 	}
 	defer d.removePIDFile()
 
-	// 8. Start health check HTTP server
 	if err := d.startHealthServer(); err != nil {
 		return fmt.Errorf("daemon: health server: %w", err)
 	}
 	defer d.stopHealthServer()
 
-	// 9. Register signal handlers
 	signal.Notify(d.sigs, syscall.SIGTERM, syscall.SIGINT)
 
 	d.mu.Lock()
 	d.ready = true
 	d.mu.Unlock()
 
-	// 10. Block until signal or context cancellation
 	select {
 	case sig := <-d.sigs:
 		fmt.Fprintf(os.Stderr, "daemon: received signal %v, shutting down\n", sig)
 	case <-ctx.Done():
 	}
 
-	// 10. Graceful shutdown
 	stopCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	return d.Stop(stopCtx)
 }
 
-// PluginManager returns the daemon's plugin manager.
 func (d *Daemon) PluginManager() *plugin.PluginManager {
 	return d.pluginMgr
 }
 
-// Stop performs graceful shutdown: stops MCP server, closes the store,
-// removes PID file, and signals completion.
 func (d *Daemon) Stop(ctx context.Context) error {
 	d.mu.Lock()
 	d.ready = false
 	d.mu.Unlock()
 	signal.Reset(syscall.SIGTERM, syscall.SIGINT)
 
-	// Stop MCP server if set
 	d.mcpServerMu.Lock()
 	if d.mcpServer != nil {
 		d.mcpServer.Stop(ctx)
 	}
 	d.mcpServerMu.Unlock()
 
-	// Stop PluginManager
 	if d.pluginMgr != nil {
 		d.pluginMgr.Stop()
 	}
 
-	// Close store
 	if d.store != nil {
 		d.store.Close()
 	}
@@ -211,18 +219,30 @@ func (d *Daemon) reconcile(ctx context.Context) error {
 			continue
 		}
 
-		adp, err := d.adapters.GetAdapter(rec.Substrate)
+		adp, err := d.orchRegistry.Open(rec.Substrate)
 		if err != nil {
+			switch rec.State {
+			case orchestrator.StateRunning, orchestrator.StateStarting, orchestrator.StateStopping:
+				fmt.Fprintf(os.Stderr, "reconcile: body %s substrate %q not found, transitioning to Error\n", rec.ID, rec.Substrate)
+				if transErr := d.bodyMgr.TransitionBody(ctx, rec.ID, orchestrator.StateError); transErr != nil {
+					fmt.Fprintf(os.Stderr, "reconcile: failed to transition body %s to Error: %v\n", rec.ID, transErr)
+				}
+				d.mu.Lock()
+				d.reconcileSteps++
+				d.mu.Unlock()
+			default:
+				fmt.Fprintf(os.Stderr, "reconcile: body %s substrate %q not found, skipping\n", rec.ID, rec.Substrate)
+			}
 			continue
 		}
 
-		_, err = adp.GetStatus(ctx, adapter.Handle(rec.InstanceID))
+		_, err = adp.GetBodyStatus(ctx, orchestrator.Handle(rec.InstanceID))
 		containerExists := err == nil
 
 		switch rec.State {
-		case adapter.StateRunning, adapter.StateStarting, adapter.StateStopping:
+		case orchestrator.StateRunning, orchestrator.StateStarting, orchestrator.StateStopping:
 			if !containerExists {
-				if transErr := d.bodyMgr.TransitionBody(ctx, rec.ID, adapter.StateError); transErr != nil {
+				if transErr := d.bodyMgr.TransitionBody(ctx, rec.ID, orchestrator.StateError); transErr != nil {
 					fmt.Fprintf(os.Stderr, "reconcile: failed to transition body %s to Error: %v\n", rec.ID, transErr)
 				} else {
 					fmt.Fprintf(os.Stderr, "reconcile: body %s container not found, transitioned to Error\n", rec.ID)
@@ -232,11 +252,11 @@ func (d *Daemon) reconcile(ctx context.Context) error {
 				d.mu.Unlock()
 			}
 
-		case adapter.StateError:
+		case orchestrator.StateError:
 			if containerExists {
-				status, _ := adp.GetStatus(ctx, adapter.Handle(rec.InstanceID))
-				if status.State == adapter.StateRunning {
-					if transErr := d.bodyMgr.TransitionBody(ctx, rec.ID, adapter.StateRunning); transErr != nil {
+				status, _ := adp.GetBodyStatus(ctx, orchestrator.Handle(rec.InstanceID))
+				if status.State == orchestrator.StateRunning {
+					if transErr := d.bodyMgr.TransitionBody(ctx, rec.ID, orchestrator.StateRunning); transErr != nil {
 						fmt.Fprintf(os.Stderr, "reconcile: failed to transition body %s to Running: %v\n", rec.ID, transErr)
 					} else {
 						fmt.Fprintf(os.Stderr, "reconcile: body %s verified running, transitioned to Running\n", rec.ID)
@@ -247,9 +267,9 @@ func (d *Daemon) reconcile(ctx context.Context) error {
 				}
 			}
 
-		case adapter.StateMigrating:
+		case orchestrator.StateMigrating:
 			if !d.hasActiveMigration(ctx, rec.ID) {
-				if transErr := d.bodyMgr.TransitionBody(ctx, rec.ID, adapter.StateError); transErr != nil {
+				if transErr := d.bodyMgr.TransitionBody(ctx, rec.ID, orchestrator.StateError); transErr != nil {
 					fmt.Fprintf(os.Stderr, "reconcile: failed to transition body %s from Migrating to Error: %v\n", rec.ID, transErr)
 				} else {
 					fmt.Fprintf(os.Stderr, "reconcile: body %s migration record missing, transitioned to Error\n", rec.ID)
@@ -272,8 +292,6 @@ func (d *Daemon) hasActiveMigration(ctx context.Context, bodyID string) bool {
 	}
 	return count > 0
 }
-
-// --- Health server ---
 
 func (d *Daemon) startHealthServer() error {
 	mux := http.NewServeMux()
@@ -342,8 +360,6 @@ func (d *Daemon) handleHealth(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(resp)
 }
 
-// --- PID file ---
-
 func (d *Daemon) checkPIDConflict() error {
 	if d.cfg.Daemon.PIDFile == "" {
 		return nil
@@ -357,20 +373,16 @@ func (d *Daemon) checkPIDConflict() error {
 	}
 	pid, err := strconv.Atoi(string(data))
 	if err != nil {
-		// Corrupt PID file — overwrite it.
 		return nil
 	}
 	if pid == os.Getpid() {
 		return nil
 	}
-	// Check if process is still alive.
 	proc, err := os.FindProcess(pid)
 	if err != nil {
-		// Cannot find process — safe to start.
 		return nil
 	}
 	if err := proc.Signal(syscall.Signal(0)); err != nil {
-		// Process not alive — safe to start.
 		return nil
 	}
 	return fmt.Errorf("daemon already running (pid %d)", pid)
@@ -388,3 +400,29 @@ func (d *Daemon) removePIDFile() {
 		os.Remove(d.cfg.Daemon.PIDFile)
 	}
 }
+
+type noopOrchestrator struct{}
+
+func (n *noopOrchestrator) ScheduleBody(_ context.Context, _ orchestrator.BodySpec) (orchestrator.Handle, error) {
+	return "", fmt.Errorf("no orchestrator configured")
+}
+
+func (n *noopOrchestrator) StartBody(_ context.Context, _ orchestrator.Handle) error {
+	return fmt.Errorf("no orchestrator configured")
+}
+
+func (n *noopOrchestrator) StopBody(_ context.Context, _ orchestrator.Handle) error {
+	return fmt.Errorf("no orchestrator configured")
+}
+
+func (n *noopOrchestrator) DestroyBody(_ context.Context, _ orchestrator.Handle) error {
+	return fmt.Errorf("no orchestrator configured")
+}
+
+func (n *noopOrchestrator) GetBodyStatus(_ context.Context, _ orchestrator.Handle) (orchestrator.BodyStatus, error) {
+	return orchestrator.BodyStatus{}, fmt.Errorf("no orchestrator configured")
+}
+
+func (n *noopOrchestrator) Name() string { return "noop" }
+
+func (n *noopOrchestrator) IsHealthy(_ context.Context) bool { return false }

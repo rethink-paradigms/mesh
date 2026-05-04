@@ -442,20 +442,6 @@ func TestPluginInfo(t *testing.T) {
 	}
 }
 
-func TestGetAdapter(t *testing.T) {
-	ctx := context.Background()
-	p := newTestPlugin()
-
-	adapter, err := p.GetAdapter(ctx)
-	if err != nil {
-		t.Fatalf("GetAdapter failed: %v", err)
-	}
-
-	if adapter.SubstrateName() != "s3-registry" {
-		t.Fatalf("expected substrate name s3-registry, got %s", adapter.SubstrateName())
-	}
-}
-
 func TestNewS3RegistryPluginMissingBucket(t *testing.T) {
 	_, err := NewS3RegistryPlugin(RegistryConfig{Region: "us-east-1"})
 	if err == nil {

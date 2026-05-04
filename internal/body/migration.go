@@ -7,11 +7,13 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/rethink-paradigms/mesh/internal/adapter"
+	"github.com/rethink-paradigms/mesh/internal/orchestrator"
+	"github.com/rethink-paradigms/mesh/internal/provisioner"
 	"github.com/rethink-paradigms/mesh/internal/store"
 )
 
@@ -40,34 +42,36 @@ type migrationContext struct {
 	snapshotPath string
 	snapshotSize int64
 	snapshotSHA  string
-	newHandle    adapter.Handle
+	newHandle    orchestrator.Handle
 	mc           *MigrationCoordinator
 }
 
 // MigrationCoordinator manages body migrations between substrates.
 type MigrationCoordinator struct {
-	store    *store.Store
-	adapter  adapter.SubstrateAdapter
-	bm       *BodyManager
-	registry Registry
-	mu       sync.Mutex
+	store        *store.Store
+	orchRegistry *orchestrator.Registry
+	provRegistry *provisioner.Registry
+	bm           *BodyManager
+	registry     Registry
+	mu           sync.Mutex
 }
 
 // NewMigrationCoordinator creates a migration coordinator.
 // If registry is non-nil, cross-machine migrations will push/pull snapshots via S3.
-func NewMigrationCoordinator(s *store.Store, a adapter.SubstrateAdapter, bm *BodyManager, registry Registry) *MigrationCoordinator {
+func NewMigrationCoordinator(s *store.Store, bm *BodyManager, orchRegistry *orchestrator.Registry, provRegistry *provisioner.Registry, registry Registry) *MigrationCoordinator {
 	return &MigrationCoordinator{
-		store:    s,
-		adapter:  a,
-		bm:       bm,
-		registry: registry,
+		store:        s,
+		orchRegistry: orchRegistry,
+		provRegistry: provRegistry,
+		bm:           bm,
+		registry:     registry,
 	}
 }
 
 func (mc *MigrationCoordinator) buildSteps() []struct {
 	name string
 	fn   stepFunc
-}{
+} {
 	return []struct {
 		name string
 		fn   stepFunc
@@ -105,7 +109,7 @@ func (mc *MigrationCoordinator) BeginMigration(ctx context.Context, bodyID, targ
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
-	if err := mc.transitionBody(ctx, b, adapter.StateMigrating); err != nil {
+		if err := mc.transitionBody(ctx, b, orchestrator.StateMigrating); err != nil {
 		return "", fmt.Errorf("transition to migrating: %w", err)
 	}
 
@@ -114,7 +118,7 @@ func (mc *MigrationCoordinator) BeginMigration(ctx context.Context, bodyID, targ
 		stepNum := i + 1
 		if err := step.fn(ctx, mig); err != nil {
 			_ = mc.store.UpdateMigration(ctx, migID, stepNum, err.Error())
-			_ = mc.transitionBody(ctx, b, adapter.StateError)
+			_ = mc.transitionBody(ctx, b, orchestrator.StateError)
 			return migID, fmt.Errorf("migration step %d (%s) failed: %w", stepNum, step.name, err)
 		}
 		if stepNum == migrationSteps {
@@ -125,7 +129,7 @@ func (mc *MigrationCoordinator) BeginMigration(ctx context.Context, bodyID, targ
 		}
 	}
 
-	if err := mc.transitionBody(ctx, b, adapter.StateRunning); err != nil {
+	if err := mc.transitionBody(ctx, b, orchestrator.StateRunning); err != nil {
 		return migID, fmt.Errorf("transition to running after migration: %w", err)
 	}
 
@@ -157,15 +161,15 @@ func (mc *MigrationCoordinator) ResumeMigration(ctx context.Context, migrationID
 
 	bodyRec, err := mc.store.GetBody(ctx, rec.BodyID)
 	if err == nil && bodyRec.InstanceID != "" {
-		mig.newHandle = adapter.Handle(bodyRec.InstanceID)
+		mig.newHandle = orchestrator.Handle(bodyRec.InstanceID)
 	}
 
 	b := mc.bm.getOrCreateBody(rec.BodyID)
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
-	if b.State == adapter.StateError {
-		if err := mc.transitionBody(ctx, b, adapter.StateMigrating); err != nil {
+	if b.State == orchestrator.StateError {
+	if err := mc.transitionBody(ctx, b, orchestrator.StateMigrating); err != nil {
 			return fmt.Errorf("transition from error to migrating: %w", err)
 		}
 	}
@@ -175,7 +179,7 @@ func (mc *MigrationCoordinator) ResumeMigration(ctx context.Context, migrationID
 		stepNum := i + 1
 		if err := steps[i].fn(ctx, mig); err != nil {
 			_ = mc.store.UpdateMigration(ctx, migrationID, stepNum, err.Error())
-			_ = mc.transitionBody(ctx, b, adapter.StateError)
+			_ = mc.transitionBody(ctx, b, orchestrator.StateError)
 			return fmt.Errorf("migration step %d (%s) failed: %w", stepNum, steps[i].name, err)
 		}
 		if stepNum == migrationSteps {
@@ -186,13 +190,23 @@ func (mc *MigrationCoordinator) ResumeMigration(ctx context.Context, migrationID
 		}
 	}
 
-	return mc.transitionBody(ctx, b, adapter.StateRunning)
+	return mc.transitionBody(ctx, b, orchestrator.StateRunning)
 }
 
 func (mc *MigrationCoordinator) stepExport(ctx context.Context, mig *migrationContext) error {
 	b := mc.bm.getOrCreateBody(mig.bodyID)
 
-	rc, err := mc.adapter.ExportFilesystem(ctx, b.InstanceID)
+	srcOrch, err := mc.orchRegistry.Open(b.Substrate)
+	if err != nil {
+		return fmt.Errorf("open source orchestrator for %q: %w", b.Substrate, err)
+	}
+
+	exporter, ok := srcOrch.(orchestrator.Exporter)
+	if !ok {
+		return fmt.Errorf("source orchestrator %q does not support ExportFilesystem", b.Substrate)
+	}
+
+	rc, err := exporter.ExportFilesystem(ctx, orchestrator.Handle(b.InstanceID))
 	if err != nil {
 		return fmt.Errorf("export filesystem: %w", err)
 	}
@@ -245,33 +259,109 @@ func (mc *MigrationCoordinator) stepProvision(ctx context.Context, mig *migratio
 	if rec.CurrentStep >= 2 {
 		bodyRec, err := mc.store.GetBody(ctx, mig.bodyID)
 		if err == nil && bodyRec.InstanceID != "" {
-			mig.newHandle = adapter.Handle(bodyRec.InstanceID)
+		mig.newHandle = orchestrator.Handle(bodyRec.InstanceID)
 			return nil
 		}
 	}
 
 	b := mc.bm.getOrCreateBody(mig.bodyID)
-	srcMeta, err := mc.adapter.Inspect(ctx, b.InstanceID)
+
+	// Same-substrate: use source orchestrator for provisioning
+	if b.Substrate == mig.target {
+		srcOrch, err := mc.orchRegistry.Open(b.Substrate)
+		if err != nil {
+			return fmt.Errorf("open source orchestrator for %q: %w", b.Substrate, err)
+		}
+
+		inspector, ok := srcOrch.(orchestrator.Inspector)
+		if !ok {
+			return fmt.Errorf("source orchestrator %q does not support Inspect", b.Substrate)
+		}
+
+		srcMeta, err := inspector.Inspect(ctx, orchestrator.Handle(b.InstanceID))
+		if err != nil {
+			return fmt.Errorf("inspect source container: %w", err)
+		}
+
+		spec := orchestrator.BodySpec{
+			Image:   srcMeta.Image,
+			Workdir: srcMeta.Workdir,
+			Env:     srcMeta.Env,
+			Cmd:     srcMeta.Cmd,
+		}
+
+		targetHandle, err := srcOrch.ScheduleBody(ctx, spec)
+		if err != nil {
+			return fmt.Errorf("create target container: %w", err)
+		}
+
+		mig.newHandle = orchestrator.Handle(targetHandle)
+
+		if err := mc.store.UpdateBodyState(ctx, mig.bodyID, orchestrator.StateMigrating); err != nil {
+			_ = srcOrch.DestroyBody(ctx, targetHandle)
+			mig.newHandle = ""
+			return fmt.Errorf("persist target handle: %w", err)
+		}
+
+		return nil
+	}
+
+	// Cross-substrate: look up provisioner for target
+	prov, err := mc.provRegistry.Open(mig.target)
+	if err != nil {
+		available := mc.provRegistry.List()
+		return fmt.Errorf("no provisioner for substrate %q (available: %s)", mig.target, strings.Join(available, ", "))
+	}
+
+	// Provision a machine on the target substrate
+	machineSpec := provisioner.MachineSpec{
+		Image:     "mesh-agent",
+		MemoryMB:  512,
+		CPUShares: 256,
+		Region:    "default",
+	}
+	_, err = prov.CreateMachine(ctx, machineSpec, "")
+	if err != nil {
+		return fmt.Errorf("provision target machine on %q: %w", mig.target, err)
+	}
+
+	// After provisioning, schedule body on target orchestrator
+	targetOrch, err := mc.orchRegistry.Open(mig.target)
+	if err != nil {
+		return fmt.Errorf("open target orchestrator for %q: %w", mig.target, err)
+	}
+
+	srcOrch, err := mc.orchRegistry.Open(b.Substrate)
+	if err != nil {
+		return fmt.Errorf("open source orchestrator for %q: %w", b.Substrate, err)
+	}
+
+	inspector, ok := srcOrch.(orchestrator.Inspector)
+	if !ok {
+		return fmt.Errorf("source orchestrator %q does not support Inspect", b.Substrate)
+	}
+
+	srcMeta, err := inspector.Inspect(ctx, orchestrator.Handle(b.InstanceID))
 	if err != nil {
 		return fmt.Errorf("inspect source container: %w", err)
 	}
 
-	spec := adapter.BodySpec{
+	spec := orchestrator.BodySpec{
 		Image:   srcMeta.Image,
 		Workdir: srcMeta.Workdir,
 		Env:     srcMeta.Env,
 		Cmd:     srcMeta.Cmd,
 	}
 
-	targetHandle, err := mc.adapter.Create(ctx, spec)
+	targetHandle, err := targetOrch.ScheduleBody(ctx, spec)
 	if err != nil {
-		return fmt.Errorf("create target container: %w", err)
+		return fmt.Errorf("schedule body on target orchestrator %q: %w", mig.target, err)
 	}
 
-	mig.newHandle = targetHandle
+		mig.newHandle = orchestrator.Handle(targetHandle)
 
-	if err := mc.store.UpdateBodyState(ctx, mig.bodyID, adapter.StateMigrating); err != nil {
-		_ = mc.adapter.Destroy(ctx, targetHandle)
+		if err := mc.store.UpdateBodyState(ctx, mig.bodyID, orchestrator.StateMigrating); err != nil {
+		_ = targetOrch.DestroyBody(ctx, targetHandle)
 		mig.newHandle = ""
 		return fmt.Errorf("persist target handle: %w", err)
 	}
@@ -295,7 +385,8 @@ func (mc *MigrationCoordinator) stepTransfer(ctx context.Context, mig *migration
 		return fmt.Errorf("target handle not set (step 2 not completed?)")
 	}
 
-	isCrossMachine := mc.registry != nil && mc.adapter.SubstrateName() != mig.target
+	b := mc.bm.getOrCreateBody(mig.bodyID)
+	isCrossMachine := mc.registry != nil && b.Substrate != mig.target
 	if isCrossMachine {
 		return mc.transferCrossMachine(ctx, mig)
 	}
@@ -309,7 +400,17 @@ func (mc *MigrationCoordinator) transferSameMachine(ctx context.Context, mig *mi
 	}
 	defer f.Close()
 
-	if err := mc.adapter.ImportFilesystem(ctx, mig.newHandle, f, adapter.ImportOpts{Overwrite: true}); err != nil {
+	targetOrch, err := mc.orchRegistry.Open(mig.target)
+	if err != nil {
+		return fmt.Errorf("open target orchestrator for %q: %w", mig.target, err)
+	}
+
+	importer, ok := targetOrch.(orchestrator.Importer)
+	if !ok {
+		return fmt.Errorf("target orchestrator %q does not support ImportFilesystem", mig.target)
+	}
+
+	if err := importer.ImportFilesystem(ctx, orchestrator.Handle(mig.newHandle), f); err != nil {
 		return fmt.Errorf("import filesystem to target: %w", err)
 	}
 
@@ -347,7 +448,17 @@ func (mc *MigrationCoordinator) transferCrossMachine(ctx context.Context, mig *m
 		return fmt.Errorf("sha256 mismatch after cross-machine transfer: source=%s pulled=%s", mig.snapshotSHA, pulledSHA)
 	}
 
-	if err := mc.adapter.ImportFilesystem(ctx, mig.newHandle, pulled, adapter.ImportOpts{Overwrite: true}); err != nil {
+	targetOrch, err := mc.orchRegistry.Open(mig.target)
+	if err != nil {
+		return fmt.Errorf("open target orchestrator for %q: %w", mig.target, err)
+	}
+
+	importer, ok := targetOrch.(orchestrator.Importer)
+	if !ok {
+		return fmt.Errorf("target orchestrator %q does not support ImportFilesystem", mig.target)
+	}
+
+	if err := importer.ImportFilesystem(ctx, orchestrator.Handle(mig.newHandle), pulled); err != nil {
 		return fmt.Errorf("import filesystem to target: %w", err)
 	}
 
@@ -403,15 +514,25 @@ func (mc *MigrationCoordinator) stepVerify(ctx context.Context, mig *migrationCo
 		return fmt.Errorf("target handle not set (step 2 not completed?)")
 	}
 
-	status, err := mc.adapter.GetStatus(ctx, mig.newHandle)
+	targetOrch, err := mc.orchRegistry.Open(mig.target)
 	if err != nil {
-		return fmt.Errorf("health check (GetStatus) failed: %w", err)
+		return fmt.Errorf("open target orchestrator for %q: %w", mig.target, err)
 	}
-	if status.State != adapter.StateRunning && status.State != adapter.StateCreated {
+
+	status, err := targetOrch.GetBodyStatus(ctx, orchestrator.Handle(mig.newHandle))
+	if err != nil {
+		return fmt.Errorf("health check (GetBodyStatus) failed: %w", err)
+	}
+	if status.State != orchestrator.StateRunning && status.State != orchestrator.StateCreated {
 		return fmt.Errorf("target container unhealthy: state=%s", status.State)
 	}
 
-	execRes, err := mc.adapter.Exec(ctx, mig.newHandle, []string{"echo", "ok"})
+	executor, ok := targetOrch.(orchestrator.Executor)
+	if !ok {
+		return fmt.Errorf("target orchestrator %q does not support Exec", mig.target)
+	}
+
+	execRes, err := executor.Exec(ctx, orchestrator.Handle(mig.newHandle), []string{"echo", "ok"})
 	if err != nil {
 		return fmt.Errorf("health check (Exec) failed: %w", err)
 	}
@@ -419,7 +540,7 @@ func (mc *MigrationCoordinator) stepVerify(ctx context.Context, mig *migrationCo
 		return fmt.Errorf("health check command failed: exit code %d, stderr=%s", execRes.ExitCode, execRes.Stderr)
 	}
 
-	lsRes, err := mc.adapter.Exec(ctx, mig.newHandle, []string{"ls", "/"})
+	lsRes, err := executor.Exec(ctx, orchestrator.Handle(mig.newHandle), []string{"ls", "/"})
 	if err != nil {
 		return fmt.Errorf("filesystem check (ls) failed: %w", err)
 	}
@@ -444,36 +565,57 @@ func (mc *MigrationCoordinator) stepSwitch(ctx context.Context, mig *migrationCo
 
 	b := mc.bm.getOrCreateBody(mig.bodyID)
 	srcHandle := b.InstanceID
+	srcSubstrate := b.Substrate
 
 	if mig.newHandle == "" {
 		return fmt.Errorf("target handle not set (step 2 not completed?)")
 	}
 
-	status, err := mc.adapter.GetStatus(ctx, mig.newHandle)
+	targetOrch, err := mc.orchRegistry.Open(mig.target)
+	if err != nil {
+		return fmt.Errorf("open target orchestrator for %q: %w", mig.target, err)
+	}
+
+	status, err := targetOrch.GetBodyStatus(ctx, orchestrator.Handle(mig.newHandle))
 	if err != nil {
 		return fmt.Errorf("verify target health: %w", err)
 	}
-	if status.State != adapter.StateRunning && status.State != adapter.StateCreated {
+	if status.State != orchestrator.StateRunning && status.State != orchestrator.StateCreated {
 		return fmt.Errorf("target container unhealthy: state=%s", status.State)
 	}
 
 	if srcHandle != "" {
-		if err := mc.adapter.Stop(ctx, srcHandle, adapter.StopOpts{Signal: "SIGTERM", Timeout: 30 * time.Second}); err != nil {
+		srcOrch, err := mc.orchRegistry.Open(srcSubstrate)
+		if err != nil {
+			return fmt.Errorf("open source orchestrator for %q: %w", srcSubstrate, err)
+		}
+		if err := srcOrch.StopBody(ctx, orchestrator.Handle(srcHandle)); err != nil {
 			return fmt.Errorf("stop source container: %w", err)
 		}
 	}
 
 	if err := mc.store.UpdateBodyInstanceID(ctx, mig.bodyID, string(mig.newHandle)); err != nil {
 		if srcHandle != "" {
-			_ = mc.adapter.Start(ctx, srcHandle)
+			srcOrch, _ := mc.orchRegistry.Open(srcSubstrate)
+			if srcOrch != nil {
+				_ = srcOrch.StartBody(ctx, orchestrator.Handle(srcHandle))
+			}
 		}
 		return fmt.Errorf("update body instance_id: %w", err)
 	}
 
 	b.InstanceID = mig.newHandle
+	b.Substrate = mig.target
+
+	if err := mc.store.UpdateBodySubstrate(ctx, mig.bodyID, mig.target); err != nil {
+		return fmt.Errorf("update body substrate: %w", err)
+	}
 
 	if srcHandle != "" {
-		_ = mc.adapter.Destroy(ctx, srcHandle)
+		srcOrch, _ := mc.orchRegistry.Open(srcSubstrate)
+		if srcOrch != nil {
+			_ = srcOrch.DestroyBody(ctx, orchestrator.Handle(srcHandle))
+		}
 	}
 
 	return nil
@@ -503,7 +645,7 @@ func (mc *MigrationCoordinator) stepCleanup(ctx context.Context, mig *migrationC
 	return nil
 }
 
-func (mc *MigrationCoordinator) transitionBody(ctx context.Context, b *Body, target adapter.BodyState) error {
+func (mc *MigrationCoordinator) transitionBody(ctx context.Context, b *Body, target orchestrator.BodyState) error {
 	if err := b.Transition(target); err != nil {
 		return err
 	}

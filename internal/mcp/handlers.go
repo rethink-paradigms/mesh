@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"github.com/klauspost/compress/zstd"
-	"github.com/rethink-paradigms/mesh/internal/adapter"
+	"github.com/rethink-paradigms/mesh/internal/orchestrator"
 	"github.com/rethink-paradigms/mesh/internal/plugin"
 	"github.com/rethink-paradigms/mesh/internal/restore"
 	"github.com/rethink-paradigms/mesh/internal/store"
@@ -41,7 +41,7 @@ func (s *Server) registerTools() {
 	s.RegisterTool("create_body", s.handleCreateBody, ToolDefinition{
 		Name:        "create_body",
 		Description: "Create and start a new body on the substrate.",
-		InputSchema: json.RawMessage(`{"type":"object","properties":{"name":{"type":"string"},"image":{"type":"string"},"workdir":{"type":"string"},"env":{"type":"object","additionalProperties":{"type":"string"}},"cmd":{"type":"array","items":{"type":"string"}},"memory_mb":{"type":"integer"},"cpu_shares":{"type":"integer"}},"required":["name","image"]}`),
+		InputSchema: json.RawMessage(`{"type":"object","properties":{"name":{"type":"string"},"image":{"type":"string"},"substrate":{"type":"string","description":"Target substrate name. Optional when exactly one orchestrator is registered."},"workdir":{"type":"string"},"env":{"type":"object","additionalProperties":{"type":"string"}},"cmd":{"type":"array","items":{"type":"string"}},"memory_mb":{"type":"integer"},"cpu_shares":{"type":"integer"}},"required":["name","image"]}`),
 	})
 	s.RegisterTool("delete_body", s.handleDeleteBody, ToolDefinition{
 		Name:        "delete_body",
@@ -152,6 +152,7 @@ func (s *Server) handleCreateBody(ctx context.Context, params json.RawMessage) (
 	var p struct {
 		Name      string            `json:"name"`
 		Image     string            `json:"image"`
+		Substrate string            `json:"substrate,omitempty"`
 		Workdir   string            `json:"workdir,omitempty"`
 		Env       map[string]string `json:"env,omitempty"`
 		Cmd       []string          `json:"cmd,omitempty"`
@@ -165,7 +166,25 @@ func (s *Server) handleCreateBody(ctx context.Context, params json.RawMessage) (
 		return nil, &RPCError{Code: -32602, Message: "name and image are required"}
 	}
 
-	spec := adapter.BodySpec{
+	if s.orchRegistry != nil {
+		names := s.orchRegistry.List()
+		if p.Substrate == "" {
+			switch len(names) {
+			case 0:
+				return nil, &RPCError{Code: -32603, Message: "no substrate available: no orchestrators registered"}
+			case 1:
+				p.Substrate = names[0]
+			default:
+				return nil, &RPCError{Code: -32602, Message: fmt.Sprintf("substrate required when multiple orchestrators registered; available: %v", names)}
+			}
+		} else {
+			if _, err := s.orchRegistry.Open(p.Substrate); err != nil {
+				return nil, &RPCError{Code: -32602, Message: fmt.Sprintf("unknown substrate %q: %v", p.Substrate, err)}
+			}
+		}
+	}
+
+	spec := orchestrator.BodySpec{
 		Image:     p.Image,
 		Workdir:   p.Workdir,
 		Env:       p.Env,
@@ -180,10 +199,11 @@ func (s *Server) handleCreateBody(ctx context.Context, params json.RawMessage) (
 	}
 
 	return map[string]interface{}{
-		"id":     b.ID,
-		"name":   b.Name,
-		"state":  string(b.State),
-		"handle": string(b.InstanceID),
+		"id":        b.ID,
+		"name":      b.Name,
+		"state":     string(b.State),
+		"handle":    string(b.InstanceID),
+		"substrate": p.Substrate,
 	}, nil
 }
 
@@ -243,7 +263,7 @@ func (s *Server) handleExecCommand(ctx context.Context, params json.RawMessage) 
 		return nil, &RPCError{Code: -32603, Message: fmt.Sprintf("body not found: %s", p.BodyID)}
 	}
 
-	if adapter.BodyState(body.State) != adapter.StateRunning {
+	if orchestrator.BodyState(body.State) != orchestrator.StateRunning {
 		return nil, &RPCError{Code: -32603, Message: fmt.Sprintf("body %s is not running (state: %s)", p.BodyID, body.State)}
 	}
 
@@ -285,7 +305,7 @@ func (s *Server) handleCreateSnapshot(ctx context.Context, params json.RawMessag
 	if err != nil {
 		return nil, &RPCError{Code: -32603, Message: fmt.Sprintf("body not found: %s", p.BodyID)}
 	}
-	if body.State != adapter.StateRunning {
+	if body.State != orchestrator.StateRunning {
 		return nil, &RPCError{Code: -32603, Message: fmt.Sprintf("body not running: %s (state: %s)", p.BodyID, body.State)}
 	}
 
@@ -345,11 +365,11 @@ func (s *Server) handleCreateSnapshot(ctx context.Context, params json.RawMessag
 	}
 
 	return map[string]interface{}{
-		"id":          snapID,
-		"body_id":     p.BodyID,
-		"created_at":  time.Now().UTC().Format(time.RFC3339),
-		"size_bytes":  stat.Size(),
-		"sha256":      digest,
+		"id":         snapID,
+		"body_id":    p.BodyID,
+		"created_at": time.Now().UTC().Format(time.RFC3339),
+		"size_bytes": stat.Size(),
+		"sha256":     digest,
 	}, nil
 }
 
@@ -390,7 +410,7 @@ func (s *Server) handleRestoreBody(ctx context.Context, params json.RawMessage) 
 		return nil, &RPCError{Code: -32603, Message: "body manager not available"}
 	}
 	var p struct {
-		SnapshotID     string `json:"snapshot_id"`
+		SnapshotID      string `json:"snapshot_id"`
 		TargetSubstrate string `json:"target_substrate,omitempty"`
 	}
 	if err := json.Unmarshal(params, &p); err != nil || p.SnapshotID == "" {
@@ -413,10 +433,10 @@ func (s *Server) handleRestoreBody(ctx context.Context, params json.RawMessage) 
 	}
 
 	return map[string]interface{}{
-		"restored":       true,
-		"snapshot_id":    p.SnapshotID,
-		"body_id":        snap.BodyID,
-		"target_dir":     targetDir,
+		"restored":         true,
+		"snapshot_id":      p.SnapshotID,
+		"body_id":          snap.BodyID,
+		"target_dir":       targetDir,
 		"target_substrate": p.TargetSubstrate,
 	}, nil
 }
@@ -462,7 +482,7 @@ func (s *Server) handleStopBody(ctx context.Context, params json.RawMessage) (in
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 
-	if err := s.bodyMgr.Stop(ctx, p.BodyID, adapter.StopOpts{Timeout: 30 * time.Second}); err != nil {
+	if err := s.bodyMgr.Stop(ctx, p.BodyID, orchestrator.StopOpts{Timeout: 30 * time.Second}); err != nil {
 		return nil, &RPCError{Code: -32603, Message: err.Error()}
 	}
 
@@ -495,7 +515,7 @@ func (s *Server) handleGetBodyLogs(ctx context.Context, params json.RawMessage) 
 		return nil, &RPCError{Code: -32603, Message: fmt.Sprintf("body not found: %s", p.BodyID)}
 	}
 
-	if adapter.BodyState(body.State) != adapter.StateRunning {
+	if orchestrator.BodyState(body.State) != orchestrator.StateRunning {
 		return nil, &RPCError{Code: -32603, Message: fmt.Sprintf("body %s is not running (state: %s)", p.BodyID, body.State)}
 	}
 
@@ -586,13 +606,13 @@ func (s *Server) handlePluginHealth(ctx context.Context, params json.RawMessage)
 	}
 
 	return map[string]interface{}{
-		"name":          rec.Meta.Name,
-		"version":       rec.Meta.Version,
-		"state":         string(rec.GetState()),
-		"healthy":       rec.GetState() == plugin.StateHealthy,
-		"fail_count":    rec.GetFailCount(),
-		"retry_count":   rec.GetRetryCount(),
-		"description":   rec.Meta.Description,
-		"author":        rec.Meta.Author,
+		"name":        rec.Meta.Name,
+		"version":     rec.Meta.Version,
+		"state":       string(rec.GetState()),
+		"healthy":     rec.GetState() == plugin.StateHealthy,
+		"fail_count":  rec.GetFailCount(),
+		"retry_count": rec.GetRetryCount(),
+		"description": rec.Meta.Description,
+		"author":      rec.Meta.Author,
 	}, nil
 }

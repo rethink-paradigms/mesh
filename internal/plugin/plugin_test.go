@@ -2,105 +2,54 @@ package plugin
 
 import (
 	"context"
-	"os/exec"
-	"path/filepath"
-	"runtime"
 	"testing"
 
-	"github.com/hashicorp/go-plugin"
-	"github.com/rethink-paradigms/mesh/internal/adapter"
+	"github.com/rethink-paradigms/mesh/internal/orchestrator"
 )
 
-func buildReferencePlugin(t *testing.T) string {
-	t.Helper()
-	tmpDir := t.TempDir()
-	binPath := filepath.Join(tmpDir, "mesh-plugin-reference")
-	if runtime.GOOS == "windows" {
-		binPath += ".exe"
-	}
+type mockPlugin struct{}
 
-	_, thisFile, _, _ := runtime.Caller(0)
-	refDir := filepath.Join(filepath.Dir(thisFile), "reference")
-
-	cmd := exec.Command("go", "build", "-o", binPath, ".")
-	cmd.Dir = refDir
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		t.Fatalf("failed to build reference plugin: %v\n%s", err, out)
-	}
-	return binPath
+func (m *mockPlugin) PluginInfo(ctx context.Context) (PluginMeta, error) {
+	return PluginMeta{Name: "mock", Version: "0.0.1"}, nil
 }
 
-func TestReferencePlugin(t *testing.T) {
-	binPath := buildReferencePlugin(t)
+func (m *mockPlugin) GetOrchestrator(ctx context.Context) (orchestrator.OrchestratorAdapter, error) {
+	return &mockOrchestrator{}, nil
+}
 
-	client := plugin.NewClient(&plugin.ClientConfig{
-		HandshakeConfig: Handshake,
-		Plugins:         PluginMap,
-		Cmd:             exec.Command(binPath),
-		AllowedProtocols: []plugin.Protocol{
-			plugin.ProtocolGRPC,
-		},
-	})
-	defer client.Kill()
+type mockOrchestrator struct{}
 
-	rpcClient, err := client.Client()
-	if err != nil {
-		t.Fatalf("failed to create plugin client: %v", err)
-	}
+func (o *mockOrchestrator) ScheduleBody(ctx context.Context, spec orchestrator.BodySpec) (orchestrator.Handle, error) {
+	return orchestrator.Handle("mock-" + spec.Image), nil
+}
+func (o *mockOrchestrator) StartBody(ctx context.Context, id orchestrator.Handle) error   { return nil }
+func (o *mockOrchestrator) StopBody(ctx context.Context, id orchestrator.Handle) error    { return nil }
+func (o *mockOrchestrator) DestroyBody(ctx context.Context, id orchestrator.Handle) error { return nil }
+func (o *mockOrchestrator) GetBodyStatus(ctx context.Context, id orchestrator.Handle) (orchestrator.BodyStatus, error) {
+	return orchestrator.BodyStatus{State: orchestrator.StateRunning}, nil
+}
+func (o *mockOrchestrator) Name() string                       { return "mock" }
+func (o *mockOrchestrator) IsHealthy(ctx context.Context) bool { return true }
 
-	raw, err := rpcClient.Dispense(PluginName)
-	if err != nil {
-		t.Fatalf("failed to dispense plugin: %v", err)
-	}
-
-	meshPlugin := raw.(MeshPlugin)
+func TestPluginGetOrchestrator(t *testing.T) {
+	mp := &mockPlugin{}
 	ctx := context.Background()
 
-	t.Run("PluginInfo", func(t *testing.T) {
-		meta, err := meshPlugin.PluginInfo(ctx)
-		if err != nil {
-			t.Fatalf("PluginInfo failed: %v", err)
-		}
-		if meta.Name != "reference" {
-			t.Errorf("expected name 'reference', got %q", meta.Name)
-		}
-		if meta.Version != "1.0.0" {
-			t.Errorf("expected version '1.0.0', got %q", meta.Version)
-		}
-		if meta.Description == "" {
-			t.Error("expected non-empty description")
-		}
-	})
+	orch, err := mp.GetOrchestrator(ctx)
+	if err != nil {
+		t.Fatalf("GetOrchestrator failed: %v", err)
+	}
+	if orch == nil {
+		t.Fatal("expected orchestrator adapter, got nil")
+	}
+	if orch.Name() != "mock" {
+		t.Errorf("expected name 'mock', got %q", orch.Name())
+	}
+	if !orch.IsHealthy(ctx) {
+		t.Error("expected orchestrator to be healthy")
+	}
+}
 
-	t.Run("GetAdapter", func(t *testing.T) {
-		adapt, err := meshPlugin.GetAdapter(ctx)
-		if err != nil {
-			t.Fatalf("GetAdapter failed: %v", err)
-		}
-		if adapt == nil {
-			t.Fatal("expected adapter, got nil")
-		}
-		if adapt.SubstrateName() != "local" {
-			t.Errorf("expected substrate name 'local', got %q", adapt.SubstrateName())
-		}
-		if !adapt.IsHealthy(ctx) {
-			t.Error("expected adapter to be healthy")
-		}
-		caps := adapt.Capabilities()
-		if caps.ExportFilesystem || caps.ImportFilesystem || caps.Inspect {
-			t.Error("expected no capabilities for reference adapter")
-		}
-	})
-
-	t.Run("AdapterCreate", func(t *testing.T) {
-		adapt, _ := meshPlugin.GetAdapter(ctx)
-		handle, err := adapt.Create(ctx, adapter.BodySpec{Image: "test-img"})
-		if err == nil {
-			t.Fatal("expected Create to fail for proxy adapter")
-		}
-		if handle != "" {
-			t.Error("expected empty handle on error")
-		}
-	})
+func TestPluginInterfaceCompliance(t *testing.T) {
+	var _ MeshPlugin = (*mockPlugin)(nil)
 }

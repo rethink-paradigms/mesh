@@ -20,9 +20,9 @@ import (
 	"time"
 
 	"github.com/klauspost/compress/zstd"
-	"github.com/rethink-paradigms/mesh/internal/adapter"
 	configtoml "github.com/rethink-paradigms/mesh/internal/config-toml"
 	"github.com/rethink-paradigms/mesh/internal/manifest"
+	"github.com/rethink-paradigms/mesh/internal/orchestrator"
 	"github.com/rethink-paradigms/mesh/internal/store"
 )
 
@@ -448,7 +448,7 @@ func RunWithOpts(ctx context.Context, cfg *configtoml.Config, agentName string, 
 	}
 
 	if _, err := options.store.GetBody(ctx, bodyID); err != nil {
-		if err := options.store.CreateBody(ctx, bodyID, agentName, adapter.StateStopped, "", "local", ""); err != nil {
+		if err := options.store.CreateBody(ctx, bodyID, agentName, orchestrator.StateStopped, "", "local", ""); err != nil {
 			return fmt.Errorf("snapshot: ensure body in store: %w", err)
 		}
 	}

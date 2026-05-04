@@ -8,7 +8,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/rethink-paradigms/mesh/internal/adapter"
+	"github.com/rethink-paradigms/mesh/internal/orchestrator"
 	_ "modernc.org/sqlite"
 )
 
@@ -16,7 +16,7 @@ import (
 type BodyRecord struct {
 	ID         string
 	Name       string
-	State      adapter.BodyState
+	State      orchestrator.BodyState
 	SpecJSON   string
 	Substrate  string
 	InstanceID string
@@ -201,7 +201,7 @@ func now() string {
 // --- Body CRUD ---
 
 // CreateBody inserts a new body record.
-func (s *Store) CreateBody(ctx context.Context, id, name string, state adapter.BodyState, specJSON, substrate, instanceID string) error {
+func (s *Store) CreateBody(ctx context.Context, id, name string, state orchestrator.BodyState, specJSON, substrate, instanceID string) error {
 	unlock := s.bodyLock(id)
 	defer unlock.Unlock()
 
@@ -276,7 +276,7 @@ func (s *Store) ListBodies(ctx context.Context) ([]*BodyRecord, error) {
 }
 
 // UpdateBodyState updates the state and updated_at timestamp of a body.
-func (s *Store) UpdateBodyState(ctx context.Context, id string, state adapter.BodyState) error {
+func (s *Store) UpdateBodyState(ctx context.Context, id string, state orchestrator.BodyState) error {
 	unlock := s.bodyLock(id)
 	defer unlock.Unlock()
 
@@ -305,6 +305,25 @@ func (s *Store) UpdateBodyInstanceID(ctx context.Context, id, instanceID string)
 	)
 	if err != nil {
 		return fmt.Errorf("update body instance_id %s: %w", id, err)
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		return fmt.Errorf("body %s: not found", id)
+	}
+	return nil
+}
+
+// UpdateBodySubstrate updates the substrate and updated_at timestamp of a body.
+func (s *Store) UpdateBodySubstrate(ctx context.Context, id, substrate string) error {
+	unlock := s.bodyLock(id)
+	defer unlock.Unlock()
+
+	res, err := s.db.ExecContext(ctx,
+		`UPDATE bodies SET substrate = ?, updated_at = ? WHERE id = ?`,
+		substrate, now(), id,
+	)
+	if err != nil {
+		return fmt.Errorf("update body substrate %s: %w", id, err)
 	}
 	n, _ := res.RowsAffected()
 	if n == 0 {

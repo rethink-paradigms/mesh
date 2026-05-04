@@ -11,6 +11,7 @@ import (
 	"sync"
 
 	"github.com/rethink-paradigms/mesh/internal/body"
+	"github.com/rethink-paradigms/mesh/internal/orchestrator"
 	"github.com/rethink-paradigms/mesh/internal/plugin"
 	"github.com/rethink-paradigms/mesh/internal/store"
 )
@@ -53,15 +54,16 @@ func (e *RPCError) Error() string {
 
 // Server is an MCP server that reads JSON-RPC requests from an io.Reader and writes responses to an io.Writer.
 type Server struct {
-	mu      sync.Mutex
-	running bool
-	cancel  context.CancelFunc
-	store   *store.Store
-	tools   map[string]ToolHandler
-	defs    map[string]ToolDefinition
-	bodyMgr       *body.BodyManager
+	mu           sync.Mutex
+	running      bool
+	cancel       context.CancelFunc
+	store        *store.Store
+	tools        map[string]ToolHandler
+	defs         map[string]ToolDefinition
+	bodyMgr      *body.BodyManager
 	migrator     *body.MigrationCoordinator
 	pluginMgr    *plugin.PluginManager
+	orchRegistry *orchestrator.Registry
 
 	reader io.Reader
 	writer io.Writer
@@ -80,6 +82,11 @@ func (s *Server) SetMigrator(m *body.MigrationCoordinator) {
 // SetPluginManager sets the plugin manager for plugin operations.
 func (s *Server) SetPluginManager(m *plugin.PluginManager) {
 	s.pluginMgr = m
+}
+
+// SetOrchestratorRegistry sets the orchestrator registry for substrate routing.
+func (s *Server) SetOrchestratorRegistry(r *orchestrator.Registry) {
+	s.orchRegistry = r
 }
 
 // New creates a new MCP server backed by the given store.

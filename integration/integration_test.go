@@ -18,13 +18,14 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rethink-paradigms/mesh/internal/adapter"
 	"github.com/rethink-paradigms/mesh/internal/body"
 	"github.com/rethink-paradigms/mesh/internal/config"
 	"github.com/rethink-paradigms/mesh/internal/daemon"
 	"github.com/rethink-paradigms/mesh/internal/manifest"
 	"github.com/rethink-paradigms/mesh/internal/mcp"
+	"github.com/rethink-paradigms/mesh/internal/orchestrator"
 	"github.com/rethink-paradigms/mesh/internal/plugin"
+	"github.com/rethink-paradigms/mesh/internal/provisioner"
 	"github.com/rethink-paradigms/mesh/internal/store"
 	"gopkg.in/yaml.v3"
 )
@@ -61,10 +62,6 @@ func writeTestConfig(t *testing.T, tmpDir string) *config.Config {
 		},
 		Store: config.StoreConfig{
 			Path: filepath.Join(tmpDir, "state.db"),
-		},
-		Docker: config.DockerConfig{
-			Host:       "unix:///var/run/docker.sock",
-			APIVersion: "1.48",
 		},
 		Plugin: config.PluginConfig{
 			Dir:     pluginDir,
@@ -168,7 +165,6 @@ func rawJSON(t *testing.T, v interface{}) json.RawMessage {
 func TestDaemonFullPipeline(t *testing.T) {
 	tmpDir := t.TempDir()
 
-	// Step 1: Write config and load it back
 	cfg := writeTestConfig(t, tmpDir)
 	cfgPath := filepath.Join(tmpDir, "config.yaml")
 
@@ -180,29 +176,25 @@ func TestDaemonFullPipeline(t *testing.T) {
 		t.Errorf("log level = %q, want debug", loadedCfg.Daemon.LogLevel)
 	}
 
-	// Step 2: Open store
 	s, err := store.Open(cfg.Store.Path)
 	if err != nil {
 		t.Fatalf("open store: %v", err)
 	}
 	defer s.Close()
 
-	// Step 3: Create mock adapter + body manager
-	mockAdapter := &mockSubstrateAdapter{}
+	mockAdapter := &mockOrchestratorAdapter{}
 	bm := body.NewBodyManager(s, mockAdapter)
 
-	// Step 4: Create a body via BodyManager
 	ctx := context.Background()
-	spec := adapter.BodySpec{Image: "alpine:latest", Cmd: []string{"sleep", "3600"}}
+	spec := orchestrator.BodySpec{Image: "alpine:latest", Cmd: []string{"sleep", "3600"}}
 	b, err := bm.Create(ctx, "test-body-1", spec)
 	if err != nil {
 		t.Fatalf("create body: %v", err)
 	}
-	if b.State != adapter.StateRunning {
+	if b.State != orchestrator.StateRunning {
 		t.Fatalf("state = %s, want Running", b.State)
 	}
 
-	// Step 5: Verify body persisted in store
 	record, err := s.GetBody(ctx, b.ID)
 	if err != nil {
 		t.Fatalf("get body from store: %v", err)
@@ -210,17 +202,17 @@ func TestDaemonFullPipeline(t *testing.T) {
 	if record.Name != "test-body-1" {
 		t.Errorf("name = %q, want test-body-1", record.Name)
 	}
-	if record.State != adapter.StateRunning {
+	if record.State != orchestrator.StateRunning {
 		t.Errorf("store state = %s, want Running", record.State)
 	}
 
-	// Step 6: Start MCP server with pipe IO
 	h := newHarness(t, s)
 	h.srv.SetBodyManager(bm)
-	migrator := body.NewMigrationCoordinator(s, mockAdapter, bm, nil)
+	orchReg := orchestrator.NewRegistry()
+	_ = orchReg.Register(mockAdapter.Name(), mockAdapter)
+	migrator := body.NewMigrationCoordinator(s, bm, orchReg, nil, nil)
 	h.srv.SetMigrator(migrator)
 
-	// Step 7: List bodies via MCP
 	h.send(t, mcp.Request{
 		JSONRPC: "2.0",
 		ID:      1,
@@ -242,7 +234,6 @@ func TestDaemonFullPipeline(t *testing.T) {
 		t.Fatalf("len(bodies) = %d, want 1", len(bodies))
 	}
 
-	// Step 8: Create another body via MCP
 	h.send(t, mcp.Request{
 		JSONRPC: "2.0",
 		ID:      2,
@@ -267,7 +258,6 @@ func TestDaemonFullPipeline(t *testing.T) {
 		t.Fatalf("created body state = %v, want Running", createResp["state"])
 	}
 
-	// Step 9: List again — should have 2 bodies
 	h.send(t, mcp.Request{
 		JSONRPC: "2.0",
 		ID:      3,
@@ -285,7 +275,6 @@ func TestDaemonFullPipeline(t *testing.T) {
 		t.Fatalf("len(bodies) = %d, want 2", len(bodies))
 	}
 
-	// Step 10: Graceful MCP shutdown
 	h.cancel()
 	h.close()
 	select {
@@ -297,7 +286,6 @@ func TestDaemonFullPipeline(t *testing.T) {
 		t.Fatal("MCP server did not shut down")
 	}
 
-	// Step 11: Daemon stop is idempotent
 	stopCtx, stopCancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer stopCancel()
 	if err := h.srv.Stop(stopCtx); err != nil {
@@ -320,10 +308,6 @@ func TestConfigLoadRoundTrip(t *testing.T) {
 		},
 		Store: config.StoreConfig{
 			Path: filepath.Join(tmpDir, "state.db"),
-		},
-		Docker: config.DockerConfig{
-			Host:       "unix:///var/run/docker.sock",
-			APIVersion: "1.45",
 		},
 		Bodies: []config.BodyConfig{
 			{Name: "agent-1", Image: "alpine:latest", Cmd: []string{"sleep", "inf"}, MemoryMB: 512},
@@ -355,9 +339,6 @@ func TestConfigLoadRoundTrip(t *testing.T) {
 	if loaded.Daemon.LogLevel != "debug" {
 		t.Errorf("log level = %q, want debug", loaded.Daemon.LogLevel)
 	}
-	if loaded.Docker.APIVersion != "1.45" {
-		t.Errorf("api version = %q, want 1.45", loaded.Docker.APIVersion)
-	}
 	if len(loaded.Bodies) != 1 {
 		t.Fatalf("bodies = %d, want 1", len(loaded.Bodies))
 	}
@@ -379,7 +360,7 @@ func TestStoreReopen(t *testing.T) {
 		t.Fatalf("open s1: %v", err)
 	}
 
-	if err := s1.CreateBody(ctx, "body-1", "my-body", adapter.StateRunning, `{"image":"alpine"}`, "local", "inst-1"); err != nil {
+	if err := s1.CreateBody(ctx, "body-1", "my-body", orchestrator.StateRunning, `{"image":"alpine"}`, "local", "inst-1"); err != nil {
 		t.Fatalf("create body: %v", err)
 	}
 
@@ -398,7 +379,7 @@ func TestStoreReopen(t *testing.T) {
 	if rec.Name != "my-body" {
 		t.Errorf("name = %q, want my-body", rec.Name)
 	}
-	if rec.State != adapter.StateRunning {
+	if rec.State != orchestrator.StateRunning {
 		t.Errorf("state = %s, want Running", rec.State)
 	}
 }
@@ -413,7 +394,7 @@ func TestMigrationStatePersistence(t *testing.T) {
 		t.Fatalf("open s1: %v", err)
 	}
 
-	if err := s1.CreateBody(ctx, "b1", "mig-body", adapter.StateRunning, `{}`, "local", "inst-1"); err != nil {
+	if err := s1.CreateBody(ctx, "b1", "mig-body", orchestrator.StateRunning, `{}`, "local", "inst-1"); err != nil {
 		t.Fatalf("create body: %v", err)
 	}
 	if err := s1.CreateMigration(ctx, "mig-1", "b1", "fleet", "snap-1"); err != nil {
@@ -452,7 +433,7 @@ func TestMigrationStatePersistence(t *testing.T) {
 	if err != nil {
 		t.Fatalf("get body after reopen: %v", err)
 	}
-	if bodyRec.State != adapter.StateRunning {
+	if bodyRec.State != orchestrator.StateRunning {
 		t.Errorf("body state = %s, want Running", bodyRec.State)
 	}
 }
@@ -527,9 +508,6 @@ func TestDaemonWithMCPEndToEnd(t *testing.T) {
 		Store: config.StoreConfig{
 			Path: filepath.Join(tmpDir, "state.db"),
 		},
-		Docker: config.DockerConfig{
-			Host: "unix:///var/run/docker.sock",
-		},
 	}
 
 	d, err := daemon.New(cfg)
@@ -581,15 +559,15 @@ func TestDaemonWithMCPEndToEnd(t *testing.T) {
 
 func TestBodyLifecycleViaManager(t *testing.T) {
 	s := tempStore(t)
-	mockAdapter := &mockSubstrateAdapter{}
+	mockAdapter := &mockOrchestratorAdapter{}
 	bm := body.NewBodyManager(s, mockAdapter)
 	ctx := context.Background()
 
-	b, err := bm.Create(ctx, "lifecycle-body", adapter.BodySpec{Image: "alpine:latest"})
+	b, err := bm.Create(ctx, "lifecycle-body", orchestrator.BodySpec{Image: "alpine:latest"})
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}
-	if b.State != adapter.StateRunning {
+	if b.State != orchestrator.StateRunning {
 		t.Fatalf("state after create = %s, want Running", b.State)
 	}
 
@@ -597,11 +575,11 @@ func TestBodyLifecycleViaManager(t *testing.T) {
 	if err != nil {
 		t.Fatalf("get status: %v", err)
 	}
-	if status.State != adapter.StateRunning {
+	if status.State != orchestrator.StateRunning {
 		t.Errorf("status state = %s, want Running", status.State)
 	}
 
-	if err := bm.Stop(ctx, b.ID, adapter.StopOpts{}); err != nil {
+	if err := bm.Stop(ctx, b.ID, orchestrator.StopOpts{}); err != nil {
 		t.Fatalf("stop: %v", err)
 	}
 
@@ -628,7 +606,7 @@ func TestSnapshotCRUDIntegration(t *testing.T) {
 	s := tempStore(t)
 	ctx := context.Background()
 
-	if err := s.CreateBody(ctx, "b1", "snap-body", adapter.StateRunning, `{}`, "local", "inst-1"); err != nil {
+	if err := s.CreateBody(ctx, "b1", "snap-body", orchestrator.StateRunning, `{}`, "local", "inst-1"); err != nil {
 		t.Fatalf("create body: %v", err)
 	}
 
@@ -665,11 +643,11 @@ func TestSnapshotCRUDIntegration(t *testing.T) {
 
 func TestExportFilesystemIntegration(t *testing.T) {
 	s := tempStore(t)
-	mockAdapter := &mockSubstrateAdapter{}
+	mockAdapter := &mockOrchestratorAdapter{}
 	bm := body.NewBodyManager(s, mockAdapter)
 	ctx := context.Background()
 
-	b, err := bm.Create(ctx, "export-body", adapter.BodySpec{Image: "alpine:latest"})
+	b, err := bm.Create(ctx, "export-body", orchestrator.BodySpec{Image: "alpine:latest"})
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}
@@ -688,28 +666,34 @@ func TestExportFilesystemIntegration(t *testing.T) {
 		t.Error("expected non-empty export data")
 	}
 
-	caps := mockAdapter.Capabilities()
-	if !caps.ExportFilesystem {
+	_, hasExport := any(mockAdapter).(orchestrator.Exporter)
+	if !hasExport {
 		t.Error("adapter should support ExportFilesystem")
 	}
-	if !caps.ImportFilesystem {
+	_, hasImport := any(mockAdapter).(orchestrator.Importer)
+	if !hasImport {
 		t.Error("adapter should support ImportFilesystem")
 	}
 }
 
 func TestCrossMachineMigrationViaRegistry(t *testing.T) {
 	s := tempStore(t)
-	mockAdapter := &mockSubstrateAdapter{substrate: "docker"}
+	mockAdapter := &mockOrchestratorAdapter{substrate: "docker"}
 	bm := body.NewBodyManager(s, mockAdapter)
 	ctx := context.Background()
 
-	b, err := bm.Create(ctx, "cross-mig-body", adapter.BodySpec{Image: "alpine:latest"})
+	b, err := bm.Create(ctx, "cross-mig-body", orchestrator.BodySpec{Image: "alpine:latest"})
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}
 
 	reg := &mockRegistry{}
-	mc := body.NewMigrationCoordinator(s, mockAdapter, bm, reg)
+	orchReg := orchestrator.NewRegistry()
+	_ = orchReg.Register("local", mockAdapter)
+	_ = orchReg.Register("fleet", mockAdapter)
+	provReg := provisioner.NewRegistry()
+	_ = provReg.Register("fleet", &mockProvisionerAdapter{name: "fleet"})
+	mc := body.NewMigrationCoordinator(s, bm, orchReg, provReg, reg)
 	migID, err := mc.BeginMigration(ctx, b.ID, "fleet")
 	if err != nil {
 		t.Fatalf("BeginMigration: %v", err)
@@ -731,7 +715,7 @@ func TestCrossMachineMigrationViaRegistry(t *testing.T) {
 	if err != nil {
 		t.Fatalf("get body after migration: %v", err)
 	}
-	if bodyRec.State != adapter.StateRunning {
+	if bodyRec.State != orchestrator.StateRunning {
 		t.Errorf("body state = %s, want Running", bodyRec.State)
 	}
 
@@ -742,18 +726,20 @@ func TestCrossMachineMigrationViaRegistry(t *testing.T) {
 
 func TestSameMachineMigrationSkipsRegistry(t *testing.T) {
 	s := tempStore(t)
-	mockAdapter := &mockSubstrateAdapter{substrate: "docker"}
+	mockAdapter := &mockOrchestratorAdapter{substrate: "docker"}
 	bm := body.NewBodyManager(s, mockAdapter)
 	ctx := context.Background()
 
-	b, err := bm.Create(ctx, "same-mig-body", adapter.BodySpec{Image: "alpine:latest"})
+	b, err := bm.Create(ctx, "same-mig-body", orchestrator.BodySpec{Image: "alpine:latest"})
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}
 
 	reg := &mockRegistry{}
-	mc := body.NewMigrationCoordinator(s, mockAdapter, bm, reg)
-	_, err = mc.BeginMigration(ctx, b.ID, "docker")
+	orchReg := orchestrator.NewRegistry()
+	_ = orchReg.Register("local", mockAdapter)
+	mc := body.NewMigrationCoordinator(s, bm, orchReg, nil, reg)
+	_, err = mc.BeginMigration(ctx, b.ID, "local")
 	if err != nil {
 		t.Fatalf("BeginMigration: %v", err)
 	}
@@ -775,7 +761,6 @@ func TestPluginManagement(t *testing.T) {
 	pluginDir := filepath.Join(tmpDir, "plugins")
 	os.MkdirAll(pluginDir, 0755)
 
-	// Build reference plugin binary
 	pluginBin := filepath.Join(pluginDir, "reference-plugin")
 	buildCmd := exec.Command("go", "build", "-o", pluginBin, "./internal/plugin/reference/")
 	buildCmd.Dir = "/Users/samanvayayagsen/project/rethink-paradigms/mesh-impl"
@@ -783,7 +768,6 @@ func TestPluginManagement(t *testing.T) {
 		t.Skipf("plugin build failed (skipping): %v\n%s", err, out)
 	}
 
-	// Verify binary is executable
 	info, err := os.Stat(pluginBin)
 	if err != nil {
 		t.Fatalf("stat plugin binary: %v", err)
@@ -792,10 +776,8 @@ func TestPluginManagement(t *testing.T) {
 		t.Fatal("plugin binary is not executable")
 	}
 
-	// Create plugin manager with reference plugin enabled
 	pm := plugin.NewPluginManager(pluginDir, []string{"reference-plugin"})
 
-	// Scan should find the plugin
 	found, err := pm.Scan()
 	if err != nil {
 		t.Fatalf("scan: %v", err)
@@ -807,12 +789,10 @@ func TestPluginManagement(t *testing.T) {
 		t.Fatal("reference-plugin not found in scan")
 	}
 
-	// Load the plugin
 	if err := pm.Load("reference-plugin", pluginBin); err != nil {
 		t.Fatalf("load plugin: %v", err)
 	}
 
-	// Verify plugin state
 	rec := pm.Get("reference-plugin")
 	if rec == nil {
 		t.Fatal("plugin record not found after load")
@@ -827,7 +807,6 @@ func TestPluginManagement(t *testing.T) {
 		t.Errorf("plugin state = %s, want Healthy", rec.GetState())
 	}
 
-	// Test list_plugins via MCP
 	s := tempStore(t)
 	h := newHarness(t, s)
 	h.srv.SetPluginManager(pm)
@@ -859,7 +838,6 @@ func TestPluginManagement(t *testing.T) {
 		t.Errorf("plugin healthy = %v, want true", plugins[0]["healthy"])
 	}
 
-	// Test plugin_health via MCP
 	h.send(t, mcp.Request{
 		JSONRPC: "2.0",
 		ID:      2,
@@ -887,7 +865,6 @@ func TestPluginManagement(t *testing.T) {
 		t.Errorf("health healthy = %v, want true", healthResp["healthy"])
 	}
 
-	// Cleanup
 	h.cancel()
 	h.close()
 	select {
@@ -896,7 +873,6 @@ func TestPluginManagement(t *testing.T) {
 		t.Fatal("MCP server did not shut down")
 	}
 
-	// Stop plugin manager
 	if err := pm.Stop(); err != nil {
 		t.Errorf("stop plugin manager: %v", err)
 	}
@@ -906,20 +882,17 @@ func TestDaemonCrashRecovery(t *testing.T) {
 	tmpDir := t.TempDir()
 	ctx := context.Background()
 
-	// Pre-seed store with a body that has a fake instance ID
 	dbPath := filepath.Join(tmpDir, "state.db")
 	s, err := store.Open(dbPath)
 	if err != nil {
 		t.Fatalf("open store: %v", err)
 	}
 
-	// Create a body in Running state with a fake instance ID
-	if err := s.CreateBody(ctx, "crash-body-1", "crash-test-body", adapter.StateRunning, `{"image":"alpine:latest"}`, "docker", "fake-instance-123"); err != nil {
+	if err := s.CreateBody(ctx, "crash-body-1", "crash-test-body", orchestrator.StateRunning, `{"image":"alpine:latest"}`, "docker", "fake-instance-123"); err != nil {
 		t.Fatalf("create body: %v", err)
 	}
 	s.Close()
 
-	// Create config that points to the pre-seeded store
 	cfg := &config.Config{
 		Daemon: config.DaemonConfig{
 			PIDFile: filepath.Join(tmpDir, "mesh.pid"),
@@ -933,7 +906,6 @@ func TestDaemonCrashRecovery(t *testing.T) {
 		},
 	}
 
-	// Start daemon — reconcile should detect orphaned container and transition to Error
 	d, err := daemon.New(cfg)
 	if err != nil {
 		t.Fatalf("new daemon: %v", err)
@@ -945,7 +917,6 @@ func TestDaemonCrashRecovery(t *testing.T) {
 		daemonDone <- d.Start(ctx)
 	}()
 
-	// Wait for daemon to become ready
 	for i := 0; i < 50; i++ {
 		if d.Ready() {
 			break
@@ -957,10 +928,8 @@ func TestDaemonCrashRecovery(t *testing.T) {
 		t.Fatal("daemon never became ready")
 	}
 
-	// Give reconcile time to run
 	time.Sleep(100 * time.Millisecond)
 
-	// Verify via health endpoint that reconcile ran
 	addr := d.HTTPAddr()
 	if addr == "" {
 		cancel()
@@ -985,13 +954,11 @@ func TestDaemonCrashRecovery(t *testing.T) {
 		t.Fatalf("decode health: %v", err)
 	}
 
-	// reconcile_steps should be > 0 since we had an orphaned body
 	reconcileSteps, _ := healthResp["reconcile_steps"].(float64)
 	if reconcileSteps < 1 {
 		t.Errorf("reconcile_steps = %v, want >= 1", reconcileSteps)
 	}
 
-	// Stop daemon
 	cancel()
 	select {
 	case err := <-daemonDone:
@@ -1002,8 +969,6 @@ func TestDaemonCrashRecovery(t *testing.T) {
 		t.Fatal("daemon did not stop")
 	}
 
-	// Reopen store and verify body transitioned to Error
-	// Use fresh context since the daemon context was canceled
 	verifyCtx := context.Background()
 	s2, err := store.Open(dbPath)
 	if err != nil {
@@ -1015,18 +980,17 @@ func TestDaemonCrashRecovery(t *testing.T) {
 	if err != nil {
 		t.Fatalf("get body after reconcile: %v", err)
 	}
-	if bodyRec.State != adapter.StateError {
+	if bodyRec.State != orchestrator.StateError {
 		t.Errorf("body state = %s, want Error after crash recovery", bodyRec.State)
 	}
 }
 
 func TestConcurrentBodyOperations(t *testing.T) {
 	s := tempStore(t)
-	mockAdapter := &mockSubstrateAdapter{}
+	mockAdapter := &mockOrchestratorAdapter{}
 	bm := body.NewBodyManager(s, mockAdapter)
 	ctx := context.Background()
 
-	// Concurrent creates
 	var wg sync.WaitGroup
 	numBodies := 10
 	bodyIDs := make([]string, numBodies)
@@ -1036,7 +1000,7 @@ func TestConcurrentBodyOperations(t *testing.T) {
 		wg.Add(1)
 		go func(idx int) {
 			defer wg.Done()
-			b, err := bm.Create(ctx, fmt.Sprintf("concurrent-body-%d", idx), adapter.BodySpec{Image: "alpine:latest"})
+			b, err := bm.Create(ctx, fmt.Sprintf("concurrent-body-%d", idx), orchestrator.BodySpec{Image: "alpine:latest"})
 			if err != nil {
 				t.Errorf("create body %d: %v", idx, err)
 				return
@@ -1048,7 +1012,6 @@ func TestConcurrentBodyOperations(t *testing.T) {
 	}
 	wg.Wait()
 
-	// Verify all bodies created
 	bodies, err := s.ListBodies(ctx)
 	if err != nil {
 		t.Fatalf("list bodies: %v", err)
@@ -1057,7 +1020,6 @@ func TestConcurrentBodyOperations(t *testing.T) {
 		t.Fatalf("bodies = %d, want %d", len(bodies), numBodies)
 	}
 
-	// Concurrent stops
 	for i := 0; i < numBodies; i++ {
 		wg.Add(1)
 		go func(idx int) {
@@ -1069,25 +1031,23 @@ func TestConcurrentBodyOperations(t *testing.T) {
 				t.Errorf("body %d has no ID", idx)
 				return
 			}
-			if err := bm.Stop(ctx, id, adapter.StopOpts{}); err != nil {
+			if err := bm.Stop(ctx, id, orchestrator.StopOpts{}); err != nil {
 				t.Errorf("stop body %d: %v", idx, err)
 			}
 		}(i)
 	}
 	wg.Wait()
 
-	// Verify all bodies stopped
 	for _, b := range bodies {
 		rec, err := s.GetBody(ctx, b.ID)
 		if err != nil {
 			t.Fatalf("get body %s: %v", b.ID, err)
 		}
-		if rec.State != adapter.StateStopped {
+		if rec.State != orchestrator.StateStopped {
 			t.Errorf("body %s state = %s, want Stopped", b.ID, rec.State)
 		}
 	}
 
-	// Verify adapter calls are race-free
 	if len(mockAdapter.created) != numBodies {
 		t.Errorf("adapter creates = %d, want %d", len(mockAdapter.created), numBodies)
 	}
@@ -1098,20 +1058,18 @@ func TestConcurrentBodyOperations(t *testing.T) {
 
 func TestBodyLifecycleFull(t *testing.T) {
 	s := tempStore(t)
-	mockAdapter := &mockSubstrateAdapter{}
+	mockAdapter := &mockOrchestratorAdapter{}
 	bm := body.NewBodyManager(s, mockAdapter)
 	ctx := context.Background()
 
-	// Step 1: Create body
-	b, err := bm.Create(ctx, "lifecycle-full", adapter.BodySpec{Image: "alpine:latest"})
+	b, err := bm.Create(ctx, "lifecycle-full", orchestrator.BodySpec{Image: "alpine:latest"})
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}
-	if b.State != adapter.StateRunning {
+	if b.State != orchestrator.StateRunning {
 		t.Fatalf("state after create = %s, want Running", b.State)
 	}
 
-	// Step 2: Exec command inside running body
 	result, err := bm.Exec(ctx, b.ID, []string{"echo", "hello"})
 	if err != nil {
 		t.Fatalf("exec: %v", err)
@@ -1120,7 +1078,6 @@ func TestBodyLifecycleFull(t *testing.T) {
 		t.Errorf("exit code = %d, want 0", result.ExitCode)
 	}
 
-	// Step 3: Create snapshot via MCP
 	h := newHarness(t, s)
 	h.srv.SetBodyManager(bm)
 
@@ -1149,7 +1106,6 @@ func TestBodyLifecycleFull(t *testing.T) {
 		t.Fatal("snapshot ID is empty")
 	}
 
-	// Step 4: Verify snapshot exists in store
 	snap, err := s.GetSnapshot(ctx, snapID)
 	if err != nil {
 		t.Fatalf("get snapshot: %v", err)
@@ -1158,7 +1114,6 @@ func TestBodyLifecycleFull(t *testing.T) {
 		t.Errorf("snapshot body_id = %q, want %q", snap.BodyID, b.ID)
 	}
 
-	// Step 5: Restore body from snapshot via MCP
 	h.send(t, mcp.Request{
 		JSONRPC: "2.0",
 		ID:      2,
@@ -1173,31 +1128,26 @@ func TestBodyLifecycleFull(t *testing.T) {
 		t.Fatalf("restore_body error: %v", resp["error"])
 	}
 
-	// Step 6: Verify body still exists after restore
 	bodyRec, err := s.GetBody(ctx, b.ID)
 	if err != nil {
 		t.Fatalf("get body after restore: %v", err)
 	}
-	if bodyRec.State != adapter.StateRunning {
+	if bodyRec.State != orchestrator.StateRunning {
 		t.Errorf("body state after restore = %s, want Running", bodyRec.State)
 	}
 
-	// Step 7: Stop body
-	if err := bm.Stop(ctx, b.ID, adapter.StopOpts{}); err != nil {
+	if err := bm.Stop(ctx, b.ID, orchestrator.StopOpts{}); err != nil {
 		t.Fatalf("stop: %v", err)
 	}
 
-	// Step 8: Destroy body
 	if err := bm.Destroy(ctx, b.ID); err != nil {
 		t.Fatalf("destroy: %v", err)
 	}
 
-	// Verify body deleted
 	if _, err := s.GetBody(ctx, b.ID); err == nil {
 		t.Fatal("body should be deleted after destroy")
 	}
 
-	// Cleanup MCP
 	h.cancel()
 	h.close()
 	select {
@@ -1209,29 +1159,26 @@ func TestBodyLifecycleFull(t *testing.T) {
 
 func TestMCPToolsEndToEnd(t *testing.T) {
 	s := tempStore(t)
-	mockAdapter := &mockSubstrateAdapter{}
+	mockAdapter := &mockOrchestratorAdapter{}
 	bm := body.NewBodyManager(s, mockAdapter)
 	ctx := context.Background()
 
-	// Create a body to work with
-	b, err := bm.Create(ctx, "mcp-tools-body", adapter.BodySpec{Image: "alpine:latest"})
+	b, err := bm.Create(ctx, "mcp-tools-body", orchestrator.BodySpec{Image: "alpine:latest"})
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}
 
-	// Create a stopped body for start/stop tests
-	stoppedBody, err := bm.Create(ctx, "mcp-stopped-body", adapter.BodySpec{Image: "alpine:latest"})
+	stoppedBody, err := bm.Create(ctx, "mcp-stopped-body", orchestrator.BodySpec{Image: "alpine:latest"})
 	if err != nil {
 		t.Fatalf("create stopped body: %v", err)
 	}
-	if err := bm.Stop(ctx, stoppedBody.ID, adapter.StopOpts{}); err != nil {
+	if err := bm.Stop(ctx, stoppedBody.ID, orchestrator.StopOpts{}); err != nil {
 		t.Fatalf("stop body: %v", err)
 	}
 
 	h := newHarness(t, s)
 	h.srv.SetBodyManager(bm)
 
-	// Test 1: execute_command
 	h.send(t, mcp.Request{
 		JSONRPC: "2.0",
 		ID:      1,
@@ -1256,7 +1203,6 @@ func TestMCPToolsEndToEnd(t *testing.T) {
 		t.Errorf("exit_code = %v, want 0", execResp["exit_code"])
 	}
 
-	// Test 2: get_body_status
 	h.send(t, mcp.Request{
 		JSONRPC: "2.0",
 		ID:      2,
@@ -1281,7 +1227,6 @@ func TestMCPToolsEndToEnd(t *testing.T) {
 		t.Errorf("status state = %v, want Running", statusResp["state"])
 	}
 
-	// Test 3: get_body_logs
 	h.send(t, mcp.Request{
 		JSONRPC: "2.0",
 		ID:      3,
@@ -1306,7 +1251,6 @@ func TestMCPToolsEndToEnd(t *testing.T) {
 		t.Errorf("logs body_id = %v, want %s", logsResp["body_id"], b.ID)
 	}
 
-	// Test 4: stop_body
 	h.send(t, mcp.Request{
 		JSONRPC: "2.0",
 		ID:      4,
@@ -1331,7 +1275,6 @@ func TestMCPToolsEndToEnd(t *testing.T) {
 		t.Errorf("stop state = %v, want Stopped", stopResp["state"])
 	}
 
-	// Test 5: start_body (on the stopped body)
 	h.send(t, mcp.Request{
 		JSONRPC: "2.0",
 		ID:      5,
@@ -1356,9 +1299,7 @@ func TestMCPToolsEndToEnd(t *testing.T) {
 		t.Errorf("start state = %v, want Running", startResp["state"])
 	}
 
-	// Test 6: delete_body (on the originally stopped body, now running again)
-	// First stop it
-	if err := bm.Stop(ctx, stoppedBody.ID, adapter.StopOpts{}); err != nil {
+	if err := bm.Stop(ctx, stoppedBody.ID, orchestrator.StopOpts{}); err != nil {
 		t.Fatalf("pre-stop for delete: %v", err)
 	}
 
@@ -1386,12 +1327,10 @@ func TestMCPToolsEndToEnd(t *testing.T) {
 		t.Errorf("deleted = %v, want true", deleteResp["deleted"])
 	}
 
-	// Verify deleted
 	if _, err := s.GetBody(ctx, stoppedBody.ID); err == nil {
 		t.Fatal("body should be deleted")
 	}
 
-	// Cleanup
 	h.cancel()
 	h.close()
 	select {

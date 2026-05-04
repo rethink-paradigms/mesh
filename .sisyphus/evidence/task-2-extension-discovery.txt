@@ -1,0 +1,4 @@
+=== RUN   TestExtensionTypeAssertion
+--- PASS: TestExtensionTypeAssertion (0.00s)
+PASS
+ok  	github.com/rethink-paradigms/mesh/internal/orchestrator	1.227s

@@ -16,42 +16,53 @@ import (
 	"time"
 
 	"github.com/klauspost/compress/zstd"
-	"github.com/rethink-paradigms/mesh/internal/adapter"
 	"github.com/rethink-paradigms/mesh/internal/body"
+	"github.com/rethink-paradigms/mesh/internal/orchestrator"
 	"github.com/rethink-paradigms/mesh/internal/plugin"
+	"github.com/rethink-paradigms/mesh/internal/provisioner"
 	"github.com/rethink-paradigms/mesh/internal/store"
 )
 
-type mockSubstrateAdapter struct {
-	handle      adapter.Handle
-	status      adapter.BodyStatus
-	execOutputs map[string]adapter.ExecResult
+type mockOrchAdapter struct {
+	handle      orchestrator.Handle
+	status      orchestrator.BodyStatus
+	execOutputs map[string]orchestrator.ExecResult
 }
 
-func (m *mockSubstrateAdapter) Create(_ context.Context, _ adapter.BodySpec) (adapter.Handle, error) {
+func (m *mockOrchAdapter) ScheduleBody(_ context.Context, _ orchestrator.BodySpec) (orchestrator.Handle, error) {
 	if m.handle == "" {
 		return "mock-handle-1", nil
 	}
 	return m.handle, nil
 }
-func (m *mockSubstrateAdapter) Start(_ context.Context, _ adapter.Handle) error  { return nil }
-func (m *mockSubstrateAdapter) Stop(_ context.Context, _ adapter.Handle, _ adapter.StopOpts) error {
-	return nil
-}
-func (m *mockSubstrateAdapter) Destroy(_ context.Context, _ adapter.Handle) error { return nil }
-func (m *mockSubstrateAdapter) GetStatus(_ context.Context, _ adapter.Handle) (adapter.BodyStatus, error) {
+func (m *mockOrchAdapter) StartBody(_ context.Context, _ orchestrator.Handle) error   { return nil }
+func (m *mockOrchAdapter) StopBody(_ context.Context, _ orchestrator.Handle) error    { return nil }
+func (m *mockOrchAdapter) DestroyBody(_ context.Context, _ orchestrator.Handle) error { return nil }
+func (m *mockOrchAdapter) GetBodyStatus(_ context.Context, _ orchestrator.Handle) (orchestrator.BodyStatus, error) {
 	if m.status.State != "" {
 		return m.status, nil
 	}
-	return adapter.BodyStatus{State: adapter.StateRunning}, nil
+	return orchestrator.BodyStatus{State: orchestrator.StateRunning}, nil
 }
-func (m *mockSubstrateAdapter) Exec(ctx context.Context, _ adapter.Handle, cmd []string) (adapter.ExecResult, error) {
+func (m *mockOrchAdapter) Name() string                     { return "mock" }
+func (m *mockOrchAdapter) IsHealthy(_ context.Context) bool { return true }
+
+func (m *mockOrchAdapter) ExportFilesystem(_ context.Context, _ orchestrator.Handle) (io.ReadCloser, error) {
+	return io.NopCloser(strings.NewReader("")), nil
+}
+func (m *mockOrchAdapter) ImportFilesystem(_ context.Context, _ orchestrator.Handle, _ io.Reader) error {
+	return nil
+}
+func (m *mockOrchAdapter) Inspect(_ context.Context, _ orchestrator.Handle) (orchestrator.ContainerMetadata, error) {
+	return orchestrator.ContainerMetadata{}, nil
+}
+func (m *mockOrchAdapter) Exec(ctx context.Context, _ orchestrator.Handle, cmd []string) (orchestrator.ExecResult, error) {
 	if len(cmd) >= 2 && cmd[0] == "sleep" {
 		select {
 		case <-ctx.Done():
-			return adapter.ExecResult{}, ctx.Err()
+			return orchestrator.ExecResult{}, ctx.Err()
 		case <-time.After(10 * time.Second):
-			return adapter.ExecResult{}, nil
+			return orchestrator.ExecResult{}, nil
 		}
 	}
 	key := strings.Join(cmd, " ")
@@ -60,28 +71,25 @@ func (m *mockSubstrateAdapter) Exec(ctx context.Context, _ adapter.Handle, cmd [
 			return result, nil
 		}
 	}
-	return adapter.ExecResult{Stdout: "ok", ExitCode: 0}, nil
+	return orchestrator.ExecResult{Stdout: "ok", ExitCode: 0}, nil
 }
-func (m *mockSubstrateAdapter) ExportFilesystem(_ context.Context, _ adapter.Handle) (io.ReadCloser, error) {
-	return io.NopCloser(strings.NewReader("")), nil
+
+type mockProvAdapter struct{}
+
+func (m *mockProvAdapter) CreateMachine(_ context.Context, _ provisioner.MachineSpec, _ string) (provisioner.MachineID, error) {
+	return "mock-machine-1", nil
 }
-func (m *mockSubstrateAdapter) ImportFilesystem(_ context.Context, _ adapter.Handle, _ io.Reader, _ adapter.ImportOpts) error {
+func (m *mockProvAdapter) DestroyMachine(_ context.Context, _ provisioner.MachineID) error {
 	return nil
 }
-func (m *mockSubstrateAdapter) Inspect(_ context.Context, _ adapter.Handle) (adapter.ContainerMetadata, error) {
-	return adapter.ContainerMetadata{}, nil
+func (m *mockProvAdapter) GetMachineStatus(_ context.Context, _ provisioner.MachineID) (provisioner.MachineStatus, error) {
+	return provisioner.MachineStatus{State: "running", ID: "mock-machine-1"}, nil
 }
-func (m *mockSubstrateAdapter) Capabilities() adapter.AdapterCapabilities {
-	return adapter.AdapterCapabilities{}
+func (m *mockProvAdapter) ListMachines(_ context.Context) ([]provisioner.MachineInfo, error) {
+	return nil, nil
 }
-
-func (m *mockSubstrateAdapter) SubstrateName() string {
-	return "mock"
-}
-
-func (m *mockSubstrateAdapter) IsHealthy(_ context.Context) bool {
-	return true
-}
+func (m *mockProvAdapter) Name() string                     { return "mock-prov" }
+func (m *mockProvAdapter) IsHealthy(_ context.Context) bool { return true }
 
 func tempStore(t *testing.T) *store.Store {
 	t.Helper()
@@ -105,21 +113,26 @@ func tempStore(t *testing.T) *store.Store {
 
 func testBodyManager(t *testing.T, s *store.Store) *body.BodyManager {
 	t.Helper()
-	return body.NewBodyManager(s, &mockSubstrateAdapter{})
+	return body.NewBodyManager(s, &mockOrchAdapter{})
 }
 
 func testMigrator(t *testing.T, s *store.Store, bm *body.BodyManager) *body.MigrationCoordinator {
 	t.Helper()
-	return body.NewMigrationCoordinator(s, &mockSubstrateAdapter{}, bm, nil)
+	orchReg := orchestrator.NewRegistry()
+	_ = orchReg.Register("local", &mockOrchAdapter{})
+	_ = orchReg.Register("fleet", &mockOrchAdapter{})
+	provReg := provisioner.NewRegistry()
+	_ = provReg.Register("fleet", &mockProvAdapter{})
+	return body.NewMigrationCoordinator(s, bm, orchReg, provReg, nil)
 }
 
 type testHarness struct {
-	srv      *Server
-	stdinW   *os.File
-	stdoutR  *os.File
-	scanner  *bufio.Scanner
-	cancel   context.CancelFunc
-	done     chan error
+	srv     *Server
+	stdinW  *os.File
+	stdoutR *os.File
+	scanner *bufio.Scanner
+	cancel  context.CancelFunc
+	done    chan error
 }
 
 func newHarness(t *testing.T, s *store.Store) *testHarness {
@@ -248,7 +261,7 @@ func TestPing(t *testing.T) {
 func TestListBodies(t *testing.T) {
 	s := tempStore(t)
 	ctx := context.Background()
-	s.CreateBody(ctx, "b1", "test-body", adapter.StateRunning, `{"image":"alpine"}`, "docker", "inst-1")
+	s.CreateBody(ctx, "b1", "test-body", orchestrator.StateRunning, `{"image":"alpine"}`, "docker", "inst-1")
 
 	h := newHarness(t, s)
 	defer h.close()
@@ -277,7 +290,7 @@ func TestListBodies(t *testing.T) {
 func TestGetBody(t *testing.T) {
 	s := tempStore(t)
 	ctx := context.Background()
-	s.CreateBody(ctx, "b1", "my-body", adapter.StateRunning, `{"image":"alpine"}`, "docker", "inst-1")
+	s.CreateBody(ctx, "b1", "my-body", orchestrator.StateRunning, `{"image":"alpine"}`, "docker", "inst-1")
 
 	h := newHarness(t, s)
 	defer h.close()
@@ -333,7 +346,7 @@ func TestGetBodyNotFound(t *testing.T) {
 func TestGetSnapshot(t *testing.T) {
 	s := tempStore(t)
 	ctx := context.Background()
-	s.CreateBody(ctx, "b1", "body1", adapter.StateRunning, `{}`, "docker", "inst-1")
+	s.CreateBody(ctx, "b1", "body1", orchestrator.StateRunning, `{}`, "docker", "inst-1")
 	s.CreateSnapshot(ctx, "snap1", "b1", `{"checksum":"abc"}`, "/tmp/snap1.tar.zst", 1024)
 
 	h := newHarness(t, s)
@@ -365,7 +378,7 @@ func TestExecCommandSuccess(t *testing.T) {
 	bm := testBodyManager(t, s)
 	ctx := context.Background()
 
-	created, err := bm.Create(ctx, "exec-test", adapter.BodySpec{Image: "alpine"})
+	created, err := bm.Create(ctx, "exec-test", orchestrator.BodySpec{Image: "alpine"})
 	if err != nil {
 		t.Fatalf("create body: %v", err)
 	}
@@ -406,11 +419,11 @@ func TestExecCommandNotRunning(t *testing.T) {
 	bm := testBodyManager(t, s)
 	ctx := context.Background()
 
-	created, err := bm.Create(ctx, "exec-stopped", adapter.BodySpec{Image: "alpine"})
+	created, err := bm.Create(ctx, "exec-stopped", orchestrator.BodySpec{Image: "alpine"})
 	if err != nil {
 		t.Fatalf("create body: %v", err)
 	}
-	if err := bm.Stop(ctx, created.ID, adapter.StopOpts{}); err != nil {
+	if err := bm.Stop(ctx, created.ID, orchestrator.StopOpts{}); err != nil {
 		t.Fatalf("stop body: %v", err)
 	}
 
@@ -441,7 +454,7 @@ func TestExecCommandTimeout(t *testing.T) {
 	bm := testBodyManager(t, s)
 	ctx := context.Background()
 
-	created, err := bm.Create(ctx, "exec-timeout", adapter.BodySpec{Image: "alpine"})
+	created, err := bm.Create(ctx, "exec-timeout", orchestrator.BodySpec{Image: "alpine"})
 	if err != nil {
 		t.Fatalf("create body: %v", err)
 	}
@@ -473,7 +486,7 @@ func TestExecCommandEmptyCommand(t *testing.T) {
 	bm := testBodyManager(t, s)
 	ctx := context.Background()
 
-	created, err := bm.Create(ctx, "exec-empty", adapter.BodySpec{Image: "alpine"})
+	created, err := bm.Create(ctx, "exec-empty", orchestrator.BodySpec{Image: "alpine"})
 	if err != nil {
 		t.Fatalf("create body: %v", err)
 	}
@@ -740,12 +753,12 @@ func TestDeleteBody(t *testing.T) {
 	bm := testBodyManager(t, s)
 	ctx := context.Background()
 
-	created, err := bm.Create(ctx, "to-delete", adapter.BodySpec{Image: "alpine"})
+	created, err := bm.Create(ctx, "to-delete", orchestrator.BodySpec{Image: "alpine"})
 	if err != nil {
 		t.Fatalf("create body: %v", err)
 	}
 
-	_ = bm.Stop(ctx, created.ID, adapter.StopOpts{})
+	_ = bm.Stop(ctx, created.ID, orchestrator.StopOpts{})
 
 	h := newHarness(t, s)
 	h.srv.SetBodyManager(bm)
@@ -798,7 +811,7 @@ func TestMigrateBody(t *testing.T) {
 	mig := testMigrator(t, s, bm)
 
 	ctx := context.Background()
-	created, err := bm.Create(ctx, "to-migrate", adapter.BodySpec{Image: "alpine"})
+	created, err := bm.Create(ctx, "to-migrate", orchestrator.BodySpec{Image: "alpine"})
 	if err != nil {
 		t.Fatalf("create body: %v", err)
 	}
@@ -854,11 +867,11 @@ func TestStartBody(t *testing.T) {
 	bm := testBodyManager(t, s)
 	ctx := context.Background()
 
-	created, err := bm.Create(ctx, "to-start", adapter.BodySpec{Image: "alpine"})
+	created, err := bm.Create(ctx, "to-start", orchestrator.BodySpec{Image: "alpine"})
 	if err != nil {
 		t.Fatalf("create body: %v", err)
 	}
-	if err := bm.Stop(ctx, created.ID, adapter.StopOpts{}); err != nil {
+	if err := bm.Stop(ctx, created.ID, orchestrator.StopOpts{}); err != nil {
 		t.Fatalf("stop body: %v", err)
 	}
 
@@ -899,7 +912,7 @@ func TestStopBody(t *testing.T) {
 	bm := testBodyManager(t, s)
 	ctx := context.Background()
 
-	created, err := bm.Create(ctx, "to-stop", adapter.BodySpec{Image: "alpine"})
+	created, err := bm.Create(ctx, "to-stop", orchestrator.BodySpec{Image: "alpine"})
 	if err != nil {
 		t.Fatalf("create body: %v", err)
 	}
@@ -937,7 +950,7 @@ func TestStartBodyAlreadyRunning(t *testing.T) {
 	bm := testBodyManager(t, s)
 	ctx := context.Background()
 
-	created, err := bm.Create(ctx, "already-running", adapter.BodySpec{Image: "alpine"})
+	created, err := bm.Create(ctx, "already-running", orchestrator.BodySpec{Image: "alpine"})
 	if err != nil {
 		t.Fatalf("create body: %v", err)
 	}
@@ -966,11 +979,11 @@ func TestStopBodyAlreadyStopped(t *testing.T) {
 	bm := testBodyManager(t, s)
 	ctx := context.Background()
 
-	created, err := bm.Create(ctx, "already-stopped", adapter.BodySpec{Image: "alpine"})
+	created, err := bm.Create(ctx, "already-stopped", orchestrator.BodySpec{Image: "alpine"})
 	if err != nil {
 		t.Fatalf("create body: %v", err)
 	}
-	if err := bm.Stop(ctx, created.ID, adapter.StopOpts{}); err != nil {
+	if err := bm.Stop(ctx, created.ID, orchestrator.StopOpts{}); err != nil {
 		t.Fatalf("stop body: %v", err)
 	}
 
@@ -1128,7 +1141,7 @@ func TestCreateSnapshot(t *testing.T) {
 	bm := testBodyManager(t, s)
 	ctx := context.Background()
 
-	created, err := bm.Create(ctx, "snap-test", adapter.BodySpec{Image: "alpine"})
+	created, err := bm.Create(ctx, "snap-test", orchestrator.BodySpec{Image: "alpine"})
 	if err != nil {
 		t.Fatalf("create body: %v", err)
 	}
@@ -1192,11 +1205,11 @@ func TestCreateSnapshotBodyNotRunning(t *testing.T) {
 	bm := testBodyManager(t, s)
 	ctx := context.Background()
 
-	created, err := bm.Create(ctx, "stopped-body", adapter.BodySpec{Image: "alpine"})
+	created, err := bm.Create(ctx, "stopped-body", orchestrator.BodySpec{Image: "alpine"})
 	if err != nil {
 		t.Fatalf("create body: %v", err)
 	}
-	_ = bm.Stop(ctx, created.ID, adapter.StopOpts{})
+	_ = bm.Stop(ctx, created.ID, orchestrator.StopOpts{})
 
 	h := newHarness(t, s)
 	h.srv.SetBodyManager(bm)
@@ -1240,7 +1253,7 @@ func TestCreateSnapshotNoBodyManager(t *testing.T) {
 func TestListSnapshots(t *testing.T) {
 	s := tempStore(t)
 	ctx := context.Background()
-	s.CreateBody(ctx, "b1", "body1", adapter.StateRunning, `{}`, "docker", "inst-1")
+	s.CreateBody(ctx, "b1", "body1", orchestrator.StateRunning, `{}`, "docker", "inst-1")
 	s.CreateSnapshot(ctx, "snap1", "b1", `{"checksum":"abc"}`, "/tmp/snap1.tar.zst", 1024)
 	s.CreateSnapshot(ctx, "snap2", "b1", `{"checksum":"def"}`, "/tmp/snap2.tar.zst", 2048)
 
@@ -1271,8 +1284,8 @@ func TestListSnapshots(t *testing.T) {
 func TestListSnapshotsAllBodies(t *testing.T) {
 	s := tempStore(t)
 	ctx := context.Background()
-	s.CreateBody(ctx, "b1", "body1", adapter.StateRunning, `{}`, "docker", "inst-1")
-	s.CreateBody(ctx, "b2", "body2", adapter.StateRunning, `{}`, "docker", "inst-2")
+	s.CreateBody(ctx, "b1", "body1", orchestrator.StateRunning, `{}`, "docker", "inst-1")
+	s.CreateBody(ctx, "b2", "body2", orchestrator.StateRunning, `{}`, "docker", "inst-2")
 	s.CreateSnapshot(ctx, "snap1", "b1", `{"checksum":"abc"}`, "/tmp/snap1.tar.zst", 1024)
 	s.CreateSnapshot(ctx, "snap2", "b2", `{"checksum":"def"}`, "/tmp/snap2.tar.zst", 2048)
 
@@ -1305,7 +1318,7 @@ func TestRestoreBody(t *testing.T) {
 	bm := testBodyManager(t, s)
 	ctx := context.Background()
 
-	created, err := bm.Create(ctx, "restore-test", adapter.BodySpec{Image: "alpine"})
+	created, err := bm.Create(ctx, "restore-test", orchestrator.BodySpec{Image: "alpine"})
 	if err != nil {
 		t.Fatalf("create body: %v", err)
 	}
@@ -1388,7 +1401,7 @@ func TestRestoreBody(t *testing.T) {
 func TestRestoreBodyNoBodyManager(t *testing.T) {
 	s := tempStore(t)
 	ctx := context.Background()
-	s.CreateBody(ctx, "b1", "body1", adapter.StateRunning, `{}`, "docker", "inst-1")
+	s.CreateBody(ctx, "b1", "body1", orchestrator.StateRunning, `{}`, "docker", "inst-1")
 	s.CreateSnapshot(ctx, "snap1", "b1", `{"checksum":"abc"}`, "/tmp/snap1.tar.zst", 1024)
 
 	h := newHarness(t, s)
@@ -1437,7 +1450,7 @@ func TestGetBodyLogsRunningBody(t *testing.T) {
 	bm := testBodyManager(t, s)
 	ctx := context.Background()
 
-	created, err := bm.Create(ctx, "logs-test", adapter.BodySpec{Image: "alpine"})
+	created, err := bm.Create(ctx, "logs-test", orchestrator.BodySpec{Image: "alpine"})
 	if err != nil {
 		t.Fatalf("create body: %v", err)
 	}
@@ -1478,11 +1491,11 @@ func TestGetBodyLogsStoppedBody(t *testing.T) {
 	bm := testBodyManager(t, s)
 	ctx := context.Background()
 
-	created, err := bm.Create(ctx, "logs-stopped", adapter.BodySpec{Image: "alpine"})
+	created, err := bm.Create(ctx, "logs-stopped", orchestrator.BodySpec{Image: "alpine"})
 	if err != nil {
 		t.Fatalf("create body: %v", err)
 	}
-	if err := bm.Stop(ctx, created.ID, adapter.StopOpts{}); err != nil {
+	if err := bm.Stop(ctx, created.ID, orchestrator.StopOpts{}); err != nil {
 		t.Fatalf("stop body: %v", err)
 	}
 
@@ -1562,7 +1575,7 @@ func TestGetBodyStatusRunningBody(t *testing.T) {
 	bm := testBodyManager(t, s)
 	ctx := context.Background()
 
-	created, err := bm.Create(ctx, "status-test", adapter.BodySpec{Image: "alpine"})
+	created, err := bm.Create(ctx, "status-test", orchestrator.BodySpec{Image: "alpine"})
 	if err != nil {
 		t.Fatalf("create body: %v", err)
 	}
@@ -1786,6 +1799,88 @@ func TestToolsListIncludesPluginTools(t *testing.T) {
 		if !names[want] {
 			t.Errorf("missing tool %q in tools/list", want)
 		}
+	}
+}
+
+func TestMCPCreateBodySubstrate(t *testing.T) {
+	s := tempStore(t)
+	bm := testBodyManager(t, s)
+	orchReg := orchestrator.NewRegistry()
+	_ = orchReg.Register("mock", &mockOrchAdapter{})
+
+	h := newHarness(t, s)
+	h.srv.SetBodyManager(bm)
+	h.srv.SetOrchestratorRegistry(orchReg)
+	defer h.close()
+
+	h.send(t, Request{
+		JSONRPC: "2.0",
+		ID:      100,
+		Method:  "tools/call",
+		Params: rawMessage(t, map[string]interface{}{
+			"name":      "create_body",
+			"arguments": map[string]interface{}{"name": "sub-test", "image": "alpine:latest", "substrate": "mock"},
+		}),
+	})
+
+	resp := h.readResponse(t)
+	result := resp["result"].(map[string]interface{})
+	content := result["content"].([]interface{})
+	text := content[0].(map[string]interface{})["text"].(string)
+
+	var b map[string]interface{}
+	if err := json.Unmarshal([]byte(text), &b); err != nil {
+		t.Fatalf("unmarshal body: %v", err)
+	}
+	if b["name"] != "sub-test" {
+		t.Fatalf("name = %v, want sub-test", b["name"])
+	}
+	if b["state"] != "Running" {
+		t.Fatalf("state = %v, want Running", b["state"])
+	}
+	if b["substrate"] != "mock" {
+		t.Fatalf("substrate = %v, want mock", b["substrate"])
+	}
+}
+
+func TestMCPCreateBodyNoSubstrate(t *testing.T) {
+	s := tempStore(t)
+	bm := testBodyManager(t, s)
+	orchReg := orchestrator.NewRegistry()
+	_ = orchReg.Register("mock", &mockOrchAdapter{})
+
+	h := newHarness(t, s)
+	h.srv.SetBodyManager(bm)
+	h.srv.SetOrchestratorRegistry(orchReg)
+	defer h.close()
+
+	h.send(t, Request{
+		JSONRPC: "2.0",
+		ID:      101,
+		Method:  "tools/call",
+		Params: rawMessage(t, map[string]interface{}{
+			"name":      "create_body",
+			"arguments": map[string]interface{}{"name": "auto-sub", "image": "alpine:latest"},
+		}),
+	})
+
+	resp := h.readResponse(t)
+	result := resp["result"].(map[string]interface{})
+	content := result["content"].([]interface{})
+	text := content[0].(map[string]interface{})["text"].(string)
+
+	var b map[string]interface{}
+	if err := json.Unmarshal([]byte(text), &b); err != nil {
+		t.Fatalf("unmarshal body: %v", err)
+	}
+	if b["name"] != "auto-sub" {
+		t.Fatalf("name = %v, want auto-sub", b["name"])
+	}
+	if b["state"] != "Running" {
+		t.Fatalf("state = %v, want Running", b["state"])
+	}
+	if b["substrate"] != "mock" {
+		t.Fatalf("substrate = %v, want mock (auto-selected)", b["substrate"])
 	}
 }
 

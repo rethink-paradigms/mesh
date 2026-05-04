@@ -42,10 +42,10 @@ func isUsageError(err error) bool {
 
 func newRootCmd() *cobra.Command {
 	root := &cobra.Command{
-		Use:   "mesh",
-		Short: "Portable agent-body runtime for AI agents",
-		Long:  "Mesh gives an agent a persistent compute identity that can live on any substrate and move between them without losing itself.",
-		Version: version(),
+		Use:           "mesh",
+		Short:         "Portable agent-body runtime for AI agents",
+		Long:          "Mesh gives an agent a persistent compute identity that can live on any substrate and move between them without losing itself.",
+		Version:       version(),
 		SilenceUsage:  true,
 		SilenceErrors: true,
 	}

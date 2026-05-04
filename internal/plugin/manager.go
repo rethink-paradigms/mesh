@@ -11,7 +11,26 @@ import (
 	"time"
 
 	"github.com/hashicorp/go-plugin"
+	"google.golang.org/grpc"
 )
+
+const PluginName = "mesh-plugin"
+
+var Handshake = plugin.HandshakeConfig{
+	MagicCookieKey:   "MESH_PLUGIN",
+	MagicCookieValue: "mesh-v1",
+	ProtocolVersion:  1,
+}
+
+type stubPlugin struct{ plugin.Plugin }
+
+func (s *stubPlugin) GRPCClient(_ context.Context, _ *plugin.GRPCBroker, _ *grpc.ClientConn) (interface{}, error) {
+	return nil, fmt.Errorf("plugin loading disabled: gRPC transport removed, redesign pending")
+}
+
+func (s *stubPlugin) GRPCServer(_ *plugin.GRPCBroker, _ *grpc.Server) error {
+	return fmt.Errorf("plugin loading disabled: gRPC transport removed, redesign pending")
+}
 
 type PluginState string
 
@@ -126,7 +145,7 @@ func (pm *PluginManager) Load(name, path string) error {
 
 	client := plugin.NewClient(&plugin.ClientConfig{
 		HandshakeConfig: Handshake,
-		Plugins:         PluginMap,
+		Plugins:         plugin.PluginSet{PluginName: &stubPlugin{}},
 		Cmd:             exec.Command(path),
 		AllowedProtocols: []plugin.Protocol{
 			plugin.ProtocolGRPC,
@@ -269,7 +288,7 @@ func (pm *PluginManager) attemptRestart(name string, rec *PluginRecord) {
 
 		client := plugin.NewClient(&plugin.ClientConfig{
 			HandshakeConfig: Handshake,
-			Plugins:         PluginMap,
+			Plugins:         plugin.PluginSet{PluginName: &stubPlugin{}},
 			Cmd:             exec.Command(rec.Path),
 			AllowedProtocols: []plugin.Protocol{
 				plugin.ProtocolGRPC,

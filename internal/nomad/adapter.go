@@ -10,8 +10,14 @@ import (
 	"time"
 
 	"github.com/hashicorp/nomad/api"
-	"github.com/rethink-paradigms/mesh/internal/adapter"
+	"github.com/rethink-paradigms/mesh/internal/orchestrator"
 )
+
+var _ orchestrator.OrchestratorAdapter = (*Adapter)(nil)
+var _ orchestrator.Exporter = (*Adapter)(nil)
+var _ orchestrator.Importer = (*Adapter)(nil)
+var _ orchestrator.Inspector = (*Adapter)(nil)
+var _ orchestrator.Executor = (*Adapter)(nil)
 
 type Adapter struct {
 	mu     sync.Mutex
@@ -70,7 +76,7 @@ func (a *Adapter) getClient() (*api.Client, error) {
 	return c, nil
 }
 
-func (a *Adapter) Create(ctx context.Context, spec adapter.BodySpec) (adapter.Handle, error) {
+func (a *Adapter) ScheduleBody(ctx context.Context, spec orchestrator.BodySpec) (orchestrator.Handle, error) {
 	client, err := a.getClient()
 	if err != nil {
 		return "", err
@@ -115,10 +121,10 @@ func (a *Adapter) Create(ctx context.Context, spec adapter.BodySpec) (adapter.Ha
 		_ = resp.Warnings
 	}
 
-	return adapter.Handle(jobID), nil
+	return orchestrator.Handle(jobID), nil
 }
 
-func (a *Adapter) Start(ctx context.Context, id adapter.Handle) error {
+func (a *Adapter) StartBody(ctx context.Context, id orchestrator.Handle) error {
 	client, err := a.getClient()
 	if err != nil {
 		return err
@@ -133,7 +139,7 @@ func (a *Adapter) Start(ctx context.Context, id adapter.Handle) error {
 	return nil
 }
 
-func (a *Adapter) Stop(ctx context.Context, id adapter.Handle, opts adapter.StopOpts) error {
+func (a *Adapter) StopBody(ctx context.Context, id orchestrator.Handle) error {
 	client, err := a.getClient()
 	if err != nil {
 		return err
@@ -148,7 +154,7 @@ func (a *Adapter) Stop(ctx context.Context, id adapter.Handle, opts adapter.Stop
 	return nil
 }
 
-func (a *Adapter) Destroy(ctx context.Context, id adapter.Handle) error {
+func (a *Adapter) DestroyBody(ctx context.Context, id orchestrator.Handle) error {
 	client, err := a.getClient()
 	if err != nil {
 		return err
@@ -162,20 +168,20 @@ func (a *Adapter) Destroy(ctx context.Context, id adapter.Handle) error {
 	return nil
 }
 
-func (a *Adapter) GetStatus(ctx context.Context, id adapter.Handle) (adapter.BodyStatus, error) {
+func (a *Adapter) GetBodyStatus(ctx context.Context, id orchestrator.Handle) (orchestrator.BodyStatus, error) {
 	client, err := a.getClient()
 	if err != nil {
-		return adapter.BodyStatus{}, err
+		return orchestrator.BodyStatus{}, err
 	}
 
 	jobID := string(id)
 	allocs, _, err := client.Jobs().Allocations(jobID, true, nil)
 	if err != nil {
-		return adapter.BodyStatus{}, fmt.Errorf("nomad: get allocations for %s: %w", jobID, err)
+		return orchestrator.BodyStatus{}, fmt.Errorf("nomad: get allocations for %s: %w", jobID, err)
 	}
 
 	if len(allocs) == 0 {
-		return adapter.BodyStatus{State: adapter.StateCreated}, nil
+		return orchestrator.BodyStatus{State: orchestrator.StateCreated}, nil
 	}
 
 	var latest *api.AllocationListStub
@@ -186,7 +192,7 @@ func (a *Adapter) GetStatus(ctx context.Context, id adapter.Handle) (adapter.Bod
 	}
 
 	state := mapNomadClientStatus(latest.ClientStatus)
-	status := adapter.BodyStatus{
+	status := orchestrator.BodyStatus{
 		State: state,
 	}
 
@@ -196,7 +202,7 @@ func (a *Adapter) GetStatus(ctx context.Context, id adapter.Handle) (adapter.Bod
 			if ts, ok := alloc.TaskStates["body"]; ok {
 				if !ts.StartedAt.IsZero() {
 					status.StartedAt = ts.StartedAt
-					if state == adapter.StateRunning {
+					if state == orchestrator.StateRunning {
 						status.Uptime = time.Since(ts.StartedAt)
 					}
 				}
@@ -210,19 +216,19 @@ func (a *Adapter) GetStatus(ctx context.Context, id adapter.Handle) (adapter.Bod
 	return status, nil
 }
 
-func (a *Adapter) Exec(ctx context.Context, id adapter.Handle, cmd []string) (adapter.ExecResult, error) {
+func (a *Adapter) Exec(ctx context.Context, id orchestrator.Handle, cmd []string) (orchestrator.ExecResult, error) {
 	client, err := a.getClient()
 	if err != nil {
-		return adapter.ExecResult{}, err
+		return orchestrator.ExecResult{}, err
 	}
 
 	jobID := string(id)
 	allocs, _, err := client.Jobs().Allocations(jobID, true, nil)
 	if err != nil {
-		return adapter.ExecResult{}, fmt.Errorf("nomad: get allocations for %s: %w", jobID, err)
+		return orchestrator.ExecResult{}, fmt.Errorf("nomad: get allocations for %s: %w", jobID, err)
 	}
 	if len(allocs) == 0 {
-		return adapter.ExecResult{}, fmt.Errorf("nomad: no allocations found for job %s", jobID)
+		return orchestrator.ExecResult{}, fmt.Errorf("nomad: no allocations found for job %s", jobID)
 	}
 
 	var allocID string
@@ -233,15 +239,15 @@ func (a *Adapter) Exec(ctx context.Context, id adapter.Handle, cmd []string) (ad
 		}
 	}
 	if allocID == "" {
-		return adapter.ExecResult{}, fmt.Errorf("nomad: no running allocation for job %s", jobID)
+		return orchestrator.ExecResult{}, fmt.Errorf("nomad: no running allocation for job %s", jobID)
 	}
 
 	stdout, stderr, exitCode, err := a.execViaAllocFS(ctx, client, allocID, cmd)
 	if err != nil {
-		return adapter.ExecResult{}, fmt.Errorf("nomad: exec in %s: %w", allocID, err)
+		return orchestrator.ExecResult{}, fmt.Errorf("nomad: exec in %s: %w", allocID, err)
 	}
 
-	return adapter.ExecResult{
+	return orchestrator.ExecResult{
 		Stdout:   stdout,
 		Stderr:   stderr,
 		ExitCode: exitCode,
@@ -265,7 +271,7 @@ func (a *Adapter) execViaAllocFS(ctx context.Context, client *api.Client, allocI
 	return resp.Stdout, resp.Stderr, resp.ExitCode, nil
 }
 
-func (a *Adapter) ExportFilesystem(ctx context.Context, id adapter.Handle) (io.ReadCloser, error) {
+func (a *Adapter) ExportFilesystem(ctx context.Context, id orchestrator.Handle) (io.ReadCloser, error) {
 	client, err := a.getClient()
 	if err != nil {
 		return nil, err
@@ -292,7 +298,7 @@ func (a *Adapter) ExportFilesystem(ctx context.Context, id adapter.Handle) (io.R
 	return io.NopCloser(strings.NewReader(buf.String())), nil
 }
 
-func (a *Adapter) ImportFilesystem(ctx context.Context, id adapter.Handle, tarball io.Reader, opts adapter.ImportOpts) error {
+func (a *Adapter) ImportFilesystem(ctx context.Context, id orchestrator.Handle, tarball io.Reader) error {
 	client, err := a.getClient()
 	if err != nil {
 		return err
@@ -320,26 +326,27 @@ func (a *Adapter) ImportFilesystem(ctx context.Context, id adapter.Handle, tarba
 		return fmt.Errorf("nomad: import filesystem to %s: %w", allocID, err)
 	}
 
-	_ = opts
 	return nil
 }
 
-func (a *Adapter) Inspect(ctx context.Context, id adapter.Handle) (adapter.ContainerMetadata, error) {
+func (a *Adapter) Inspect(ctx context.Context, id orchestrator.Handle) (orchestrator.ContainerMetadata, error) {
 	client, err := a.getClient()
 	if err != nil {
-		return adapter.ContainerMetadata{}, err
+		return orchestrator.ContainerMetadata{}, err
 	}
 
 	jobID := string(id)
 	job, _, err := client.Jobs().Info(jobID, nil)
 	if err != nil {
-		return adapter.ContainerMetadata{}, fmt.Errorf("nomad: inspect job %s: %w", jobID, err)
+		return orchestrator.ContainerMetadata{}, fmt.Errorf("nomad: inspect job %s: %w", jobID, err)
 	}
 
-	meta := adapter.ContainerMetadata{}
+	meta := orchestrator.ContainerMetadata{}
 	if len(job.TaskGroups) > 0 && len(job.TaskGroups[0].Tasks) > 0 {
 		task := job.TaskGroups[0].Tasks[0]
-		meta.Image = task.Config["image"].(string)
+		if img, ok := task.Config["image"].(string); ok {
+			meta.Image = img
+		}
 		meta.Env = task.Env
 		if cmd, ok := task.Config["command"].([]string); ok {
 			meta.Cmd = cmd
@@ -351,15 +358,7 @@ func (a *Adapter) Inspect(ctx context.Context, id adapter.Handle) (adapter.Conta
 	return meta, nil
 }
 
-func (a *Adapter) Capabilities() adapter.AdapterCapabilities {
-	return adapter.AdapterCapabilities{
-		ExportFilesystem: true,
-		ImportFilesystem: true,
-		Inspect:          true,
-	}
-}
-
-func (a *Adapter) SubstrateName() string {
+func (a *Adapter) Name() string {
 	return "nomad"
 }
 
@@ -379,22 +378,22 @@ func generateJobID(image string) string {
 	return fmt.Sprintf("mesh-%s-%d", id, time.Now().Unix())
 }
 
-func mapNomadClientStatus(status string) adapter.BodyState {
+func mapNomadClientStatus(status string) orchestrator.BodyState {
 	switch status {
 	case "pending":
-		return adapter.StateStarting
+		return orchestrator.StateStarting
 	case "running":
-		return adapter.StateRunning
+		return orchestrator.StateRunning
 	case "failed":
-		return adapter.StateError
+		return orchestrator.StateError
 	case "lost":
-		return adapter.StateError
+		return orchestrator.StateError
 	case "complete":
-		return adapter.StateStopped
+		return orchestrator.StateStopped
 	case "terminal":
-		return adapter.StateStopped
+		return orchestrator.StateStopped
 	default:
-		return adapter.StateCreated
+		return orchestrator.StateCreated
 	}
 }
 

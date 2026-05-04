@@ -8,7 +8,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/rethink-paradigms/mesh/internal/adapter"
+	"github.com/rethink-paradigms/mesh/internal/orchestrator"
 )
 
 func tempStore(t *testing.T) *Store {
@@ -36,7 +36,7 @@ func TestBodyCRUD(t *testing.T) {
 	ctx := context.Background()
 
 	// Create
-	err := s.CreateBody(ctx, "b1", "test-body", adapter.StateCreated, `{"image":"alpine"}`, "docker", "inst-1")
+	err := s.CreateBody(ctx, "b1", "test-body", orchestrator.StateCreated, `{"image":"alpine"}`, "docker", "inst-1")
 	if err != nil {
 		t.Fatalf("CreateBody: %v", err)
 	}
@@ -52,8 +52,8 @@ func TestBodyCRUD(t *testing.T) {
 	if b.Name != "test-body" {
 		t.Errorf("Name = %q, want %q", b.Name, "test-body")
 	}
-	if b.State != adapter.StateCreated {
-		t.Errorf("State = %q, want %q", b.State, adapter.StateCreated)
+	if b.State != orchestrator.StateCreated {
+		t.Errorf("State = %q, want %q", b.State, orchestrator.StateCreated)
 	}
 	if b.SpecJSON != `{"image":"alpine"}` {
 		t.Errorf("SpecJSON = %q, want %q", b.SpecJSON, `{"image":"alpine"}`)
@@ -72,7 +72,7 @@ func TestBodyCRUD(t *testing.T) {
 	}
 
 	// Update state
-	err = s.UpdateBodyState(ctx, "b1", adapter.StateRunning)
+	err = s.UpdateBodyState(ctx, "b1", orchestrator.StateRunning)
 	if err != nil {
 		t.Fatalf("UpdateBodyState: %v", err)
 	}
@@ -82,8 +82,8 @@ func TestBodyCRUD(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetBody after update: %v", err)
 	}
-	if b2.State != adapter.StateRunning {
-		t.Errorf("State after update = %q, want %q", b2.State, adapter.StateRunning)
+	if b2.State != orchestrator.StateRunning {
+		t.Errorf("State after update = %q, want %q", b2.State, orchestrator.StateRunning)
 	}
 
 	// List
@@ -112,17 +112,17 @@ func TestBodyStateTransitions(t *testing.T) {
 	s := tempStore(t)
 	ctx := context.Background()
 
-	err := s.CreateBody(ctx, "b-states", "state-tester", adapter.StateCreated, "", "local", "")
+	err := s.CreateBody(ctx, "b-states", "state-tester", orchestrator.StateCreated, "", "local", "")
 	if err != nil {
 		t.Fatalf("CreateBody: %v", err)
 	}
 
-	transitions := []adapter.BodyState{
-		adapter.StateStarting,
-		adapter.StateRunning,
-		adapter.StateStopping,
-		adapter.StateStopped,
-		adapter.StateDestroyed,
+	transitions := []orchestrator.BodyState{
+		orchestrator.StateStarting,
+		orchestrator.StateRunning,
+		orchestrator.StateStopping,
+		orchestrator.StateStopped,
+		orchestrator.StateDestroyed,
 	}
 
 	for _, state := range transitions {
@@ -145,7 +145,7 @@ func TestSnapshotCRUD(t *testing.T) {
 	s := tempStore(t)
 	ctx := context.Background()
 
-	err := s.CreateBody(ctx, "b-snap", "snap-body", adapter.StateRunning, "", "docker", "i1")
+	err := s.CreateBody(ctx, "b-snap", "snap-body", orchestrator.StateRunning, "", "docker", "i1")
 	if err != nil {
 		t.Fatalf("CreateBody: %v", err)
 	}
@@ -203,7 +203,7 @@ func TestMigrationCRUD(t *testing.T) {
 	s := tempStore(t)
 	ctx := context.Background()
 
-	err := s.CreateBody(ctx, "b-mgr", "mgr-body", adapter.StateRunning, "", "docker", "i2")
+	err := s.CreateBody(ctx, "b-mgr", "mgr-body", orchestrator.StateRunning, "", "docker", "i2")
 	if err != nil {
 		t.Fatalf("CreateBody: %v", err)
 	}
@@ -283,7 +283,7 @@ func TestConcurrentAccess(t *testing.T) {
 			defer wg.Done()
 			id := fmt.Sprintf("concurrent-%d", idx)
 			name := fmt.Sprintf("body-%d", idx)
-			err := s.CreateBody(ctx, id, name, adapter.StateCreated, "", "local", "")
+			err := s.CreateBody(ctx, id, name, orchestrator.StateCreated, "", "local", "")
 			errc <- err
 		}(i)
 	}
@@ -309,7 +309,7 @@ func TestPerBodyMutex(t *testing.T) {
 	s := tempStore(t)
 	ctx := context.Background()
 
-	err := s.CreateBody(ctx, "b-mutex", "mutex-body", adapter.StateCreated, "", "local", "")
+	err := s.CreateBody(ctx, "b-mutex", "mutex-body", orchestrator.StateCreated, "", "local", "")
 	if err != nil {
 		t.Fatalf("CreateBody: %v", err)
 	}
@@ -317,11 +317,11 @@ func TestPerBodyMutex(t *testing.T) {
 	var wg sync.WaitGroup
 	const n = 50
 
-	states := []adapter.BodyState{
-		adapter.StateStarting,
-		adapter.StateRunning,
-		adapter.StateStopping,
-		adapter.StateStopped,
+	states := []orchestrator.BodyState{
+		orchestrator.StateStarting,
+		orchestrator.StateRunning,
+		orchestrator.StateStopping,
+		orchestrator.StateStopped,
 	}
 
 	for i := range n {
@@ -365,16 +365,16 @@ func TestListBodiesBySubstrate(t *testing.T) {
 	ctx := context.Background()
 
 	// Create bodies with different substrates
-	if err := s.CreateBody(ctx, "b1", "body-1", adapter.StateCreated, "", "docker", ""); err != nil {
+	if err := s.CreateBody(ctx, "b1", "body-1", orchestrator.StateCreated, "", "docker", ""); err != nil {
 		t.Fatalf("CreateBody docker: %v", err)
 	}
-	if err := s.CreateBody(ctx, "b2", "body-2", adapter.StateCreated, "", "docker", ""); err != nil {
+	if err := s.CreateBody(ctx, "b2", "body-2", orchestrator.StateCreated, "", "docker", ""); err != nil {
 		t.Fatalf("CreateBody docker 2: %v", err)
 	}
-	if err := s.CreateBody(ctx, "b3", "body-3", adapter.StateCreated, "", "nomad", ""); err != nil {
+	if err := s.CreateBody(ctx, "b3", "body-3", orchestrator.StateCreated, "", "nomad", ""); err != nil {
 		t.Fatalf("CreateBody nomad: %v", err)
 	}
-	if err := s.CreateBody(ctx, "b4", "body-4", adapter.StateCreated, "", "local", ""); err != nil {
+	if err := s.CreateBody(ctx, "b4", "body-4", orchestrator.StateCreated, "", "local", ""); err != nil {
 		t.Fatalf("CreateBody local: %v", err)
 	}
 
@@ -472,7 +472,7 @@ func TestSchemaMigrationV1ToV2(t *testing.T) {
 	if _, err := db.Exec(
 		`INSERT INTO bodies (id, name, state, spec_json, instance_id, created_at, updated_at)
 		 VALUES (?, ?, ?, ?, ?, ?, ?)`,
-		"v1-body", "v1-body-name", string(adapter.StateCreated), "{}", "inst-1", "2024-01-01T00:00:00Z", "2024-01-01T00:00:00Z",
+		"v1-body", "v1-body-name", string(orchestrator.StateCreated), "{}", "inst-1", "2024-01-01T00:00:00Z", "2024-01-01T00:00:00Z",
 	); err != nil {
 		db.Close()
 		t.Fatalf("insert v1 body: %v", err)
@@ -516,7 +516,7 @@ func TestSchemaMigrationV1ToV2(t *testing.T) {
 	}
 
 	// Verify new bodies can be created with substrate
-	if err := s.CreateBody(ctx, "new-body", "new-body-name", adapter.StateRunning, "", "nomad", "inst-2"); err != nil {
+	if err := s.CreateBody(ctx, "new-body", "new-body-name", orchestrator.StateRunning, "", "nomad", "inst-2"); err != nil {
 		t.Fatalf("CreateBody after migration: %v", err)
 	}
 	newBody, err := s.GetBody(ctx, "new-body")
