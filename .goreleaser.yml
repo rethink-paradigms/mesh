@@ -21,7 +21,7 @@ builds:
       - CGO_ENABLED=0
 
 archives:
-  - formats: [binary]
+  - formats: [tar.gz]
     name_template: >-
       {{ .ProjectName }}_
       {{- .Version }}_

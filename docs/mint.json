@@ -42,6 +42,10 @@
       "url": "mcp-api"
     },
     {
+      "name": "REST API",
+      "url": "rest-api"
+    },
+    {
       "name": "Migration",
       "url": "migration"
     }
@@ -64,6 +68,7 @@
         "architecture",
         "cli-reference",
         "mcp-api",
+        "rest-api",
         "migration"
       ]
     },

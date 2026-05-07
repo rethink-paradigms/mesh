@@ -1,0 +1,61 @@
+[Unit]
+Description=Mesh — portable agent-body runtime for AI agents
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=mesh
+ExecStart=/usr/local/bin/mesh serve --config /etc/mesh/config.yaml
+Restart=on-failure
+RestartSec=5
+
+# Security hardening
+# Prevent the service from gaining new privileges via setuid/setgid binaries
+NoNewPrivileges=yes
+
+# Mount /usr and /etc as read-only; only allow writes to explicit paths below
+ProtectSystem=strict
+ReadWritePaths=/var/lib/mesh /etc/mesh
+
+# Protect /home, /root, and /run/user from being accessed
+ProtectHome=yes
+
+# Use a private /tmp directory, isolated from other processes
+PrivateTmp=yes
+
+# Mount /dev with a minimal set of device nodes (no raw disk access)
+PrivateDevices=yes
+
+# Use a private /dev/shm (shared memory) for the service
+PrivateMounts=yes
+
+# Prevent the service from accessing kernel tunables via /proc/sys and /sys
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+
+# Prevent the service from calling clone(2) with CLONE_NEWNS, CLONE_NEWUSER, etc.
+ProtectClock=yes
+RestrictNamespaces=yes
+
+# Disallow the use of system calls that are rarely needed
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
+
+# Only allow AF_INET, AF_INET6, AF_UNIX sockets
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+
+# Ensure the service cannot change its capabilities (principle of least privilege)
+LockPersonality=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+
+# Remove access to specific capabilities the daemon doesn't need
+CapabilityBoundingSet=
+
+# Remove the default memory denial protection (use cgroup-based limits if needed)
+MemoryDenyWriteExecute=yes
+
+[Install]
+WantedBy=multi-user.target

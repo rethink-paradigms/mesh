@@ -4,7 +4,7 @@
 > Decision summaries sourced from `.mesh/governance.db`.
 
 ## Phase
-v1.0 Implementation Complete — 17 packages test-passing. Governance system (mesh-nav) operational.
+v0.1.0 — Release Pipeline & OSS Documentation complete. 17 packages test-passing. Governance system (mesh-nav) operational.
 
 ## What Mesh Is
 Portable agent-body runtime. Gives an AI agent a persistent compute identity (filesystem state) that can live on any substrate and move between them. Self-hosted, user-owned, no central dependency.
@@ -60,7 +60,7 @@ Portable agent-body runtime. Gives an AI agent a persistent compute identity (fi
 
 - A1: Hermes Operator — A2: Tool Agent (Go/Rust) — A3: Ephemeral Task Runner — A4: Burst Clone — A5: Developer Agent (laptop)
 
-## Built (v1.0)
+## Built (v0.1.0)
 
 - Daemon with Docker + Nomad multi-adapter routing
 - 16 MCP tools for body CRUD and migration
@@ -73,12 +73,14 @@ Portable agent-body runtime. Gives an AI agent a persistent compute identity (fi
 
 ## Learnings
 
-- L1: Docker adapter is built-in for v1.0 (pattern, confidence 5)
-- L2: v1.0 implementation complete — 17 test-passing packages (project, confidence 5)
+- L1: Docker adapter is built-in for v0.1.0 (pattern, confidence 5)
+- L2: v0.1.0 release pipeline shipped — GoReleaser tar.gz, tag-triggered release workflow, REST API docs, systemd unit, auth fail-closed (project, confidence 5)
 
 ## Current Focus
 
-mesh-nav v2 complete: GrafitoDB property graph backend (7 node types, 10 edge types), session continuity (auto-briefing + structured handoff), learnings as first-class nodes (Engram format), 105 tests passing. Regen this summary with `generate.py context-summary`.
+Release pipeline shipped: GoReleaser produces tar.gz archives on v* tags, tag-triggered GitHub Actions workflow runs CI + publish, systemd unit for daemon deployment, REST API documentation covering all 8 endpoints (Mintlify), auth hardended (fail-closed on missing token), version reset v1.0.0 → v0.1.0.
+
+Now entering: Mesh v1.1 refinements — daemon REST API missing endpoints, body status reporting, migration UX, and Nomad integration polish. See `discovery/roadmap/v1.1-refinements.md`.
 
 **Entity counts**: 10 decisions | 8 governance decisions | 5 questions (all resolved) | 6 constraints | 5 personas | 4 sessions | 2 learnings
 

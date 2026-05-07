@@ -11,7 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - chore: remove personal AI assistant configs (CLAUDE.md, DESIGN.md, GEMINI.md, scripts/gemini-opinion.sh) from public tracking. Kept locally for dev workflow.
 
-## [1.0.0] - 2026-05-01
+## [0.1.0] - 2026-05-06
 
 ### Added
 
@@ -26,7 +26,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- Complete redesign — Python v0 → Go v1
+- Complete redesign — Python v0 → Go v0.1.0
 
-[Unreleased]: https://github.com/rethink-paradigms/mesh/compare/v1.0.0...HEAD
-[1.0.0]: https://github.com/rethink-paradigms/mesh/releases/tag/v1.0.0
+[Unreleased]: https://github.com/rethink-paradigms/mesh/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/rethink-paradigms/mesh/releases/tag/v0.1.0

@@ -11,7 +11,7 @@ Mesh provides two core abstractions:
 
 The snapshot primitive is `docker export | zstd` — a flat filesystem tarball. No memory state, fully portable.
 
-## v1.0 Features
+## Features
 
 - **Daemon with Docker + Nomad multi-adapter routing**
 - **16 MCP tools** for body CRUD and migration
@@ -27,6 +27,7 @@ The snapshot primitive is `docker export | zstd` — a flat filesystem tarball. 
 - [Architecture Overview](architecture.md) — System design and component diagrams
 - [CLI Reference](cli-reference.md) — Command-line interface documentation
 - [MCP API](mcp-api.md) — Model Context Protocol API reference
+- [REST API](rest-api.md) — HTTP REST API for scripting and tooling
 - [Migration Guide](migration.md) — Migrating from v0 to v1
 - [Package Documentation](internal/packages.md) — Internal package reference
 
@@ -41,6 +42,10 @@ go build -o /usr/local/bin/mesh ./cmd/mesh/
 ```
 
 Requires Go 1.25 or later. No CGo, no system dependencies beyond a working Go toolchain and Docker.
+
+### Download a Release
+
+Prebuilt binaries for Linux and macOS (amd64 and arm64) are available on the [GitHub Releases page](https://github.com/rethink-paradigms/mesh/releases). Download, extract, and place the `mesh` binary in your `$PATH`.
 
 ### Quick Start
 
@@ -66,6 +71,21 @@ Mesh supports three substrate pools:
 ## Primary Interface
 
 The primary interface is the **MCP server** over stdio. AI agents communicate with Mesh via JSON-RPC. A CLI is provided for human operators.
+
+## Deployment
+
+### Systemd
+
+A systemd unit file is provided at [`contrib/systemd/mesh.service`](https://github.com/rethink-paradigms/mesh/blob/main/contrib/systemd/mesh.service). Install it to run Mesh as a system service:
+
+```bash
+sudo cp contrib/systemd/mesh.service /etc/systemd/system/
+sudo systemctl enable --now mesh
+```
+
+### Authentication
+
+The REST API uses Bearer token authentication. Configure the token in `mesh.yaml` under `auth_token`. See the [REST API authentication docs](rest-api.md#authentication) for details.
 
 ## License
 
