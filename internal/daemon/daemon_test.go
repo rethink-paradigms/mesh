@@ -26,6 +26,7 @@ func testConfig(t *testing.T) *config.Config {
 		Daemon: config.DaemonConfig{
 			PIDFile:    filepath.Join(t.TempDir(), "mesh.pid"),
 			ListenAddr: "127.0.0.1:0",
+			AuthToken:  "test-token",
 		},
 		Store: config.StoreConfig{
 			Path: filepath.Join(t.TempDir(), "test.db"),
@@ -857,6 +858,50 @@ func TestDaemonStartOrchOnly(t *testing.T) {
 	}
 	if !adp.IsHealthy(context.Background()) {
 		t.Fatal("mock orchestrator should report healthy")
+	}
+}
+
+func TestDaemonStartFailsWithoutAuthToken(t *testing.T) {
+	cfg := testConfig(t)
+	cfg.Daemon.AuthToken = ""
+	d, err := New(cfg)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	err = d.Start(context.Background())
+	if err == nil {
+		t.Fatal("expected error for missing auth token, got nil")
+	}
+	if !strings.Contains(err.Error(), "auth_token") {
+		t.Errorf("error = %v, want error containing 'auth_token'", err)
+	}
+}
+
+func TestDaemonStartSucceedsWithAuthToken(t *testing.T) {
+	cfg := testConfig(t)
+	cfg.Daemon.AuthToken = "test-token"
+	d, err := New(cfg)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() {
+		done <- d.Start(ctx)
+	}()
+
+	time.Sleep(200 * time.Millisecond)
+	cancel()
+
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("Start returned error: %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("Start did not return within timeout")
 	}
 }
 

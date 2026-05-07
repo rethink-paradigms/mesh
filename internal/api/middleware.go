@@ -1,22 +1,14 @@
 package api
 
 import (
-	"fmt"
 	"net/http"
-	"os"
 	"strings"
-	"sync"
 )
-
-var authWarnOnce sync.Once
 
 func BearerAuth(token string, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if token == "" {
-			authWarnOnce.Do(func() {
-				fmt.Fprintf(os.Stderr, "WARNING: auth_token not set, API endpoints are unprotected\n")
-			})
-			next.ServeHTTP(w, r)
+			WriteError(w, ErrCodeUnauthorized, "Server not configured with auth token", http.StatusUnauthorized)
 			return
 		}
 		authHeader := r.Header.Get("Authorization")

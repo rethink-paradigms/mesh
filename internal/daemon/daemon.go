@@ -164,7 +164,7 @@ func (d *Daemon) Start(ctx context.Context) error {
 	defer d.removePIDFile()
 
 	if d.cfg.Daemon.AuthToken == "" {
-		fmt.Fprintf(os.Stderr, "WARNING: auth_token not set, API endpoints are unprotected\n")
+		return fmt.Errorf("daemon: auth_token is not set in config — refusing to start with unprotected API")
 	}
 
 	if err := d.startAPIServer(); err != nil {
