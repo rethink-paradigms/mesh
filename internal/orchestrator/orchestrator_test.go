@@ -2,6 +2,7 @@ package orchestrator
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 	"sync"
 	"testing"
@@ -251,6 +252,113 @@ func TestMockAdapterMethods(t *testing.T) {
 
 	if !mock.IsHealthy(ctx) {
 		t.Fatal("expected healthy mock")
+	}
+}
+
+func TestRegistrySetDefault(t *testing.T) {
+	reg := NewRegistry()
+	alpha := newMockAdapter("alpha")
+	beta := newMockAdapter("beta")
+
+	if err := reg.Register("alpha", alpha); err != nil {
+		t.Fatalf("Register alpha failed: %v", err)
+	}
+	if err := reg.Register("beta", beta); err != nil {
+		t.Fatalf("Register beta failed: %v", err)
+	}
+
+	if err := reg.SetDefault("alpha"); err != nil {
+		t.Fatalf("SetDefault failed: %v", err)
+	}
+
+	got, err := reg.Default()
+	if err != nil {
+		t.Fatalf("Default failed: %v", err)
+	}
+	if got != alpha {
+		t.Fatal("Default() should return the alpha adapter")
+	}
+
+	if err := reg.SetDefault("beta"); err != nil {
+		t.Fatalf("SetDefault to beta failed: %v", err)
+	}
+	got, err = reg.Default()
+	if err != nil {
+		t.Fatalf("Default after switch failed: %v", err)
+	}
+	if got != beta {
+		t.Fatal("Default() should return the beta adapter after switch")
+	}
+}
+
+func TestRegistryDefaultEmpty(t *testing.T) {
+	reg := NewRegistry()
+
+	_, err := reg.Default()
+	if err == nil {
+		t.Fatal("expected error for Default on empty registry, got nil")
+	}
+	if !strings.Contains(err.Error(), "no default") {
+		t.Fatalf("expected 'no default' in error, got: %s", err.Error())
+	}
+}
+
+func TestRegistrySetDefaultNotFound(t *testing.T) {
+	reg := NewRegistry()
+	_ = reg.Register("alpha", newMockAdapter("alpha"))
+
+	err := reg.SetDefault("nonexistent")
+	if err == nil {
+		t.Fatal("expected error for SetDefault with unregistered name, got nil")
+	}
+	if !strings.Contains(err.Error(), "nonexistent") {
+		t.Fatalf("expected 'nonexistent' in error, got: %s", err.Error())
+	}
+	if !strings.Contains(err.Error(), "alpha") {
+		t.Fatalf("expected available name 'alpha' in error, got: %s", err.Error())
+	}
+}
+
+func TestBodySpecPorts(t *testing.T) {
+	spec := BodySpec{
+		Image: "nginx:latest",
+		Ports: []BodyPort{
+			{Name: "http", ContainerPort: 80, Protocol: "tcp", Expose: true},
+			{Name: "https", ContainerPort: 443, HostPort: 8443, Protocol: "tcp", Expose: false},
+		},
+	}
+
+	if len(spec.Ports) != 2 {
+		t.Fatalf("expected 2 ports, got %d", len(spec.Ports))
+	}
+	if spec.Ports[0].Name != "http" || spec.Ports[0].ContainerPort != 80 {
+		t.Fatal("BodySpec.Ports[0] mismatch")
+	}
+	if spec.Ports[1].HostPort != 8443 {
+		t.Fatal("BodySpec.Ports[1].HostPort mismatch")
+	}
+
+	data, err := json.Marshal(spec)
+	if err != nil {
+		t.Fatalf("json.Marshal failed: %v", err)
+	}
+
+	var decoded BodySpec
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		t.Fatalf("json.Unmarshal failed: %v", err)
+	}
+
+	if len(decoded.Ports) != 2 {
+		t.Fatalf("json round-trip: expected 2 ports, got %d", len(decoded.Ports))
+	}
+	if decoded.Ports[0].Name != "http" || decoded.Ports[0].ContainerPort != 80 {
+		t.Fatal("json round-trip: Ports[0] mismatch")
+	}
+	if decoded.Ports[1].HostPort != 8443 {
+		t.Fatal("json round-trip: Ports[1].HostPort mismatch")
+	}
+	if decoded.Ports[1].Expose {
+		t.Fatal("json round-trip: Ports[1].Expose should be false")
 	}
 }
 

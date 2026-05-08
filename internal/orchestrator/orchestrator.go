@@ -28,6 +28,15 @@ const (
 	StateDestroyed BodyState = "Destroyed"
 )
 
+// BodyPort defines a port mapping for a body.
+type BodyPort struct {
+	Name          string `json:"name"`
+	ContainerPort int    `json:"container_port"`
+	HostPort      int    `json:"host_port,omitempty"`
+	Protocol      string `json:"protocol"`
+	Expose        bool   `json:"expose"`
+}
+
 // BodySpec defines the desired state of a body at creation time.
 type BodySpec struct {
 	Image     string
@@ -36,6 +45,7 @@ type BodySpec struct {
 	Cmd       []string
 	MemoryMB  int
 	CPUShares int
+	Ports     []BodyPort
 }
 
 // BodyStatus represents the current status of a running body.
@@ -68,8 +78,9 @@ type OrchestratorAdapter interface {
 // Registry provides thread-safe registration and lookup of OrchestratorAdapter
 // implementations using the database/sql pattern.
 type Registry struct {
-	mu       sync.RWMutex
-	adapters map[string]OrchestratorAdapter
+	mu          sync.RWMutex
+	adapters    map[string]OrchestratorAdapter
+	defaultName string
 }
 
 // NewRegistry creates a new empty Registry.
@@ -136,6 +147,39 @@ func (r *Registry) listNames() []string {
 	}
 	sort.Strings(names)
 	return names
+}
+
+// SetDefault sets the named adapter as the default for this registry.
+// Returns an error if no adapter is registered with that name.
+func (r *Registry) SetDefault(name string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if _, exists := r.adapters[name]; !exists {
+		return &errNotFound{name: name, available: r.listNames()}
+	}
+	r.defaultName = name
+	return nil
+}
+
+// Default returns the default adapter for this registry.
+// Returns an error if no default has been set or the registry is empty.
+func (r *Registry) Default() (OrchestratorAdapter, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	if r.defaultName == "" {
+		avail := r.listNames()
+		if len(avail) == 0 {
+			return nil, fmt.Errorf("no default orchestrator adapter (no adapters registered)")
+		}
+		return nil, fmt.Errorf("no default orchestrator adapter set; registered: %v", avail)
+	}
+	adapter, ok := r.adapters[r.defaultName]
+	if !ok {
+		return nil, fmt.Errorf("default orchestrator adapter %q not found in registry", r.defaultName)
+	}
+	return adapter, nil
 }
 
 // DefaultRegistry is the package-level default registry.
