@@ -9,8 +9,10 @@ import (
 	"io"
 	"os"
 	"sync"
+	"time"
 
 	"github.com/rethink-paradigms/mesh/internal/body"
+	"github.com/rethink-paradigms/mesh/internal/ingress"
 	"github.com/rethink-paradigms/mesh/internal/orchestrator"
 	"github.com/rethink-paradigms/mesh/internal/plugin"
 	"github.com/rethink-paradigms/mesh/internal/service"
@@ -72,6 +74,8 @@ type Server struct {
 	features   map[string]bool
 	maxBodies  int
 	maxSnapshots int
+	startedAt  time.Time
+	ingress    ingress.IngressAdapter
 
 	reader io.Reader
 	writer io.Writer
@@ -121,6 +125,16 @@ func (s *Server) SetFeatures(f map[string]bool) {
 func (s *Server) SetLimits(maxBodies, maxSnapshots int) {
 	s.maxBodies = maxBodies
 	s.maxSnapshots = maxSnapshots
+}
+
+// SetIngress sets the ingress adapter for route reporting.
+func (s *Server) SetIngress(ing ingress.IngressAdapter) {
+	s.ingress = ing
+}
+
+// SetStartedAt sets the daemon start time for uptime calculation.
+func (s *Server) SetStartedAt(t time.Time) {
+	s.startedAt = t
 }
 
 // New creates a new MCP server backed by the given store.

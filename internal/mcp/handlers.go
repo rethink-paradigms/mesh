@@ -1,6 +1,7 @@
 package mcp
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"crypto/sha256"
@@ -11,6 +12,9 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"runtime"
+	"strings"
+	"syscall"
 	"time"
 
 	"github.com/klauspost/compress/zstd"
@@ -127,6 +131,11 @@ func (s *Server) registerTools() {
 	s.RegisterTool("list_capabilities", s.handleListCapabilities, ToolDefinition{
 		Name:        "list_capabilities",
 		Description: "List daemon capabilities including orchestrators, providers, features, and limits.",
+		InputSchema: json.RawMessage(`{"type":"object","properties":{}}`),
+	})
+	s.RegisterTool("daemon_status", s.handleDaemonStatus, ToolDefinition{
+		Name:        "daemon_status",
+		Description: "Get full daemon status including bodies, ports, ingress, and capacity.",
 		InputSchema: json.RawMessage(`{"type":"object","properties":{}}`),
 	})
 }
@@ -654,6 +663,131 @@ func (s *Server) handleListCapabilities(ctx context.Context, params json.RawMess
 			"max_snapshots": maxSnapshots,
 		},
 	}, nil
+}
+
+func (s *Server) handleDaemonStatus(ctx context.Context, params json.RawMessage) (interface{}, error) {
+	status := map[string]interface{}{}
+
+	// Daemon info
+	uptimeSec := int64(0)
+	startTime := ""
+	if !s.startedAt.IsZero() {
+		uptimeSec = int64(time.Since(s.startedAt).Seconds())
+		startTime = s.startedAt.Format(time.RFC3339)
+	}
+	status["daemon"] = map[string]interface{}{
+		"version":        s.version,
+		"uptime_seconds": uptimeSec,
+		"start_time":     startTime,
+	}
+
+	// Tier
+	tier := s.tier
+	if tier == "" {
+		tier = "lite"
+	}
+	status["tier"] = tier
+
+	// Bodies
+	bodiesInfo := map[string]interface{}{
+		"total":   0,
+		"running": 0,
+		"stopped": 0,
+		"error":   0,
+		"list":    []map[string]interface{}{},
+	}
+	if s.store != nil {
+		records, err := s.store.ListBodies(ctx)
+		if err == nil {
+			running, stopped, errorCount := 0, 0, 0
+			list := make([]map[string]interface{}, 0, len(records))
+			for _, rec := range records {
+				switch rec.State {
+				case orchestrator.StateRunning:
+					running++
+				case orchestrator.StateStopped, orchestrator.StateStopping:
+					stopped++
+				case orchestrator.StateError:
+					errorCount++
+				}
+				list = append(list, map[string]interface{}{
+					"id":    rec.ID,
+					"name":  rec.Name,
+					"state": string(rec.State),
+				})
+			}
+			bodiesInfo = map[string]interface{}{
+				"total":   len(records),
+				"running": running,
+				"stopped": stopped,
+				"error":   errorCount,
+				"list":    list,
+			}
+		}
+	}
+	status["bodies"] = bodiesInfo
+
+	// Ports
+	status["ports"] = map[string]interface{}{
+		"used":       0,
+		"free":       0,
+		"pool_start": 20000,
+		"pool_end":   30000,
+	}
+
+	// Ingress
+	routeCount := 0
+	if s.ingress != nil {
+		if routes, err := s.ingress.ListRoutes(ctx); err == nil {
+			routeCount = len(routes)
+		}
+	}
+	status["ingress"] = map[string]interface{}{
+		"route_count": routeCount,
+	}
+
+	// Capacity
+	status["capacity"] = collectMCPCapacity()
+
+	return status, nil
+}
+
+func collectMCPCapacity() map[string]interface{} {
+	var m runtime.MemStats
+	runtime.ReadMemStats(&m)
+
+	memTotalMB := int64(0)
+	f, err := os.Open("/proc/meminfo")
+	if err == nil {
+		scanner := bufio.NewScanner(f)
+		for scanner.Scan() {
+			line := scanner.Text()
+			if strings.HasPrefix(line, "MemTotal:") {
+				var kb int64
+				if _, err := fmt.Sscanf(line, "MemTotal: %d kB", &kb); err == nil {
+					memTotalMB = kb / 1024
+				}
+			}
+		}
+		f.Close()
+	}
+
+	diskGBUsed, diskGBTotal := 0.0, 0.0
+	var stat syscall.Statfs_t
+	if err := syscall.Statfs("/", &stat); err == nil {
+		totalBytes := stat.Blocks * uint64(stat.Bsize)
+		availBytes := stat.Bavail * uint64(stat.Bsize)
+		diskGBTotal = float64(totalBytes) / (1024 * 1024 * 1024)
+		diskGBUsed = float64(totalBytes-availBytes) / (1024 * 1024 * 1024)
+	}
+
+	return map[string]interface{}{
+		"cpu_percent":     0.0,
+		"memory_mb_used":  int64(m.Alloc) / 1024 / 1024,
+		"memory_mb_total": memTotalMB,
+		"disk_gb_used":    diskGBUsed,
+		"disk_gb_total":   diskGBTotal,
+	}
 }
 
 // getMCPProviders runs mesh-provision providers --output json and returns the raw JSON bytes.

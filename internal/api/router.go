@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"net/http"
+	"time"
 
 	"github.com/rethink-paradigms/mesh/internal/body"
 	"github.com/rethink-paradigms/mesh/internal/ingress"
@@ -23,6 +24,7 @@ type RouterConfig struct {
 	OrchRegistry *orchestrator.Registry
 	Features     map[string]bool
 	Limits       CapabilityLimits
+	Uptime       time.Time // daemon start time, used for uptime calculation
 }
 
 type bodyServiceAdapter interface {
@@ -51,6 +53,7 @@ func NewRouter(cfg RouterConfig) http.Handler {
 	apiMux.HandleFunc("DELETE /api/v1/bodies/{id}", handleDestroyBody(cfg))
 	apiMux.HandleFunc("GET /api/v1/nodes", handleListNodes(cfg))
 	apiMux.HandleFunc("GET /api/v1/capabilities", handleCapabilities(cfg))
+	apiMux.HandleFunc("GET /api/v1/status", handleStatus(cfg))
 
 	mux.Handle("/api/v1/", BearerAuth(cfg.AuthToken, apiMux))
 

@@ -109,12 +109,13 @@ type ListNodesResponse struct {
 
 // HealthzResponse is the response payload for GET /healthz.
 type HealthzResponse struct {
-	Status          string `json:"status"`
-	Version         string `json:"version"`
-	NomadConnected  bool   `json:"nomad_connected"`
-	ConsulConnected bool   `json:"consul_connected"`
-	BodiesCount     int    `json:"bodies_count"`
-	NodesCount      int    `json:"nodes_count"`
+	Status                string `json:"status"`
+	Version               string `json:"version"`
+	NomadConnected        bool   `json:"nomad_connected"`
+	ConsulConnected       bool   `json:"consul_connected"`
+	BodiesCount           int    `json:"bodies_count"`
+	NodesCount            int    `json:"nodes_count"`
+	OrchestratorConnected bool   `json:"orchestrator_connected"`
 }
 
 // CapabilitiesResponse is the response payload for GET /api/v1/capabilities.
@@ -137,4 +138,59 @@ type OrchestratorCapability struct {
 type CapabilityLimits struct {
 	MaxBodies    int `json:"max_bodies"`
 	MaxSnapshots int `json:"max_snapshots"`
+}
+
+// StatusResponse is the response payload for GET /api/v1/status.
+type StatusResponse struct {
+	Daemon   DaemonStatusInfo   `json:"daemon"`
+	Tier     string             `json:"tier"`
+	Bodies   BodiesStatusInfo   `json:"bodies"`
+	Ports    PortsStatusInfo    `json:"ports"`
+	Ingress  IngressStatusInfo  `json:"ingress"`
+	Capacity CapacityStatusInfo `json:"capacity"`
+}
+
+// DaemonStatusInfo describes the daemon itself.
+type DaemonStatusInfo struct {
+	Version   string `json:"version"`
+	UptimeSec int64  `json:"uptime_seconds"`
+	StartTime string `json:"start_time"`
+}
+
+// BodiesStatusInfo describes the aggregate state of all bodies.
+type BodiesStatusInfo struct {
+	Total   int              `json:"total"`
+	Running int              `json:"running"`
+	Stopped int              `json:"stopped"`
+	Error   int              `json:"error"`
+	List    []BodyStatusItem `json:"list"`
+}
+
+// BodyStatusItem is a summary entry for a single body in the status list.
+type BodyStatusItem struct {
+	ID    string `json:"id"`
+	Name  string `json:"name"`
+	State string `json:"state"`
+}
+
+// PortsStatusInfo describes port pool usage.
+type PortsStatusInfo struct {
+	Used      int `json:"used"`
+	Free      int `json:"free"`
+	PoolStart int `json:"pool_start"`
+	PoolEnd   int `json:"pool_end"`
+}
+
+// IngressStatusInfo describes the ingress router state.
+type IngressStatusInfo struct {
+	RouteCount int `json:"route_count"`
+}
+
+// CapacityStatusInfo describes daemon host capacity.
+type CapacityStatusInfo struct {
+	CPUPercent    float64 `json:"cpu_percent"`
+	MemoryMBUsed  int64   `json:"memory_mb_used"`
+	MemoryMBTotal int64   `json:"memory_mb_total"`
+	DiskGBUsed    float64 `json:"disk_gb_used"`
+	DiskGBTotal   float64 `json:"disk_gb_total"`
 }
