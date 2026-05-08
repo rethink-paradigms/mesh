@@ -20,6 +20,7 @@ import (
 	"github.com/rethink-paradigms/mesh/internal/orchestrator"
 	"github.com/rethink-paradigms/mesh/internal/plugin"
 	"github.com/rethink-paradigms/mesh/internal/provisioner"
+	"github.com/rethink-paradigms/mesh/internal/service"
 	"github.com/rethink-paradigms/mesh/internal/store"
 )
 
@@ -260,10 +261,13 @@ func TestPing(t *testing.T) {
 
 func TestListBodies(t *testing.T) {
 	s := tempStore(t)
+	bm := testBodyManager(t, s)
 	ctx := context.Background()
 	s.CreateBody(ctx, "b1", "test-body", orchestrator.StateRunning, `{"image":"alpine"}`, "docker", "inst-1")
 
 	h := newHarness(t, s)
+	h.srv.SetBodyManager(bm)
+	h.srv.SetBodyService(service.NewBodyService(bm, s, nil))
 	defer h.close()
 
 	h.send(t, Request{
@@ -289,10 +293,13 @@ func TestListBodies(t *testing.T) {
 
 func TestGetBody(t *testing.T) {
 	s := tempStore(t)
+	bm := testBodyManager(t, s)
 	ctx := context.Background()
 	s.CreateBody(ctx, "b1", "my-body", orchestrator.StateRunning, `{"image":"alpine"}`, "docker", "inst-1")
 
 	h := newHarness(t, s)
+	h.srv.SetBodyManager(bm)
+	h.srv.SetBodyService(service.NewBodyService(bm, s, nil))
 	defer h.close()
 
 	h.send(t, Request{
@@ -321,7 +328,11 @@ func TestGetBody(t *testing.T) {
 
 func TestGetBodyNotFound(t *testing.T) {
 	s := tempStore(t)
+	bm := testBodyManager(t, s)
+
 	h := newHarness(t, s)
+	h.srv.SetBodyManager(bm)
+	h.srv.SetBodyService(service.NewBodyService(bm, s, nil))
 	defer h.close()
 
 	h.send(t, Request{
@@ -334,8 +345,8 @@ func TestGetBodyNotFound(t *testing.T) {
 	resp := h.readResponse(t)
 	rpcErr := resp["error"].(map[string]interface{})
 	code := rpcErr["code"].(float64)
-	if code != -32603 {
-		t.Fatalf("error code = %v, want -32603", code)
+	if code != -32001 {
+		t.Fatalf("error code = %v, want -32001", code)
 	}
 	msg := rpcErr["message"].(string)
 	if !strings.Contains(msg, "not found") {
@@ -385,6 +396,7 @@ func TestExecCommandSuccess(t *testing.T) {
 
 	h := newHarness(t, s)
 	h.srv.SetBodyManager(bm)
+	h.srv.SetBodyService(service.NewBodyService(bm, s, nil))
 	defer h.close()
 
 	h.send(t, Request{
@@ -429,6 +441,7 @@ func TestExecCommandNotRunning(t *testing.T) {
 
 	h := newHarness(t, s)
 	h.srv.SetBodyManager(bm)
+	h.srv.SetBodyService(service.NewBodyService(bm, s, nil))
 	defer h.close()
 
 	h.send(t, Request{
@@ -444,8 +457,8 @@ func TestExecCommandNotRunning(t *testing.T) {
 	resp := h.readResponse(t)
 	rpcErr := resp["error"].(map[string]interface{})
 	msg := rpcErr["message"].(string)
-	if !strings.Contains(msg, "not running") {
-		t.Fatalf("error message = %q, want 'not running'", msg)
+	if !strings.Contains(msg, "state conflict") {
+		t.Fatalf("error message = %q, want 'state conflict'", msg)
 	}
 }
 
@@ -461,6 +474,7 @@ func TestExecCommandTimeout(t *testing.T) {
 
 	h := newHarness(t, s)
 	h.srv.SetBodyManager(bm)
+	h.srv.SetBodyService(service.NewBodyService(bm, s, nil))
 	defer h.close()
 
 	h.send(t, Request{
@@ -493,6 +507,7 @@ func TestExecCommandEmptyCommand(t *testing.T) {
 
 	h := newHarness(t, s)
 	h.srv.SetBodyManager(bm)
+	h.srv.SetBodyService(service.NewBodyService(bm, s, nil))
 	defer h.close()
 
 	h.send(t, Request{
@@ -519,6 +534,7 @@ func TestExecCommandBodyNotFound(t *testing.T) {
 
 	h := newHarness(t, s)
 	h.srv.SetBodyManager(bm)
+	h.srv.SetBodyService(service.NewBodyService(bm, s, nil))
 	defer h.close()
 
 	h.send(t, Request{
@@ -557,8 +573,8 @@ func TestExecCommandNoBodyManager(t *testing.T) {
 	resp := h.readResponse(t)
 	rpcErr := resp["error"].(map[string]interface{})
 	msg := rpcErr["message"].(string)
-	if !strings.Contains(msg, "body manager not available") {
-		t.Fatalf("error message = %q, want 'body manager not available'", msg)
+	if !strings.Contains(msg, "body service not available") {
+		t.Fatalf("error message = %q, want 'body service not available'", msg)
 	}
 }
 
@@ -674,6 +690,7 @@ func TestCreateBody(t *testing.T) {
 	bm := testBodyManager(t, s)
 	h := newHarness(t, s)
 	h.srv.SetBodyManager(bm)
+	h.srv.SetBodyService(service.NewBodyService(bm, s, nil))
 	defer h.close()
 
 	h.send(t, Request{
@@ -711,6 +728,7 @@ func TestCreateBodyMissingRequired(t *testing.T) {
 	bm := testBodyManager(t, s)
 	h := newHarness(t, s)
 	h.srv.SetBodyManager(bm)
+	h.srv.SetBodyService(service.NewBodyService(bm, s, nil))
 	defer h.close()
 
 	h.send(t, Request{
@@ -743,8 +761,8 @@ func TestCreateBodyNoBodyManager(t *testing.T) {
 	resp := h.readResponse(t)
 	rpcErr := resp["error"].(map[string]interface{})
 	msg := rpcErr["message"].(string)
-	if !strings.Contains(msg, "body manager not available") {
-		t.Fatalf("error message = %q, want 'body manager not available'", msg)
+	if !strings.Contains(msg, "body service not available") {
+		t.Fatalf("error message = %q, want 'body service not available'", msg)
 	}
 }
 
@@ -762,6 +780,7 @@ func TestDeleteBody(t *testing.T) {
 
 	h := newHarness(t, s)
 	h.srv.SetBodyManager(bm)
+	h.srv.SetBodyService(service.NewBodyService(bm, s, nil))
 	defer h.close()
 
 	h.send(t, Request{
@@ -800,8 +819,8 @@ func TestDeleteBodyNoBodyManager(t *testing.T) {
 	resp := h.readResponse(t)
 	rpcErr := resp["error"].(map[string]interface{})
 	msg := rpcErr["message"].(string)
-	if !strings.Contains(msg, "body manager not available") {
-		t.Fatalf("error message = %q, want 'body manager not available'", msg)
+	if !strings.Contains(msg, "body service not available") {
+		t.Fatalf("error message = %q, want 'body service not available'", msg)
 	}
 }
 
@@ -818,6 +837,7 @@ func TestMigrateBody(t *testing.T) {
 
 	h := newHarness(t, s)
 	h.srv.SetBodyManager(bm)
+	h.srv.SetBodyService(service.NewBodyService(bm, s, nil))
 	h.srv.SetMigrator(mig)
 	defer h.close()
 
@@ -877,6 +897,7 @@ func TestStartBody(t *testing.T) {
 
 	h := newHarness(t, s)
 	h.srv.SetBodyManager(bm)
+	h.srv.SetBodyService(service.NewBodyService(bm, s, nil))
 	defer h.close()
 
 	h.send(t, Request{
@@ -919,6 +940,7 @@ func TestStopBody(t *testing.T) {
 
 	h := newHarness(t, s)
 	h.srv.SetBodyManager(bm)
+	h.srv.SetBodyService(service.NewBodyService(bm, s, nil))
 	defer h.close()
 
 	h.send(t, Request{
@@ -957,6 +979,7 @@ func TestStartBodyAlreadyRunning(t *testing.T) {
 
 	h := newHarness(t, s)
 	h.srv.SetBodyManager(bm)
+	h.srv.SetBodyService(service.NewBodyService(bm, s, nil))
 	defer h.close()
 
 	h.send(t, Request{
@@ -969,8 +992,8 @@ func TestStartBodyAlreadyRunning(t *testing.T) {
 	resp := h.readResponse(t)
 	rpcErr := resp["error"].(map[string]interface{})
 	msg := rpcErr["message"].(string)
-	if !strings.Contains(msg, "cannot start body in state") {
-		t.Fatalf("error message = %q, want 'cannot start body in state'", msg)
+	if !strings.Contains(msg, "state conflict") {
+		t.Fatalf("error message = %q, want 'state conflict'", msg)
 	}
 }
 
@@ -989,6 +1012,7 @@ func TestStopBodyAlreadyStopped(t *testing.T) {
 
 	h := newHarness(t, s)
 	h.srv.SetBodyManager(bm)
+	h.srv.SetBodyService(service.NewBodyService(bm, s, nil))
 	defer h.close()
 
 	h.send(t, Request{
@@ -1001,8 +1025,8 @@ func TestStopBodyAlreadyStopped(t *testing.T) {
 	resp := h.readResponse(t)
 	rpcErr := resp["error"].(map[string]interface{})
 	msg := rpcErr["message"].(string)
-	if !strings.Contains(msg, "invalid transition") {
-		t.Fatalf("error message = %q, want 'invalid transition'", msg)
+	if !strings.Contains(msg, "state conflict") {
+		t.Fatalf("error message = %q, want 'state conflict'", msg)
 	}
 }
 
@@ -1021,8 +1045,8 @@ func TestStartBodyNoBodyManager(t *testing.T) {
 	resp := h.readResponse(t)
 	rpcErr := resp["error"].(map[string]interface{})
 	msg := rpcErr["message"].(string)
-	if !strings.Contains(msg, "body manager not available") {
-		t.Fatalf("error message = %q, want 'body manager not available'", msg)
+	if !strings.Contains(msg, "body service not available") {
+		t.Fatalf("error message = %q, want 'body service not available'", msg)
 	}
 }
 
@@ -1041,8 +1065,8 @@ func TestStopBodyNoBodyManager(t *testing.T) {
 	resp := h.readResponse(t)
 	rpcErr := resp["error"].(map[string]interface{})
 	msg := rpcErr["message"].(string)
-	if !strings.Contains(msg, "body manager not available") {
-		t.Fatalf("error message = %q, want 'body manager not available'", msg)
+	if !strings.Contains(msg, "body service not available") {
+		t.Fatalf("error message = %q, want 'body service not available'", msg)
 	}
 }
 
@@ -1051,6 +1075,7 @@ func TestStartBodyMissingID(t *testing.T) {
 	bm := testBodyManager(t, s)
 	h := newHarness(t, s)
 	h.srv.SetBodyManager(bm)
+	h.srv.SetBodyService(service.NewBodyService(bm, s, nil))
 	defer h.close()
 
 	h.send(t, Request{
@@ -1073,6 +1098,7 @@ func TestStopBodyMissingID(t *testing.T) {
 	bm := testBodyManager(t, s)
 	h := newHarness(t, s)
 	h.srv.SetBodyManager(bm)
+	h.srv.SetBodyService(service.NewBodyService(bm, s, nil))
 	defer h.close()
 
 	h.send(t, Request{
@@ -1096,6 +1122,7 @@ func TestMigrateBodyMissingParams(t *testing.T) {
 	mig := testMigrator(t, s, bm)
 	h := newHarness(t, s)
 	h.srv.SetBodyManager(bm)
+	h.srv.SetBodyService(service.NewBodyService(bm, s, nil))
 	h.srv.SetMigrator(mig)
 	defer h.close()
 
@@ -1119,6 +1146,7 @@ func TestDeleteBodyMissingID(t *testing.T) {
 	bm := testBodyManager(t, s)
 	h := newHarness(t, s)
 	h.srv.SetBodyManager(bm)
+	h.srv.SetBodyService(service.NewBodyService(bm, s, nil))
 	defer h.close()
 
 	h.send(t, Request{
@@ -1148,6 +1176,7 @@ func TestCreateSnapshot(t *testing.T) {
 
 	h := newHarness(t, s)
 	h.srv.SetBodyManager(bm)
+	h.srv.SetBodyService(service.NewBodyService(bm, s, nil))
 	defer h.close()
 
 	h.send(t, Request{
@@ -1183,6 +1212,7 @@ func TestCreateSnapshotBodyNotFound(t *testing.T) {
 
 	h := newHarness(t, s)
 	h.srv.SetBodyManager(bm)
+	h.srv.SetBodyService(service.NewBodyService(bm, s, nil))
 	defer h.close()
 
 	h.send(t, Request{
@@ -1213,6 +1243,7 @@ func TestCreateSnapshotBodyNotRunning(t *testing.T) {
 
 	h := newHarness(t, s)
 	h.srv.SetBodyManager(bm)
+	h.srv.SetBodyService(service.NewBodyService(bm, s, nil))
 	defer h.close()
 
 	h.send(t, Request{
@@ -1366,6 +1397,7 @@ func TestRestoreBody(t *testing.T) {
 
 	h := newHarness(t, s)
 	h.srv.SetBodyManager(bm)
+	h.srv.SetBodyService(service.NewBodyService(bm, s, nil))
 	defer h.close()
 
 	h.send(t, Request{
@@ -1428,6 +1460,7 @@ func TestRestoreBodySnapshotNotFound(t *testing.T) {
 
 	h := newHarness(t, s)
 	h.srv.SetBodyManager(bm)
+	h.srv.SetBodyService(service.NewBodyService(bm, s, nil))
 	defer h.close()
 
 	h.send(t, Request{
@@ -1457,6 +1490,7 @@ func TestGetBodyLogsRunningBody(t *testing.T) {
 
 	h := newHarness(t, s)
 	h.srv.SetBodyManager(bm)
+	h.srv.SetBodyService(service.NewBodyService(bm, s, nil))
 	defer h.close()
 
 	h.send(t, Request{
@@ -1501,6 +1535,7 @@ func TestGetBodyLogsStoppedBody(t *testing.T) {
 
 	h := newHarness(t, s)
 	h.srv.SetBodyManager(bm)
+	h.srv.SetBodyService(service.NewBodyService(bm, s, nil))
 	defer h.close()
 
 	h.send(t, Request{
@@ -1516,8 +1551,8 @@ func TestGetBodyLogsStoppedBody(t *testing.T) {
 	resp := h.readResponse(t)
 	rpcErr := resp["error"].(map[string]interface{})
 	msg := rpcErr["message"].(string)
-	if !strings.Contains(msg, "not running") {
-		t.Fatalf("error message = %q, want 'not running'", msg)
+	if !strings.Contains(msg, "state conflict") {
+		t.Fatalf("error message = %q, want 'state conflict'", msg)
 	}
 }
 
@@ -1527,6 +1562,7 @@ func TestGetBodyLogsBodyNotFound(t *testing.T) {
 
 	h := newHarness(t, s)
 	h.srv.SetBodyManager(bm)
+	h.srv.SetBodyService(service.NewBodyService(bm, s, nil))
 	defer h.close()
 
 	h.send(t, Request{
@@ -1565,8 +1601,8 @@ func TestGetBodyLogsNoBodyManager(t *testing.T) {
 	resp := h.readResponse(t)
 	rpcErr := resp["error"].(map[string]interface{})
 	msg := rpcErr["message"].(string)
-	if !strings.Contains(msg, "body manager not available") {
-		t.Fatalf("error message = %q, want 'body manager not available'", msg)
+	if !strings.Contains(msg, "body service not available") {
+		t.Fatalf("error message = %q, want 'body service not available'", msg)
 	}
 }
 
@@ -1582,6 +1618,7 @@ func TestGetBodyStatusRunningBody(t *testing.T) {
 
 	h := newHarness(t, s)
 	h.srv.SetBodyManager(bm)
+	h.srv.SetBodyService(service.NewBodyService(bm, s, nil))
 	defer h.close()
 
 	h.send(t, Request{
@@ -1620,6 +1657,7 @@ func TestGetBodyStatusBodyNotFound(t *testing.T) {
 
 	h := newHarness(t, s)
 	h.srv.SetBodyManager(bm)
+	h.srv.SetBodyService(service.NewBodyService(bm, s, nil))
 	defer h.close()
 
 	h.send(t, Request{
@@ -1658,8 +1696,8 @@ func TestGetBodyStatusNoBodyManager(t *testing.T) {
 	resp := h.readResponse(t)
 	rpcErr := resp["error"].(map[string]interface{})
 	msg := rpcErr["message"].(string)
-	if !strings.Contains(msg, "body manager not available") {
-		t.Fatalf("error message = %q, want 'body manager not available'", msg)
+	if !strings.Contains(msg, "body service not available") {
+		t.Fatalf("error message = %q, want 'body service not available'", msg)
 	}
 }
 
@@ -1810,6 +1848,7 @@ func TestMCPCreateBodySubstrate(t *testing.T) {
 
 	h := newHarness(t, s)
 	h.srv.SetBodyManager(bm)
+	h.srv.SetBodyService(service.NewBodyService(bm, s, orchReg))
 	h.srv.SetOrchestratorRegistry(orchReg)
 	defer h.close()
 
@@ -1851,6 +1890,7 @@ func TestMCPCreateBodyNoSubstrate(t *testing.T) {
 
 	h := newHarness(t, s)
 	h.srv.SetBodyManager(bm)
+	h.srv.SetBodyService(service.NewBodyService(bm, s, orchReg))
 	h.srv.SetOrchestratorRegistry(orchReg)
 	defer h.close()
 

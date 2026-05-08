@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -14,8 +15,26 @@ import (
 	"github.com/rethink-paradigms/mesh/internal/orchestrator"
 	"github.com/rethink-paradigms/mesh/internal/plugin"
 	"github.com/rethink-paradigms/mesh/internal/restore"
+	"github.com/rethink-paradigms/mesh/internal/service"
 	"github.com/rethink-paradigms/mesh/internal/store"
 )
+
+// mapServiceError converts domain errors from BodyService into RPC error codes.
+func mapServiceError(err error) *RPCError {
+	var notFound *service.NotFoundError
+	if errors.As(err, &notFound) {
+		return &RPCError{Code: -32001, Message: err.Error()}
+	}
+	var conflict *service.ConflictError
+	if errors.As(err, &conflict) {
+		return &RPCError{Code: -32002, Message: err.Error()}
+	}
+	var validation *service.ValidationError
+	if errors.As(err, &validation) {
+		return &RPCError{Code: -32602, Message: err.Error()}
+	}
+	return &RPCError{Code: -32603, Message: err.Error()}
+}
 
 func (s *Server) registerTools() {
 	s.RegisterTool("ping", s.handlePing, ToolDefinition{
@@ -110,23 +129,29 @@ func (s *Server) handlePing(ctx context.Context, params json.RawMessage) (interf
 }
 
 func (s *Server) handleListBodies(ctx context.Context, params json.RawMessage) (interface{}, error) {
-	bodies, err := s.store.ListBodies(ctx)
+	if s.svc == nil {
+		return nil, &RPCError{Code: -32603, Message: "body service not available"}
+	}
+	bodies, err := s.svc.List(ctx)
 	if err != nil {
-		return nil, &RPCError{Code: -32603, Message: err.Error()}
+		return nil, mapServiceError(err)
 	}
 	return bodies, nil
 }
 
 func (s *Server) handleGetBody(ctx context.Context, params json.RawMessage) (interface{}, error) {
+	if s.svc == nil {
+		return nil, &RPCError{Code: -32603, Message: "body service not available"}
+	}
 	var p struct {
 		ID string `json:"id"`
 	}
 	if err := json.Unmarshal(params, &p); err != nil || p.ID == "" {
 		return nil, &RPCError{Code: -32602, Message: "missing required parameter: id"}
 	}
-	body, err := s.store.GetBody(ctx, p.ID)
+	body, err := s.svc.Get(ctx, p.ID)
 	if err != nil {
-		return nil, &RPCError{Code: -32603, Message: err.Error()}
+		return nil, mapServiceError(err)
 	}
 	return body, nil
 }
@@ -146,8 +171,8 @@ func (s *Server) handleGetSnapshot(ctx context.Context, params json.RawMessage) 
 }
 
 func (s *Server) handleCreateBody(ctx context.Context, params json.RawMessage) (interface{}, error) {
-	if s.bodyMgr == nil {
-		return nil, &RPCError{Code: -32603, Message: "body manager not available"}
+	if s.svc == nil {
+		return nil, &RPCError{Code: -32603, Message: "body service not available"}
 	}
 	var p struct {
 		Name      string            `json:"name"`
@@ -162,27 +187,6 @@ func (s *Server) handleCreateBody(ctx context.Context, params json.RawMessage) (
 	if err := json.Unmarshal(params, &p); err != nil {
 		return nil, &RPCError{Code: -32602, Message: "invalid params: " + err.Error()}
 	}
-	if p.Name == "" || p.Image == "" {
-		return nil, &RPCError{Code: -32602, Message: "name and image are required"}
-	}
-
-	if s.orchRegistry != nil {
-		names := s.orchRegistry.List()
-		if p.Substrate == "" {
-			switch len(names) {
-			case 0:
-				return nil, &RPCError{Code: -32603, Message: "no substrate available: no orchestrators registered"}
-			case 1:
-				p.Substrate = names[0]
-			default:
-				return nil, &RPCError{Code: -32602, Message: fmt.Sprintf("substrate required when multiple orchestrators registered; available: %v", names)}
-			}
-		} else {
-			if _, err := s.orchRegistry.Open(p.Substrate); err != nil {
-				return nil, &RPCError{Code: -32602, Message: fmt.Sprintf("unknown substrate %q: %v", p.Substrate, err)}
-			}
-		}
-	}
 
 	spec := orchestrator.BodySpec{
 		Image:     p.Image,
@@ -193,9 +197,9 @@ func (s *Server) handleCreateBody(ctx context.Context, params json.RawMessage) (
 		CPUShares: p.CPUShares,
 	}
 
-	b, err := s.bodyMgr.Create(ctx, p.Name, spec)
+	b, err := s.svc.Create(ctx, p.Name, p.Image, spec)
 	if err != nil {
-		return nil, &RPCError{Code: -32603, Message: err.Error()}
+		return nil, mapServiceError(err)
 	}
 
 	return map[string]interface{}{
@@ -203,13 +207,13 @@ func (s *Server) handleCreateBody(ctx context.Context, params json.RawMessage) (
 		"name":      b.Name,
 		"state":     string(b.State),
 		"handle":    string(b.InstanceID),
-		"substrate": p.Substrate,
+		"substrate": b.Substrate,
 	}, nil
 }
 
 func (s *Server) handleDeleteBody(ctx context.Context, params json.RawMessage) (interface{}, error) {
-	if s.bodyMgr == nil {
-		return nil, &RPCError{Code: -32603, Message: "body manager not available"}
+	if s.svc == nil {
+		return nil, &RPCError{Code: -32603, Message: "body service not available"}
 	}
 	var p struct {
 		ID string `json:"id"`
@@ -217,8 +221,8 @@ func (s *Server) handleDeleteBody(ctx context.Context, params json.RawMessage) (
 	if err := json.Unmarshal(params, &p); err != nil || p.ID == "" {
 		return nil, &RPCError{Code: -32602, Message: "missing required parameter: id"}
 	}
-	if err := s.bodyMgr.Destroy(ctx, p.ID); err != nil {
-		return nil, &RPCError{Code: -32603, Message: err.Error()}
+	if err := s.svc.Destroy(ctx, p.ID); err != nil {
+		return nil, mapServiceError(err)
 	}
 	return map[string]bool{"deleted": true}, nil
 }
@@ -242,6 +246,9 @@ func (s *Server) handleMigrateBody(ctx context.Context, params json.RawMessage) 
 }
 
 func (s *Server) handleExecCommand(ctx context.Context, params json.RawMessage) (interface{}, error) {
+	if s.svc == nil {
+		return nil, &RPCError{Code: -32603, Message: "body service not available"}
+	}
 	var p struct {
 		BodyID         string   `json:"body_id"`
 		Command        []string `json:"command"`
@@ -254,19 +261,6 @@ func (s *Server) handleExecCommand(ctx context.Context, params json.RawMessage) 
 		return nil, &RPCError{Code: -32602, Message: "body_id and command are required"}
 	}
 
-	if s.bodyMgr == nil {
-		return nil, &RPCError{Code: -32603, Message: "body manager not available"}
-	}
-
-	body, err := s.store.GetBody(ctx, p.BodyID)
-	if err != nil {
-		return nil, &RPCError{Code: -32603, Message: fmt.Sprintf("body not found: %s", p.BodyID)}
-	}
-
-	if orchestrator.BodyState(body.State) != orchestrator.StateRunning {
-		return nil, &RPCError{Code: -32603, Message: fmt.Sprintf("body %s is not running (state: %s)", p.BodyID, body.State)}
-	}
-
 	timeout := 30 * time.Second
 	if p.TimeoutSeconds > 0 {
 		timeout = time.Duration(p.TimeoutSeconds) * time.Second
@@ -274,12 +268,12 @@ func (s *Server) handleExecCommand(ctx context.Context, params json.RawMessage) 
 	execCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
-	result, err := s.bodyMgr.Exec(execCtx, p.BodyID, p.Command)
+	result, err := s.svc.Exec(execCtx, p.BodyID, p.Command)
 	if err != nil {
 		if execCtx.Err() == context.DeadlineExceeded {
 			return nil, &RPCError{Code: -32603, Message: fmt.Sprintf("exec timeout after %v", timeout)}
 		}
-		return nil, &RPCError{Code: -32603, Message: fmt.Sprintf("exec failed: %v", err)}
+		return nil, mapServiceError(err)
 	}
 
 	return map[string]interface{}{
@@ -442,8 +436,8 @@ func (s *Server) handleRestoreBody(ctx context.Context, params json.RawMessage) 
 }
 
 func (s *Server) handleStartBody(ctx context.Context, params json.RawMessage) (interface{}, error) {
-	if s.bodyMgr == nil {
-		return nil, &RPCError{Code: -32603, Message: "body manager not available"}
+	if s.svc == nil {
+		return nil, &RPCError{Code: -32603, Message: "body service not available"}
 	}
 	var p struct {
 		BodyID string `json:"body_id"`
@@ -452,13 +446,13 @@ func (s *Server) handleStartBody(ctx context.Context, params json.RawMessage) (i
 		return nil, &RPCError{Code: -32602, Message: "missing required parameter: body_id"}
 	}
 
-	if err := s.bodyMgr.Start(ctx, p.BodyID); err != nil {
-		return nil, &RPCError{Code: -32603, Message: err.Error()}
+	if err := s.svc.Start(ctx, p.BodyID); err != nil {
+		return nil, mapServiceError(err)
 	}
 
-	b, err := s.bodyMgr.Get(ctx, p.BodyID)
+	b, err := s.svc.Get(ctx, p.BodyID)
 	if err != nil {
-		return nil, &RPCError{Code: -32603, Message: err.Error()}
+		return nil, mapServiceError(err)
 	}
 
 	return map[string]interface{}{
@@ -469,8 +463,8 @@ func (s *Server) handleStartBody(ctx context.Context, params json.RawMessage) (i
 }
 
 func (s *Server) handleStopBody(ctx context.Context, params json.RawMessage) (interface{}, error) {
-	if s.bodyMgr == nil {
-		return nil, &RPCError{Code: -32603, Message: "body manager not available"}
+	if s.svc == nil {
+		return nil, &RPCError{Code: -32603, Message: "body service not available"}
 	}
 	var p struct {
 		BodyID string `json:"body_id"`
@@ -479,16 +473,13 @@ func (s *Server) handleStopBody(ctx context.Context, params json.RawMessage) (in
 		return nil, &RPCError{Code: -32602, Message: "missing required parameter: body_id"}
 	}
 
-	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
-	defer cancel()
-
-	if err := s.bodyMgr.Stop(ctx, p.BodyID, orchestrator.StopOpts{Timeout: 30 * time.Second}); err != nil {
-		return nil, &RPCError{Code: -32603, Message: err.Error()}
+	if err := s.svc.Stop(ctx, p.BodyID); err != nil {
+		return nil, mapServiceError(err)
 	}
 
-	b, err := s.bodyMgr.Get(ctx, p.BodyID)
+	b, err := s.svc.Get(ctx, p.BodyID)
 	if err != nil {
-		return nil, &RPCError{Code: -32603, Message: err.Error()}
+		return nil, mapServiceError(err)
 	}
 
 	return map[string]interface{}{
@@ -499,8 +490,8 @@ func (s *Server) handleStopBody(ctx context.Context, params json.RawMessage) (in
 }
 
 func (s *Server) handleGetBodyLogs(ctx context.Context, params json.RawMessage) (interface{}, error) {
-	if s.bodyMgr == nil {
-		return nil, &RPCError{Code: -32603, Message: "body manager not available"}
+	if s.svc == nil {
+		return nil, &RPCError{Code: -32603, Message: "body service not available"}
 	}
 	var p struct {
 		BodyID string `json:"body_id"`
@@ -510,23 +501,14 @@ func (s *Server) handleGetBodyLogs(ctx context.Context, params json.RawMessage) 
 		return nil, &RPCError{Code: -32602, Message: "missing required parameter: body_id"}
 	}
 
-	body, err := s.store.GetBody(ctx, p.BodyID)
-	if err != nil {
-		return nil, &RPCError{Code: -32603, Message: fmt.Sprintf("body not found: %s", p.BodyID)}
-	}
-
-	if orchestrator.BodyState(body.State) != orchestrator.StateRunning {
-		return nil, &RPCError{Code: -32603, Message: fmt.Sprintf("body %s is not running (state: %s)", p.BodyID, body.State)}
-	}
-
 	tailLines := 100
 	if p.Tail > 0 {
 		tailLines = p.Tail
 	}
 
-	result, err := s.bodyMgr.Exec(ctx, p.BodyID, []string{"tail", "-n", fmt.Sprintf("%d", tailLines), "/var/log/mesh.log"})
+	result, err := s.svc.Exec(ctx, p.BodyID, []string{"tail", "-n", fmt.Sprintf("%d", tailLines), "/var/log/mesh.log"})
 	if err != nil {
-		return nil, &RPCError{Code: -32603, Message: fmt.Sprintf("failed to get logs: %v", err)}
+		return nil, mapServiceError(err)
 	}
 
 	return map[string]interface{}{
@@ -537,8 +519,8 @@ func (s *Server) handleGetBodyLogs(ctx context.Context, params json.RawMessage) 
 }
 
 func (s *Server) handleGetBodyStatus(ctx context.Context, params json.RawMessage) (interface{}, error) {
-	if s.bodyMgr == nil {
-		return nil, &RPCError{Code: -32603, Message: "body manager not available"}
+	if s.svc == nil {
+		return nil, &RPCError{Code: -32603, Message: "body service not available"}
 	}
 	var p struct {
 		BodyID string `json:"body_id"`
@@ -547,14 +529,14 @@ func (s *Server) handleGetBodyStatus(ctx context.Context, params json.RawMessage
 		return nil, &RPCError{Code: -32602, Message: "missing required parameter: body_id"}
 	}
 
-	body, err := s.store.GetBody(ctx, p.BodyID)
+	body, err := s.svc.Get(ctx, p.BodyID)
 	if err != nil {
-		return nil, &RPCError{Code: -32603, Message: fmt.Sprintf("body not found: %s", p.BodyID)}
+		return nil, mapServiceError(err)
 	}
 
-	status, err := s.bodyMgr.GetStatus(ctx, p.BodyID)
+	status, err := s.svc.GetStatus(ctx, p.BodyID)
 	if err != nil {
-		return nil, &RPCError{Code: -32603, Message: fmt.Sprintf("failed to get status: %v", err)}
+		return nil, mapServiceError(err)
 	}
 
 	return map[string]interface{}{

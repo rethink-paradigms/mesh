@@ -26,6 +26,7 @@ import (
 	"github.com/rethink-paradigms/mesh/internal/orchestrator"
 	"github.com/rethink-paradigms/mesh/internal/plugin"
 	"github.com/rethink-paradigms/mesh/internal/provisioner"
+	"github.com/rethink-paradigms/mesh/internal/service"
 	"github.com/rethink-paradigms/mesh/internal/store"
 	"gopkg.in/yaml.v3"
 )
@@ -208,6 +209,7 @@ func TestDaemonFullPipeline(t *testing.T) {
 
 	h := newHarness(t, s)
 	h.srv.SetBodyManager(bm)
+	h.srv.SetBodyService(service.NewBodyService(bm, s, nil))
 	orchReg := orchestrator.NewRegistry()
 	_ = orchReg.Register(mockAdapter.Name(), mockAdapter)
 	migrator := body.NewMigrationCoordinator(s, bm, orchReg, nil, nil)
@@ -1080,6 +1082,7 @@ func TestBodyLifecycleFull(t *testing.T) {
 
 	h := newHarness(t, s)
 	h.srv.SetBodyManager(bm)
+	h.srv.SetBodyService(service.NewBodyService(bm, s, nil))
 
 	h.send(t, mcp.Request{
 		JSONRPC: "2.0",
@@ -1178,6 +1181,7 @@ func TestMCPToolsEndToEnd(t *testing.T) {
 
 	h := newHarness(t, s)
 	h.srv.SetBodyManager(bm)
+	h.srv.SetBodyService(service.NewBodyService(bm, s, nil))
 
 	h.send(t, mcp.Request{
 		JSONRPC: "2.0",

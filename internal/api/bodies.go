@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -9,19 +10,37 @@ import (
 
 	"github.com/rethink-paradigms/mesh/internal/body"
 	"github.com/rethink-paradigms/mesh/internal/orchestrator"
+	"github.com/rethink-paradigms/mesh/internal/service"
 )
+
+func mapServiceError(err error) (code string, status int) {
+	var notFound *service.NotFoundError
+	if errors.As(err, &notFound) {
+		return ErrCodeBodyNotFound, http.StatusNotFound
+	}
+	var conflict *service.ConflictError
+	if errors.As(err, &conflict) {
+		return ErrCodeBodyConflict, http.StatusConflict
+	}
+	var validation *service.ValidationError
+	if errors.As(err, &validation) {
+		return ErrCodeBadRequest, http.StatusBadRequest
+	}
+	return ErrCodeInternal, http.StatusInternalServerError
+}
 
 func handleListBodies(cfg RouterConfig) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		bodies, err := cfg.BodyManager.List(r.Context())
+		bodies, err := cfg.BodyService.List(r.Context())
 		if err != nil {
-			WriteError(w, ErrCodeInternal, fmt.Sprintf("list bodies: %v", err), http.StatusInternalServerError)
+			code, status := mapServiceError(err)
+			WriteError(w, code, fmt.Sprintf("list bodies: %v", err), status)
 			return
 		}
 
 		responses := make([]BodyResponse, 0, len(bodies))
 		for _, b := range bodies {
-			status, err := cfg.BodyManager.GetStatus(r.Context(), b.ID)
+			status, err := cfg.BodyService.GetStatus(r.Context(), b.ID)
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "api: get status for body %s: %v\n", b.ID, err)
 			}
@@ -40,19 +59,11 @@ func handleCreateBody(cfg RouterConfig) http.HandlerFunc {
 			return
 		}
 
-		if req.Name == "" {
-			WriteError(w, ErrCodeBadRequest, "name is required", http.StatusBadRequest)
-			return
-		}
-		if req.Image == "" {
-			WriteError(w, ErrCodeBadRequest, "image is required", http.StatusBadRequest)
-			return
-		}
-
 		spec := requestToSpec(req)
-		b, err := cfg.BodyManager.Create(r.Context(), req.Name, spec)
+		b, err := cfg.BodyService.Create(r.Context(), req.Name, req.Image, spec)
 		if err != nil {
-			WriteError(w, ErrCodeInternal, fmt.Sprintf("create body: %v", err), http.StatusInternalServerError)
+			code, status := mapServiceError(err)
+			WriteError(w, code, fmt.Sprintf("create body: %v", err), status)
 			return
 		}
 
@@ -72,13 +83,14 @@ func handleGetBody(cfg RouterConfig) http.HandlerFunc {
 			return
 		}
 
-		b, err := cfg.BodyManager.Get(r.Context(), id)
+		b, err := cfg.BodyService.Get(r.Context(), id)
 		if err != nil {
-			WriteError(w, ErrCodeBodyNotFound, fmt.Sprintf("body not found: %v", err), http.StatusNotFound)
+			code, status := mapServiceError(err)
+			WriteError(w, code, fmt.Sprintf("get body: %v", err), status)
 			return
 		}
 
-		status, err := cfg.BodyManager.GetStatus(r.Context(), id)
+		status, err := cfg.BodyService.GetStatus(r.Context(), id)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "api: get status for body %s: %v\n", id, err)
 		}
@@ -95,20 +107,9 @@ func handleStopBody(cfg RouterConfig) http.HandlerFunc {
 			return
 		}
 
-		b, err := cfg.BodyManager.Get(r.Context(), id)
-		if err != nil {
-			WriteError(w, ErrCodeBodyNotFound, fmt.Sprintf("body not found: %v", err), http.StatusNotFound)
-			return
-		}
-
-		state := string(b.State)
-		if state != "Running" && state != "Starting" {
-			WriteError(w, ErrCodeBodyConflict, "Body must be Running or Starting to stop", http.StatusConflict)
-			return
-		}
-
-		if err := cfg.BodyManager.Stop(r.Context(), id, orchestrator.StopOpts{Timeout: 30 * time.Second}); err != nil {
-			WriteError(w, ErrCodeInternal, fmt.Sprintf("stop body: %v", err), http.StatusInternalServerError)
+		if err := cfg.BodyService.Stop(r.Context(), id); err != nil {
+			code, status := mapServiceError(err)
+			WriteError(w, code, fmt.Sprintf("stop body: %v", err), status)
 			return
 		}
 
@@ -127,19 +128,9 @@ func handleStartBody(cfg RouterConfig) http.HandlerFunc {
 			return
 		}
 
-		b, err := cfg.BodyManager.Get(r.Context(), id)
-		if err != nil {
-			WriteError(w, ErrCodeBodyNotFound, fmt.Sprintf("body not found: %v", err), http.StatusNotFound)
-			return
-		}
-
-		if string(b.State) != "Stopped" {
-			WriteError(w, ErrCodeBodyConflict, "Body must be Stopped to start", http.StatusConflict)
-			return
-		}
-
-		if err := cfg.BodyManager.Start(r.Context(), id); err != nil {
-			WriteError(w, ErrCodeInternal, fmt.Sprintf("start body: %v", err), http.StatusInternalServerError)
+		if err := cfg.BodyService.Start(r.Context(), id); err != nil {
+			code, status := mapServiceError(err)
+			WriteError(w, code, fmt.Sprintf("start body: %v", err), status)
 			return
 		}
 
@@ -158,13 +149,9 @@ func handleDestroyBody(cfg RouterConfig) http.HandlerFunc {
 			return
 		}
 
-		if _, err := cfg.BodyManager.Get(r.Context(), id); err != nil {
-			WriteError(w, ErrCodeBodyNotFound, fmt.Sprintf("body not found: %v", err), http.StatusNotFound)
-			return
-		}
-
-		if err := cfg.BodyManager.Destroy(r.Context(), id); err != nil {
-			WriteError(w, ErrCodeInternal, fmt.Sprintf("destroy body: %v", err), http.StatusInternalServerError)
+		if err := cfg.BodyService.Destroy(r.Context(), id); err != nil {
+			code, status := mapServiceError(err)
+			WriteError(w, code, fmt.Sprintf("destroy body: %v", err), status)
 			return
 		}
 

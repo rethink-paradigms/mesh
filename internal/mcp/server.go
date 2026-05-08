@@ -13,6 +13,7 @@ import (
 	"github.com/rethink-paradigms/mesh/internal/body"
 	"github.com/rethink-paradigms/mesh/internal/orchestrator"
 	"github.com/rethink-paradigms/mesh/internal/plugin"
+	"github.com/rethink-paradigms/mesh/internal/service"
 	"github.com/rethink-paradigms/mesh/internal/store"
 )
 
@@ -64,6 +65,7 @@ type Server struct {
 	migrator     *body.MigrationCoordinator
 	pluginMgr    *plugin.PluginManager
 	orchRegistry *orchestrator.Registry
+	svc          *service.BodyService
 
 	reader io.Reader
 	writer io.Writer
@@ -72,6 +74,11 @@ type Server struct {
 // SetBodyManager sets the body manager for lifecycle operations.
 func (s *Server) SetBodyManager(mgr *body.BodyManager) {
 	s.bodyMgr = mgr
+}
+
+// SetBodyService sets the body service for lifecycle operations.
+func (s *Server) SetBodyService(svc *service.BodyService) {
+	s.svc = svc
 }
 
 // SetMigrator sets the migration coordinator for migration operations.

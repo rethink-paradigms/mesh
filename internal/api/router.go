@@ -1,22 +1,37 @@
 package api
 
 import (
+	"context"
 	"net/http"
 
 	"github.com/rethink-paradigms/mesh/internal/body"
 	"github.com/rethink-paradigms/mesh/internal/ingress"
 	"github.com/rethink-paradigms/mesh/internal/orchestrator"
+	"github.com/rethink-paradigms/mesh/internal/service"
 	"github.com/rethink-paradigms/mesh/internal/store"
 )
 
 type RouterConfig struct {
 	BodyManager  *body.BodyManager
+	BodyService  bodyServiceAdapter
 	Store        *store.Store
 	Orchestrator orchestrator.OrchestratorAdapter
 	Ingress      ingress.IngressAdapter
 	AuthToken    string
 	Version      string
 }
+
+type bodyServiceAdapter interface {
+	List(ctx context.Context) ([]*body.Body, error)
+	Create(ctx context.Context, name, image string, opts orchestrator.BodySpec) (*body.Body, error)
+	Get(ctx context.Context, id string) (*body.Body, error)
+	Start(ctx context.Context, id string) error
+	Stop(ctx context.Context, id string) error
+	Destroy(ctx context.Context, id string) error
+	GetStatus(ctx context.Context, id string) (orchestrator.BodyStatus, error)
+}
+
+var _ bodyServiceAdapter = (*service.BodyService)(nil)
 
 func NewRouter(cfg RouterConfig) http.Handler {
 	mux := http.NewServeMux()
