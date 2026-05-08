@@ -2,6 +2,8 @@
 
 Mesh exposes a Model Context Protocol (MCP) server over stdio transport using JSON-RPC 2.0. This is the primary interface for AI agents to manage bodies, snapshots, and migrations (D5). AI agents communicate with Mesh via MCP tools, not CLI commands.
 
+All lifecycle operations (create, start, stop, delete, exec, get status, get logs) execute identical validation logic regardless of whether they are called via MCP tools or REST endpoints. Both interfaces delegate to the shared `internal/service/body_service.go` layer, ensuring consistent state machine enforcement, error handling, and substrate routing.
+
 ## Transport
 
 The MCP server listens on **stdin/stdout** (stdio). Each request is a single JSON line. Each response is a single JSON line. Messages are newline-delimited. There is no HTTP layer.
@@ -72,8 +74,12 @@ The server is started by `mesh serve`. The daemon registers all tools at startup
 | -32700 | Parse error (invalid JSON) |
 | -32600 | Invalid request |
 | -32601 | Method not found |
-| -32602 | Invalid params (missing required fields) |
+| -32602 | Invalid params (missing required fields) or validation error |
 | -32603 | Internal error (daemon or adapter failure) |
+| -32001 | Body not found |
+| -32002 | Body state conflict |
+
+Custom codes **-32001** and **-32002** are returned by lifecycle handlers (create, start, stop, delete, exec, get status, get logs). They are not used by ping, plugin, or snapshot handlers. Error code **-32602** is also returned when a shared validation rule fails (e.g., empty name or image on create) via the BodyService layer, in addition to the existing missing-parameter check.
 
 ## Lifecycle Methods
 
@@ -194,6 +200,8 @@ Create and start a new body on the substrate. Provisions a container from the sp
   "handle": "container-id-xyz"
 }
 ```
+
+Validation is enforced by the shared BodyService layer — same rules apply as the REST `POST /api/v1/bodies` endpoint.
 
 ---
 
