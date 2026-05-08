@@ -1,6 +1,7 @@
 package mcp
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -9,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"time"
 
 	"github.com/klauspost/compress/zstd"
@@ -121,6 +123,11 @@ func (s *Server) registerTools() {
 		Name:        "plugin_health",
 		Description: "Get detailed health information for a specific plugin.",
 		InputSchema: json.RawMessage(`{"type":"object","properties":{"plugin_name":{"type":"string"}},"required":["plugin_name"]}`),
+	})
+	s.RegisterTool("list_capabilities", s.handleListCapabilities, ToolDefinition{
+		Name:        "list_capabilities",
+		Description: "List daemon capabilities including orchestrators, providers, features, and limits.",
+		InputSchema: json.RawMessage(`{"type":"object","properties":{}}`),
 	})
 }
 
@@ -597,4 +604,73 @@ func (s *Server) handlePluginHealth(ctx context.Context, params json.RawMessage)
 		"description": rec.Meta.Description,
 		"author":      rec.Meta.Author,
 	}, nil
+}
+
+func (s *Server) handleListCapabilities(ctx context.Context, params json.RawMessage) (interface{}, error) {
+	var orchCaps []map[string]interface{}
+	if s.orchRegistry != nil {
+		for _, name := range s.orchRegistry.List() {
+			adapter, err := s.orchRegistry.Open(name)
+			healthy := err == nil && adapter.IsHealthy(ctx)
+			orchCaps = append(orchCaps, map[string]interface{}{
+				"name":    name,
+				"healthy": healthy,
+			})
+		}
+	}
+	if orchCaps == nil {
+		orchCaps = []map[string]interface{}{}
+	}
+
+	providers := getMCPProviders()
+
+	features := s.features
+	if features == nil {
+		features = make(map[string]bool)
+	}
+
+	tier := s.tier
+	if tier == "" {
+		tier = "lite"
+	}
+
+	maxBodies := s.maxBodies
+	if maxBodies == 0 {
+		maxBodies = 10
+	}
+	maxSnapshots := s.maxSnapshots
+	if maxSnapshots == 0 {
+		maxSnapshots = 5
+	}
+
+	return map[string]interface{}{
+		"version":       s.version,
+		"tier":          tier,
+		"orchestrators": orchCaps,
+		"providers":     json.RawMessage(providers),
+		"features":      features,
+		"limits": map[string]int{
+			"max_bodies":    maxBodies,
+			"max_snapshots": maxSnapshots,
+		},
+	}, nil
+}
+
+// getMCPProviders runs mesh-provision providers --output json and returns the raw JSON bytes.
+// If mesh-provision is not available, returns a JSON status: "unavailable".
+func getMCPProviders() json.RawMessage {
+	cmd := exec.Command("mesh-provision", "providers", "--output", "json")
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
+	if err := cmd.Run(); err != nil {
+		fallback, _ := json.Marshal(map[string]interface{}{
+			"status":    "unavailable",
+			"providers": []interface{}{},
+		})
+		return fallback
+	}
+
+	return json.RawMessage(stdout.Bytes())
 }

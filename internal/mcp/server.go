@@ -67,6 +67,12 @@ type Server struct {
 	orchRegistry *orchestrator.Registry
 	svc          *service.BodyService
 
+	version    string
+	tier       string
+	features   map[string]bool
+	maxBodies  int
+	maxSnapshots int
+
 	reader io.Reader
 	writer io.Writer
 }
@@ -94,6 +100,27 @@ func (s *Server) SetPluginManager(m *plugin.PluginManager) {
 // SetOrchestratorRegistry sets the orchestrator registry for substrate routing.
 func (s *Server) SetOrchestratorRegistry(r *orchestrator.Registry) {
 	s.orchRegistry = r
+}
+
+// SetVersion sets the daemon version string for capabilities reporting.
+func (s *Server) SetVersion(v string) {
+	s.version = v
+}
+
+// SetTier sets the daemon tier for capabilities reporting.
+func (s *Server) SetTier(t string) {
+	s.tier = t
+}
+
+// SetFeatures sets the feature flags for capabilities reporting.
+func (s *Server) SetFeatures(f map[string]bool) {
+	s.features = f
+}
+
+// SetLimits sets the daemon limits for capabilities reporting.
+func (s *Server) SetLimits(maxBodies, maxSnapshots int) {
+	s.maxBodies = maxBodies
+	s.maxSnapshots = maxSnapshots
 }
 
 // New creates a new MCP server backed by the given store.

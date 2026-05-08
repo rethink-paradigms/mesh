@@ -59,9 +59,18 @@ type Config struct {
 	Bodies        []BodyConfig                 `yaml:"bodies"`
 	Registry      RegistryConfig               `yaml:"registry"`
 	Plugin        PluginConfig                 `yaml:"plugin"`
+	Tier          string                       `yaml:"tier"`
+	Features      map[string]bool              `yaml:"features"`
+	Limits        LimitsConfig                 `yaml:"limits"`
 
 	// Legacy fields for backward compatibility — parsed then migrated to Orchestrators
 	Nomad nomadCompat `yaml:"nomad"`
+}
+
+// LimitsConfig defines hard limits for the daemon.
+type LimitsConfig struct {
+	MaxBodies    int `yaml:"max_bodies"`
+	MaxSnapshots int `yaml:"max_snapshots"`
 }
 
 // nomadCompat captures the legacy [nomad] section for backward compatibility.
@@ -132,6 +141,12 @@ func applyDefaults(cfg *Config) {
 		if err == nil {
 			cfg.Plugin.Dir = filepath.Join(home, ".mesh", "plugins")
 		}
+	}
+	if cfg.Limits.MaxBodies == 0 {
+		cfg.Limits.MaxBodies = 10
+	}
+	if cfg.Limits.MaxSnapshots == 0 {
+		cfg.Limits.MaxSnapshots = 5
 	}
 
 	// Initialize maps

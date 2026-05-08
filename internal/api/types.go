@@ -2,6 +2,8 @@
 // for the Mesh daemon REST API.
 package api
 
+import "encoding/json"
+
 // CreateBodyRequest is the request payload for POST /api/v1/bodies.
 type CreateBodyRequest struct {
 	Name        string            `json:"name"`
@@ -113,4 +115,26 @@ type HealthzResponse struct {
 	ConsulConnected bool   `json:"consul_connected"`
 	BodiesCount     int    `json:"bodies_count"`
 	NodesCount      int    `json:"nodes_count"`
+}
+
+// CapabilitiesResponse is the response payload for GET /api/v1/capabilities.
+type CapabilitiesResponse struct {
+	Version       string                   `json:"version"`
+	Tier          string                   `json:"tier"`
+	Orchestrators []OrchestratorCapability `json:"orchestrators"`
+	Providers     json.RawMessage          `json:"providers"`
+	Features      map[string]bool          `json:"features"`
+	Limits        CapabilityLimits         `json:"limits"`
+}
+
+// OrchestratorCapability describes a registered orchestrator adapter and its health.
+type OrchestratorCapability struct {
+	Name    string `json:"name"`
+	Healthy bool   `json:"healthy"`
+}
+
+// CapabilityLimits defines hard limits for the daemon.
+type CapabilityLimits struct {
+	MaxBodies    int `json:"max_bodies"`
+	MaxSnapshots int `json:"max_snapshots"`
 }

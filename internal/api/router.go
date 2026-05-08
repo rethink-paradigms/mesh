@@ -19,6 +19,10 @@ type RouterConfig struct {
 	Ingress      ingress.IngressAdapter
 	AuthToken    string
 	Version      string
+	Tier         string
+	OrchRegistry *orchestrator.Registry
+	Features     map[string]bool
+	Limits       CapabilityLimits
 }
 
 type bodyServiceAdapter interface {
@@ -46,6 +50,7 @@ func NewRouter(cfg RouterConfig) http.Handler {
 	apiMux.HandleFunc("POST /api/v1/bodies/{id}/start", handleStartBody(cfg))
 	apiMux.HandleFunc("DELETE /api/v1/bodies/{id}", handleDestroyBody(cfg))
 	apiMux.HandleFunc("GET /api/v1/nodes", handleListNodes(cfg))
+	apiMux.HandleFunc("GET /api/v1/capabilities", handleCapabilities(cfg))
 
 	mux.Handle("/api/v1/", BearerAuth(cfg.AuthToken, apiMux))
 
