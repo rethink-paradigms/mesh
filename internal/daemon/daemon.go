@@ -20,6 +20,7 @@ import (
 	"github.com/rethink-paradigms/mesh/internal/orchestrator"
 	"github.com/rethink-paradigms/mesh/internal/plugin"
 	"github.com/rethink-paradigms/mesh/internal/provisioner"
+	"github.com/rethink-paradigms/mesh/internal/service"
 	"github.com/rethink-paradigms/mesh/internal/store"
 )
 
@@ -30,6 +31,7 @@ type Daemon struct {
 	orchRegistry *orchestrator.Registry
 	provRegistry *provisioner.Registry
 	bodyMgr      *body.BodyManager
+	bodySvc      *service.BodyService
 	pluginMgr    *plugin.PluginManager
 
 	mcpServer   interface{ Stop(context.Context) error }
@@ -146,6 +148,7 @@ func (d *Daemon) Start(ctx context.Context) error {
 		primaryOrch = &noopOrchestrator{}
 	}
 	d.bodyMgr = body.NewBodyManager(d.store, primaryOrch)
+	d.bodySvc = service.NewBodyService(d.bodyMgr, d.store, d.orchRegistry)
 
 	pm := plugin.NewPluginManager(d.cfg.Plugin.Dir, d.cfg.Plugin.Enabled)
 	if err := pm.StartScanAndLoad(); err != nil {
@@ -321,6 +324,7 @@ func (d *Daemon) startAPIServer() error {
 
 	router := api.NewRouter(api.RouterConfig{
 		BodyManager:  d.bodyMgr,
+		BodyService:  d.bodySvc,
 		Store:        d.store,
 		Orchestrator: primaryOrch,
 		Ingress:      ingress.NewNoopAdapter(),
