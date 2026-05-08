@@ -15,6 +15,7 @@ import (
 	"github.com/rethink-paradigms/mesh/internal/api"
 	"github.com/rethink-paradigms/mesh/internal/body"
 	"github.com/rethink-paradigms/mesh/internal/config"
+	"github.com/rethink-paradigms/mesh/internal/docker"
 	"github.com/rethink-paradigms/mesh/internal/ingress"
 	"github.com/rethink-paradigms/mesh/internal/nomad"
 	"github.com/rethink-paradigms/mesh/internal/orchestrator"
@@ -49,6 +50,7 @@ type Daemon struct {
 
 	reconcileSteps int
 	version        string
+	tier           string
 }
 
 func New(cfg *config.Config) (*Daemon, error) {
@@ -114,6 +116,11 @@ func (d *Daemon) Start(ctx context.Context) error {
 	orchRegistry := orchestrator.NewRegistry()
 	d.orchRegistry = orchRegistry
 
+	dockerAdp := docker.New(docker.Config{})
+	if err := orchRegistry.Register("docker", dockerAdp); err != nil {
+		fmt.Fprintf(os.Stderr, "daemon: register docker orchestrator: %v\n", err)
+	}
+
 	for name, settings := range d.cfg.Orchestrators {
 		switch name {
 		case "nomad":
@@ -129,8 +136,15 @@ func (d *Daemon) Start(ctx context.Context) error {
 		}
 	}
 
-	if len(orchRegistry.List()) == 0 {
-		fmt.Fprintf(os.Stderr, "daemon: warning: no orchestrators registered\n")
+	var primaryOrch orchestrator.OrchestratorAdapter
+	if nomadAdp, err := orchRegistry.Open("nomad"); err == nil && nomadAdp.IsHealthy(ctx) {
+		d.tier = "STANDARD"
+		_ = orchRegistry.SetDefault("nomad")
+		primaryOrch = nomadAdp
+	} else {
+		d.tier = "LITE"
+		_ = orchRegistry.SetDefault("docker")
+		primaryOrch = dockerAdp
 	}
 
 	provRegistry := provisioner.NewRegistry()
@@ -140,13 +154,6 @@ func (d *Daemon) Start(ctx context.Context) error {
 		fmt.Fprintf(os.Stderr, "daemon: info: no provisioners registered\n")
 	}
 
-	var primaryOrch orchestrator.OrchestratorAdapter
-	if names := orchRegistry.List(); len(names) > 0 {
-		primaryOrch, _ = orchRegistry.Open(names[0])
-	}
-	if primaryOrch == nil {
-		primaryOrch = &noopOrchestrator{}
-	}
 	d.bodyMgr = body.NewBodyManager(d.store, primaryOrch)
 	d.bodySvc = service.NewBodyService(d.bodyMgr, d.store, d.orchRegistry)
 
@@ -318,9 +325,6 @@ func (d *Daemon) startAPIServer() error {
 	if names := d.orchRegistry.List(); len(names) > 0 {
 		primaryOrch, _ = d.orchRegistry.Open(names[0])
 	}
-	if primaryOrch == nil {
-		primaryOrch = &noopOrchestrator{}
-	}
 
 	router := api.NewRouter(api.RouterConfig{
 		BodyManager:  d.bodyMgr,
@@ -330,6 +334,10 @@ func (d *Daemon) startAPIServer() error {
 		Ingress:      ingress.NewNoopAdapter(),
 		AuthToken:    d.cfg.Daemon.AuthToken,
 		Version:      d.version,
+		Tier:         d.tier,
+		OrchRegistry: d.orchRegistry,
+		Features:     d.cfg.Features,
+		Uptime:       d.startedAt,
 	})
 
 	listenAddr := d.cfg.Daemon.ListenAddr
@@ -404,28 +412,4 @@ func (d *Daemon) removePIDFile() {
 	}
 }
 
-type noopOrchestrator struct{}
 
-func (n *noopOrchestrator) ScheduleBody(_ context.Context, _ orchestrator.BodySpec) (orchestrator.Handle, error) {
-	return "", fmt.Errorf("no orchestrator configured")
-}
-
-func (n *noopOrchestrator) StartBody(_ context.Context, _ orchestrator.Handle) error {
-	return fmt.Errorf("no orchestrator configured")
-}
-
-func (n *noopOrchestrator) StopBody(_ context.Context, _ orchestrator.Handle) error {
-	return fmt.Errorf("no orchestrator configured")
-}
-
-func (n *noopOrchestrator) DestroyBody(_ context.Context, _ orchestrator.Handle) error {
-	return fmt.Errorf("no orchestrator configured")
-}
-
-func (n *noopOrchestrator) GetBodyStatus(_ context.Context, _ orchestrator.Handle) (orchestrator.BodyStatus, error) {
-	return orchestrator.BodyStatus{}, fmt.Errorf("no orchestrator configured")
-}
-
-func (n *noopOrchestrator) Name() string { return "noop" }
-
-func (n *noopOrchestrator) IsHealthy(_ context.Context) bool { return false }

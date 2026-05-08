@@ -40,7 +40,11 @@ func (s *BodyService) Create(ctx context.Context, name, image string, opts orche
 		case 1:
 			substrate = names[0]
 		default:
-			return nil, &ValidationError{Field: "substrate", Message: fmt.Sprintf("substrate required when multiple orchestrators registered; available: %v", names)}
+			adp, err := s.orchRegistry.Default()
+			if err != nil {
+				return nil, &ValidationError{Field: "substrate", Message: fmt.Sprintf("substrate required when multiple orchestrators registered; available: %v", names)}
+			}
+			substrate = adp.Name()
 		}
 	}
 

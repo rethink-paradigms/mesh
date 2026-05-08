@@ -245,3 +245,44 @@ func TestExec_BodyNotFound_ReturnsNotFoundError(t *testing.T) {
 	assert.ErrorAs(t, err, &notFoundErr)
 	assert.Equal(t, "nonexistent", notFoundErr.ID)
 }
+
+func TestCreateBodyWithDefaultOrchestrator(t *testing.T) {
+	s := tempStore(t)
+
+	reg := orchestrator.NewRegistry()
+	mockDocker := &mockOrchAdapter{}
+	mockNomad := &mockOrchAdapter{}
+	_ = reg.Register("docker", mockDocker)
+	_ = reg.Register("nomad", mockNomad)
+	_ = reg.SetDefault("docker")
+
+	bm := body.NewBodyManager(s, mockDocker)
+	svc := NewBodyService(bm, s, reg)
+	ctx := context.Background()
+
+	b, err := svc.Create(ctx, "test-multi", "alpine", orchestrator.BodySpec{})
+	assert.NoError(t, err)
+	assert.Equal(t, "mock", b.Substrate)
+}
+
+func TestCreateBodyMultiOrchNoDefault(t *testing.T) {
+	s := tempStore(t)
+
+	reg := orchestrator.NewRegistry()
+	mockDocker := &mockOrchAdapter{}
+	mockNomad := &mockOrchAdapter{}
+	_ = reg.Register("docker", mockDocker)
+	_ = reg.Register("nomad", mockNomad)
+
+	bm := body.NewBodyManager(s, mockDocker)
+	svc := NewBodyService(bm, s, reg)
+	ctx := context.Background()
+
+	_, err := svc.Create(ctx, "test-no-default", "alpine", orchestrator.BodySpec{})
+
+	var valErr *ValidationError
+	assert.ErrorAs(t, err, &valErr)
+	assert.Equal(t, "substrate", valErr.Field)
+	assert.Contains(t, valErr.Message, "docker")
+	assert.Contains(t, valErr.Message, "nomad")
+}

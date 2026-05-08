@@ -86,9 +86,15 @@ func (a *Adapter) ScheduleBody(ctx context.Context, spec orchestrator.BodySpec) 
 
 	jobID := generateJobID(spec.Image)
 
+	ns := a.config.Namespace
+	if ns == "" {
+		ns = "mesh-bodies"
+	}
+
 	job := &api.Job{
 		ID:          &jobID,
 		Name:        &jobID,
+		Namespace:   strPtr(ns),
 		Type:        strPtr("service"),
 		Datacenters: []string{"dc1"},
 		TaskGroups: []*api.TaskGroup{

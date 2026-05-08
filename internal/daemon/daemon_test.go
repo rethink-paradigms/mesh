@@ -861,6 +861,106 @@ func TestDaemonStartOrchOnly(t *testing.T) {
 	}
 }
 
+func TestAutoTierLITE(t *testing.T) {
+	cfg := testConfig(t)
+	d, err := New(cfg)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	s, err := store.Open(cfg.Store.Path)
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	d.store = s
+	defer s.Close()
+
+	mockOrch := &mockOrchestrator{}
+	reg := orchestrator.NewRegistry()
+	_ = reg.Register("docker", mockOrch)
+	d.orchRegistry = reg
+
+	if d.tier != "" {
+		t.Fatalf("tier should be empty before detection, got %q", d.tier)
+	}
+}
+
+func TestAutoTierLITENomadUnhealthy(t *testing.T) {
+	cfg := testConfig(t)
+	d, err := New(cfg)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	s, err := store.Open(cfg.Store.Path)
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	d.store = s
+	defer s.Close()
+
+	mockNomad := &mockOrchestratorUnhealthy{}
+	reg := orchestrator.NewRegistry()
+	_ = reg.Register("docker", &mockOrchestrator{})
+	_ = reg.Register("nomad", mockNomad)
+	d.orchRegistry = reg
+
+	if _, err := reg.Open("nomad"); err != nil {
+		t.Fatalf("Open nomad: %v", err)
+	}
+}
+
+func TestAutoTierSTANDARD(t *testing.T) {
+	cfg := testConfig(t)
+	d, err := New(cfg)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	s, err := store.Open(cfg.Store.Path)
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	d.store = s
+	defer s.Close()
+
+	mockNomad := &mockOrchestrator{}
+	reg := orchestrator.NewRegistry()
+	_ = reg.Register("docker", &mockOrchestrator{})
+	_ = reg.Register("nomad", mockNomad)
+	d.orchRegistry = reg
+
+	if len(reg.List()) != 2 {
+		t.Fatalf("expected 2 orchestrators, got %d", len(reg.List()))
+	}
+}
+
+type mockOrchestratorUnhealthy struct{}
+
+func (m *mockOrchestratorUnhealthy) ScheduleBody(_ context.Context, _ orchestrator.BodySpec) (orchestrator.Handle, error) {
+	return "mock-handle", nil
+}
+
+func (m *mockOrchestratorUnhealthy) StartBody(_ context.Context, _ orchestrator.Handle) error {
+	return nil
+}
+
+func (m *mockOrchestratorUnhealthy) StopBody(_ context.Context, _ orchestrator.Handle) error {
+	return nil
+}
+
+func (m *mockOrchestratorUnhealthy) DestroyBody(_ context.Context, _ orchestrator.Handle) error {
+	return nil
+}
+
+func (m *mockOrchestratorUnhealthy) GetBodyStatus(_ context.Context, _ orchestrator.Handle) (orchestrator.BodyStatus, error) {
+	return orchestrator.BodyStatus{}, fmt.Errorf("not found")
+}
+
+func (m *mockOrchestratorUnhealthy) Name() string { return "nomad" }
+
+func (m *mockOrchestratorUnhealthy) IsHealthy(_ context.Context) bool { return false }
+
 func TestDaemonStartFailsWithoutAuthToken(t *testing.T) {
 	cfg := testConfig(t)
 	cfg.Daemon.AuthToken = ""
