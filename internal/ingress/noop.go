@@ -33,5 +33,17 @@ func (n *NoopAdapter) ListRoutes(ctx context.Context) ([]Route, error) {
 	return []Route{}, nil
 }
 
+// AllocPort logs the intended port allocation to stderr and returns (0, nil).
+func (n *NoopAdapter) AllocPort(ctx context.Context, containerPort int) (int, error) {
+	fmt.Fprintf(os.Stderr, "ingress: would allocate port for container port %d (no Caddy configured)\n", containerPort)
+	return 0, nil
+}
+
+// FreePort logs the intended port release to stderr and returns nil.
+func (n *NoopAdapter) FreePort(hostPort int) error {
+	fmt.Fprintf(os.Stderr, "ingress: would free port %d (no Caddy configured)\n", hostPort)
+	return nil
+}
+
 // Compile-time check that NoopAdapter implements IngressAdapter.
 var _ IngressAdapter = (*NoopAdapter)(nil)

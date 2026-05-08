@@ -23,4 +23,11 @@ type IngressAdapter interface {
 
 	// ListRoutes returns all currently configured routes.
 	ListRoutes(ctx context.Context) ([]Route, error)
+
+	// AllocPort allocates a host port and maps it to the given container port.
+	// Returns the allocated host port.
+	AllocPort(ctx context.Context, containerPort int) (int, error)
+
+	// FreePort releases a previously allocated host port.
+	FreePort(hostPort int) error
 }
