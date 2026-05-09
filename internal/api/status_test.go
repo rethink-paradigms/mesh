@@ -57,11 +57,11 @@ func TestHandleStatus(t *testing.T) {
 		OrchRegistry: reg,
 		Orchestrator: &mockOrchAdapter{name: "docker", healthy: true},
 	}
-	handler := handleStatus(cfg)
+	h := NewHandler(cfg)
 
 	req := httptest.NewRequest("GET", "/api/v1/status", nil)
 	rr := httptest.NewRecorder()
-	handler(rr, req)
+	h.Status(rr, req)
 
 	require.Equal(t, http.StatusOK, rr.Code)
 
@@ -114,11 +114,11 @@ func TestHandleStatusBodyCounts(t *testing.T) {
 		Orchestrator: &mockOrchAdapter{name: "docker", healthy: true},
 		Uptime:       time.Now(),
 	}
-	handler := handleStatus(cfg)
+	h := NewHandler(cfg)
 
 	req := httptest.NewRequest("GET", "/api/v1/status", nil)
 	rr := httptest.NewRecorder()
-	handler(rr, req)
+	h.Status(rr, req)
 
 	require.Equal(t, http.StatusOK, rr.Code)
 
@@ -166,11 +166,11 @@ func TestHandleStatusCapacity(t *testing.T) {
 		Orchestrator: &mockOrchAdapter{name: "docker", healthy: true},
 		Uptime:       time.Now(),
 	}
-	handler := handleStatus(cfg)
+	h := NewHandler(cfg)
 
 	req := httptest.NewRequest("GET", "/api/v1/status", nil)
 	rr := httptest.NewRecorder()
-	handler(rr, req)
+	h.Status(rr, req)
 
 	require.Equal(t, http.StatusOK, rr.Code)
 

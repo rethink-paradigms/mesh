@@ -43,11 +43,11 @@ func TestHandleCapabilities(t *testing.T) {
 		OrchRegistry: reg,
 		Features:    map[string]bool{"snapshots": true, "migration": false},
 	}
-	handler := handleCapabilities(cfg)
+	h := NewHandler(cfg)
 
 	req := httptest.NewRequest("GET", "/api/v1/capabilities", nil)
 	rr := httptest.NewRecorder()
-	handler(rr, req)
+	h.Capabilities(rr, req)
 
 	require.Equal(t, http.StatusOK, rr.Code)
 
@@ -89,11 +89,11 @@ func TestHandleCapabilitiesMultipleOrchestrators(t *testing.T) {
 		OrchRegistry: reg,
 		Features:     map[string]bool{},
 	}
-	handler := handleCapabilities(cfg)
+	h := NewHandler(cfg)
 
 	req := httptest.NewRequest("GET", "/api/v1/capabilities", nil)
 	rr := httptest.NewRecorder()
-	handler(rr, req)
+	h.Capabilities(rr, req)
 
 	require.Equal(t, http.StatusOK, rr.Code)
 
@@ -118,11 +118,11 @@ func TestHandleCapabilitiesDefaultFeatures(t *testing.T) {
 		OrchRegistry: reg,
 		Features:     nil,
 	}
-	handler := handleCapabilities(cfg)
+	h := NewHandler(cfg)
 
 	req := httptest.NewRequest("GET", "/api/v1/capabilities", nil)
 	rr := httptest.NewRecorder()
-	handler(rr, req)
+	h.Capabilities(rr, req)
 
 	require.Equal(t, http.StatusOK, rr.Code)
 

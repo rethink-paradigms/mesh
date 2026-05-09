@@ -37,7 +37,7 @@ func TestHandleInstallAgent(t *testing.T) {
 	}
 
 	cfg := RouterConfig{AuthToken: "test-token", Installer: installer}
-	handler := handleInstallAgent(cfg)
+	h := NewHandler(cfg)
 
 	reqBody, _ := json.Marshal(InstallAgentRequest{
 		AgentType: "hermes",
@@ -48,7 +48,7 @@ func TestHandleInstallAgent(t *testing.T) {
 	req.Header.Set("Authorization", "Bearer test-token")
 	rr := httptest.NewRecorder()
 
-	handler(rr, req)
+	h.InstallAgent(rr, req)
 
 	if rr.Code != http.StatusCreated {
 		t.Errorf("status = %d, want %d", rr.Code, http.StatusCreated)
@@ -83,14 +83,14 @@ func TestHandleInstallAgentNoAuth(t *testing.T) {
 
 func TestHandleInstallAgentMissingType(t *testing.T) {
 	cfg := RouterConfig{AuthToken: "test-token", Installer: &mockInstaller{}}
-	handler := handleInstallAgent(cfg)
+	h := NewHandler(cfg)
 
 	reqBody, _ := json.Marshal(InstallAgentRequest{Name: "my-hermes"})
 	req := httptest.NewRequest("POST", "/api/v1/agents/install", bytes.NewReader(reqBody))
 	req.Header.Set("Authorization", "Bearer test-token")
 	rr := httptest.NewRecorder()
 
-	handler(rr, req)
+	h.InstallAgent(rr, req)
 
 	if rr.Code != http.StatusBadRequest {
 		t.Errorf("status = %d, want %d", rr.Code, http.StatusBadRequest)
@@ -99,14 +99,14 @@ func TestHandleInstallAgentMissingType(t *testing.T) {
 
 func TestHandleInstallAgentMissingName(t *testing.T) {
 	cfg := RouterConfig{AuthToken: "test-token", Installer: &mockInstaller{}}
-	handler := handleInstallAgent(cfg)
+	h := NewHandler(cfg)
 
 	reqBody, _ := json.Marshal(InstallAgentRequest{AgentType: "hermes"})
 	req := httptest.NewRequest("POST", "/api/v1/agents/install", bytes.NewReader(reqBody))
 	req.Header.Set("Authorization", "Bearer test-token")
 	rr := httptest.NewRecorder()
 
-	handler(rr, req)
+	h.InstallAgent(rr, req)
 
 	if rr.Code != http.StatusBadRequest {
 		t.Errorf("status = %d, want %d", rr.Code, http.StatusBadRequest)
@@ -121,14 +121,14 @@ func TestHandleInstallAgentNotFound(t *testing.T) {
 	}
 
 	cfg := RouterConfig{AuthToken: "test-token", Installer: installer}
-	handler := handleInstallAgent(cfg)
+	h := NewHandler(cfg)
 
 	reqBody, _ := json.Marshal(InstallAgentRequest{AgentType: "unknown", Name: "my-agent"})
 	req := httptest.NewRequest("POST", "/api/v1/agents/install", bytes.NewReader(reqBody))
 	req.Header.Set("Authorization", "Bearer test-token")
 	rr := httptest.NewRecorder()
 
-	handler(rr, req)
+	h.InstallAgent(rr, req)
 
 	if rr.Code != http.StatusNotFound {
 		t.Errorf("status = %d, want %d", rr.Code, http.StatusNotFound)
@@ -143,14 +143,14 @@ func TestHandleInstallAgentConflict(t *testing.T) {
 	}
 
 	cfg := RouterConfig{AuthToken: "test-token", Installer: installer}
-	handler := handleInstallAgent(cfg)
+	h := NewHandler(cfg)
 
 	reqBody, _ := json.Marshal(InstallAgentRequest{AgentType: "hermes", Name: "dup"})
 	req := httptest.NewRequest("POST", "/api/v1/agents/install", bytes.NewReader(reqBody))
 	req.Header.Set("Authorization", "Bearer test-token")
 	rr := httptest.NewRecorder()
 
-	handler(rr, req)
+	h.InstallAgent(rr, req)
 
 	if rr.Code != http.StatusConflict {
 		t.Errorf("status = %d, want %d", rr.Code, http.StatusConflict)
@@ -165,14 +165,14 @@ func TestHandleInstallAgentValidationError(t *testing.T) {
 	}
 
 	cfg := RouterConfig{AuthToken: "test-token", Installer: installer}
-	handler := handleInstallAgent(cfg)
+	h := NewHandler(cfg)
 
 	reqBody, _ := json.Marshal(InstallAgentRequest{AgentType: "hermes", Name: "my-agent"})
 	req := httptest.NewRequest("POST", "/api/v1/agents/install", bytes.NewReader(reqBody))
 	req.Header.Set("Authorization", "Bearer test-token")
 	rr := httptest.NewRecorder()
 
-	handler(rr, req)
+	h.InstallAgent(rr, req)
 
 	if rr.Code != http.StatusBadRequest {
 		t.Errorf("status = %d, want %d", rr.Code, http.StatusBadRequest)
@@ -207,14 +207,14 @@ func TestMapAgentInstallError(t *testing.T) {
 
 func TestHandleInstallAgentNoInstaller(t *testing.T) {
 	cfg := RouterConfig{AuthToken: "test-token", Installer: nil}
-	handler := handleInstallAgent(cfg)
+	h := NewHandler(cfg)
 
 	reqBody, _ := json.Marshal(InstallAgentRequest{AgentType: "hermes", Name: "my-agent"})
 	req := httptest.NewRequest("POST", "/api/v1/agents/install", bytes.NewReader(reqBody))
 	req.Header.Set("Authorization", "Bearer test-token")
 	rr := httptest.NewRecorder()
 
-	handler(rr, req)
+	h.InstallAgent(rr, req)
 
 	if rr.Code != http.StatusInternalServerError {
 		t.Errorf("status = %d, want %d", rr.Code, http.StatusInternalServerError)
@@ -236,7 +236,7 @@ func TestHandleInstallAgentRealInstaller(t *testing.T) {
 	installer := agent.NewInstaller(bm, nil, nil, manifests)
 
 	cfg := RouterConfig{AuthToken: "test-token", Installer: installer}
-	handler := handleInstallAgent(cfg)
+	h := NewHandler(cfg)
 
 	reqBody, _ := json.Marshal(InstallAgentRequest{
 		AgentType: "test-agent",
@@ -247,7 +247,7 @@ func TestHandleInstallAgentRealInstaller(t *testing.T) {
 	req.Header.Set("Authorization", "Bearer test-token")
 	rr := httptest.NewRecorder()
 
-	handler(rr, req)
+	h.InstallAgent(rr, req)
 
 	if rr.Code != http.StatusCreated {
 		t.Errorf("status = %d, want %d", rr.Code, http.StatusCreated)

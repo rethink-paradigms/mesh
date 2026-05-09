@@ -146,12 +146,12 @@ func TestHandleGetBody_NotFoundError(t *testing.T) {
 		},
 	}
 	cfg := RouterConfig{BodyService: mock}
-	handler := handleGetBody(cfg)
+	h := NewHandler(cfg)
 
 	req := httptest.NewRequest("GET", "/api/v1/bodies/missing-id", nil)
 	req.SetPathValue("id", "missing-id")
 	rr := httptest.NewRecorder()
-	handler(rr, req)
+	h.GetBody(rr, req)
 
 	if rr.Code != http.StatusNotFound {
 		t.Errorf("status = %d, want %d", rr.Code, http.StatusNotFound)
@@ -173,12 +173,12 @@ func TestHandleStartBody_ConflictError(t *testing.T) {
 		},
 	}
 	cfg := RouterConfig{BodyService: mock}
-	handler := handleStartBody(cfg)
+	h := NewHandler(cfg)
 
 	req := httptest.NewRequest("POST", "/api/v1/bodies/test-id/start", nil)
 	req.SetPathValue("id", "test-id")
 	rr := httptest.NewRecorder()
-	handler(rr, req)
+	h.StartBody(rr, req)
 
 	if rr.Code != http.StatusConflict {
 		t.Errorf("status = %d, want %d", rr.Code, http.StatusConflict)
@@ -200,11 +200,11 @@ func TestHandleCreateBody_ValidationError(t *testing.T) {
 		},
 	}
 	cfg := RouterConfig{BodyService: mock}
-	handler := handleCreateBody(cfg)
+	h := NewHandler(cfg)
 
 	req := httptest.NewRequest("POST", "/api/v1/bodies", nil)
 	rr := httptest.NewRecorder()
-	handler(rr, req)
+	h.CreateBody(rr, req)
 
 	if rr.Code != http.StatusBadRequest {
 		t.Errorf("status = %d, want %d", rr.Code, http.StatusBadRequest)
@@ -226,12 +226,12 @@ func TestHandleStopBody_NotFoundError(t *testing.T) {
 		},
 	}
 	cfg := RouterConfig{BodyService: mock}
-	handler := handleStopBody(cfg)
+	h := NewHandler(cfg)
 
 	req := httptest.NewRequest("POST", "/api/v1/bodies/missing-id/stop", nil)
 	req.SetPathValue("id", "missing-id")
 	rr := httptest.NewRecorder()
-	handler(rr, req)
+	h.StopBody(rr, req)
 
 	if rr.Code != http.StatusNotFound {
 		t.Errorf("status = %d, want %d", rr.Code, http.StatusNotFound)
@@ -253,12 +253,12 @@ func TestHandleDestroyBody_ConflictError(t *testing.T) {
 		},
 	}
 	cfg := RouterConfig{BodyService: mock}
-	handler := handleDestroyBody(cfg)
+	h := NewHandler(cfg)
 
 	req := httptest.NewRequest("DELETE", "/api/v1/bodies/test-id", nil)
 	req.SetPathValue("id", "test-id")
 	rr := httptest.NewRecorder()
-	handler(rr, req)
+	h.DestroyBody(rr, req)
 
 	if rr.Code != http.StatusConflict {
 		t.Errorf("status = %d, want %d", rr.Code, http.StatusConflict)
