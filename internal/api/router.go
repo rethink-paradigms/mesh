@@ -25,6 +25,7 @@ type RouterConfig struct {
 	Features     map[string]bool
 	Limits       CapabilityLimits
 	Uptime       time.Time // daemon start time, used for uptime calculation
+	Installer    Installer
 }
 
 type bodyServiceAdapter interface {
@@ -54,6 +55,7 @@ func NewRouter(cfg RouterConfig) http.Handler {
 	apiMux.HandleFunc("GET /api/v1/nodes", handleListNodes(cfg))
 	apiMux.HandleFunc("GET /api/v1/capabilities", handleCapabilities(cfg))
 	apiMux.HandleFunc("GET /api/v1/status", handleStatus(cfg))
+	apiMux.HandleFunc("POST /api/v1/agents/install", handleInstallAgent(cfg))
 
 	mux.Handle("/api/v1/", BearerAuth(cfg.AuthToken, apiMux))
 

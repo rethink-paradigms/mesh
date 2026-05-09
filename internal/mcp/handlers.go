@@ -138,6 +138,11 @@ func (s *Server) registerTools() {
 		Description: "Get full daemon status including bodies, ports, ingress, and capacity.",
 		InputSchema: json.RawMessage(`{"type":"object","properties":{}}`),
 	})
+	s.RegisterTool("install_agent", s.handleInstallAgent, ToolDefinition{
+		Name:        "install_agent",
+		Description: "Install a built-in agent from a manifest.",
+		InputSchema: json.RawMessage(`{"type":"object","properties":{"agent_type":{"type":"string"},"name":{"type":"string"},"env":{"type":"object","additionalProperties":{"type":"string"}}},"required":["agent_type","name"]}`),
+	})
 }
 
 func (s *Server) handlePing(ctx context.Context, params json.RawMessage) (interface{}, error) {
@@ -807,4 +812,33 @@ func getMCPProviders() json.RawMessage {
 	}
 
 	return json.RawMessage(stdout.Bytes())
+}
+
+func (s *Server) handleInstallAgent(ctx context.Context, params json.RawMessage) (interface{}, error) {
+	if s.installer == nil {
+		return nil, &RPCError{Code: -32603, Message: "installer not available"}
+	}
+	var p struct {
+		AgentType string            `json:"agent_type"`
+		Name      string            `json:"name"`
+		Env       map[string]string `json:"env,omitempty"`
+	}
+	if err := json.Unmarshal(params, &p); err != nil {
+		return nil, &RPCError{Code: -32602, Message: "invalid params: " + err.Error()}
+	}
+	if p.AgentType == "" || p.Name == "" {
+		return nil, &RPCError{Code: -32602, Message: "agent_type and name are required"}
+	}
+
+	result, err := s.installer.Install(ctx, p.AgentType, p.Name, p.Env)
+	if err != nil {
+		return nil, mapServiceError(err)
+	}
+
+	return map[string]interface{}{
+		"body_id":         result.BodyID,
+		"name":            result.Name,
+		"access_urls":     result.AccessURLs,
+		"allocated_ports": result.AllocatedPorts,
+	}, nil
 }

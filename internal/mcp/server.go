@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/rethink-paradigms/mesh/internal/agent"
 	"github.com/rethink-paradigms/mesh/internal/body"
 	"github.com/rethink-paradigms/mesh/internal/ingress"
 	"github.com/rethink-paradigms/mesh/internal/orchestrator"
@@ -68,6 +69,7 @@ type Server struct {
 	pluginMgr    *plugin.PluginManager
 	orchRegistry *orchestrator.Registry
 	svc          *service.BodyService
+	installer    *agent.Installer
 
 	version    string
 	tier       string
@@ -135,6 +137,10 @@ func (s *Server) SetIngress(ing ingress.IngressAdapter) {
 // SetStartedAt sets the daemon start time for uptime calculation.
 func (s *Server) SetStartedAt(t time.Time) {
 	s.startedAt = t
+}
+
+func (s *Server) SetInstaller(i *agent.Installer) {
+	s.installer = i
 }
 
 // New creates a new MCP server backed by the given store.

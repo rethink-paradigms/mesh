@@ -71,6 +71,7 @@ type Config struct {
 	Tier          string                       `yaml:"tier"`
 	Features      map[string]bool              `yaml:"features"`
 	Limits        LimitsConfig                 `yaml:"limits"`
+	AgentsDir     string                       `yaml:"agents_dir"`
 
 	// Legacy fields for backward compatibility — parsed then migrated to Orchestrators
 	Nomad nomadCompat `yaml:"nomad"`
@@ -171,6 +172,12 @@ func applyDefaults(cfg *Config) {
 	}
 	if cfg.Ingress.DomainSuffix == "" {
 		cfg.Ingress.DomainSuffix = ".mesh.local"
+	}
+	if cfg.AgentsDir == "" {
+		home, err := os.UserHomeDir()
+		if err == nil {
+			cfg.AgentsDir = filepath.Join(home, ".mesh", "agents")
+		}
 	}
 
 	// Initialize maps

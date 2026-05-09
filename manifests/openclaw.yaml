@@ -1,0 +1,25 @@
+name: openclaw
+image: rethink-paradigms/openclaw:latest
+command: ["/app/openclaw"]
+ports:
+  - name: api
+    container_port: 3000
+    protocol: http
+    expose: true
+  - name: grpc
+    container_port: 3001
+    protocol: tcp
+    expose: false
+env:
+  required:
+    - OPENAI_API_KEY
+  optional:
+    - OPENCLAW_PORT
+health_check:
+  type: http
+  path: /health
+  port: "3000"
+  interval_seconds: 5
+resources:
+  memory_mb: 512
+  cpu_shares: 256

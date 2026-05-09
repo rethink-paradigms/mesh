@@ -437,7 +437,7 @@ func mustWriteYAMLConfig(t *testing.T, tmpHome string, bodies []string) string {
 		bodyLines += fmt.Sprintf("- name: %s\n  image: alpine:latest\n  workdir: /tmp/%s\n", name, name)
 	}
 
-	cfgContent := fmt.Sprintf("daemon:\n  socket_path: /tmp/mesh-test.sock\n  pid_file: %s\n  log_level: info\nstore:\n  path: %s\ndocker:\n  host: unix:///var/run/docker.sock\n  api_version: \"1.48\"\nregistry:\n  type: s3\n  bucket: test-bucket\nbodies:\n%s",
+	cfgContent := fmt.Sprintf("daemon:\n  socket_path: /tmp/mesh-test.sock\n  pid_file: %s\n  log_level: info\n  auth_token: test-token\nstore:\n  path: %s\ndocker:\n  host: unix:///var/run/docker.sock\n  api_version: \"1.48\"\nregistry:\n  type: s3\n  bucket: test-bucket\nbodies:\n%s",
 		filepath.Join(cfgDir, "mesh.pid"),
 		filepath.Join(cfgDir, "state.db"),
 		bodyLines,

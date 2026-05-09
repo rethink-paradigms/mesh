@@ -1,0 +1,26 @@
+name: hermes
+image: rethink-paradigms/hermes:latest
+command: ["/app/hermes"]
+ports:
+  - name: api
+    container_port: 8000
+    protocol: http
+    expose: true
+  - name: ws
+    container_port: 8001
+    protocol: tcp
+    expose: false
+env:
+  required:
+    - OPENAI_API_KEY
+  optional:
+    - HERMES_PORT
+    - HERMES_LOG_LEVEL
+health_check:
+  type: http
+  path: /health
+  port: "8000"
+  interval_seconds: 5
+resources:
+  memory_mb: 512
+  cpu_shares: 256
