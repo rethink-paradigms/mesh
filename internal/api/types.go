@@ -5,9 +5,10 @@ package api
 import "encoding/json"
 
 // CreateBodyRequest is the request payload for POST /api/v1/bodies.
+// @Description Request payload for creating a new body
 type CreateBodyRequest struct {
-	Name        string            `json:"name"`
-	Image       string            `json:"image"`
+	Name        string            `json:"name" example:"my-agent-body"`
+	Image       string            `json:"image" example:"ghcr.io/rethink-paradigms/hermes:latest"`
 	Ports       []PortSpec        `json:"ports,omitempty"`
 	VolumeMount *VolumeMountSpec  `json:"volume_mount,omitempty"`
 	Command     []string          `json:"command,omitempty"`
@@ -44,12 +45,13 @@ type HealthCheckSpec struct {
 }
 
 // BodyResponse is the response payload for a single body.
+// @Description Response payload for a single body
 type BodyResponse struct {
-	ID            string             `json:"id"`
-	Name          string             `json:"name"`
+	ID            string             `json:"id" example:"body_abc123"`
+	Name          string             `json:"name" example:"my-agent-body"`
 	Image         string             `json:"image"`
-	State         string             `json:"state"`
-	NodeID        string             `json:"node_id,omitempty"`
+	State         string             `json:"state" example:"running"`
+	NodeID        string             `json:"node_id,omitempty" example:"node_xyz789"`
 	Ports         map[string]PortInfo `json:"ports,omitempty"`
 	Resources     ResourceSpec       `json:"resources"`
 	Health        *HealthCheckSpec   `json:"health,omitempty"`
@@ -65,11 +67,13 @@ type PortInfo struct {
 }
 
 // ListBodiesResponse is the response payload for GET /api/v1/bodies.
+// @Description Response payload for listing all bodies
 type ListBodiesResponse struct {
 	Bodies []BodyResponse `json:"bodies"`
 }
 
 // CreateBodyResponse is the response payload for POST /api/v1/bodies.
+// @Description Response payload after creating a body
 type CreateBodyResponse struct {
 	ID      string `json:"id"`
 	State   string `json:"state"`
@@ -77,12 +81,14 @@ type CreateBodyResponse struct {
 }
 
 // ActionResponse is the response payload for body actions (start/stop/restart/snapshot).
+// @Description Response payload for body actions (start/stop/destroy)
 type ActionResponse struct {
 	ID    string `json:"id"`
 	State string `json:"state"`
 }
 
 // NodeResponse is the response payload for a single node.
+// @Description Response payload for a single node
 type NodeResponse struct {
 	ID          string       `json:"id"`
 	Name        string       `json:"name"`
@@ -103,11 +109,13 @@ type CapacityInfo struct {
 }
 
 // ListNodesResponse is the response payload for GET /api/v1/nodes.
+// @Description Response payload for listing all nodes
 type ListNodesResponse struct {
 	Nodes []NodeResponse `json:"nodes"`
 }
 
 // HealthzResponse is the response payload for GET /healthz.
+// @Description Response payload for health check
 type HealthzResponse struct {
 	Status                string `json:"status"`
 	Version               string `json:"version"`
@@ -119,6 +127,7 @@ type HealthzResponse struct {
 }
 
 // CapabilitiesResponse is the response payload for GET /api/v1/capabilities.
+// @Description Response payload for daemon capabilities
 type CapabilitiesResponse struct {
 	Version       string                   `json:"version"`
 	Tier          string                   `json:"tier"`
@@ -141,6 +150,7 @@ type CapabilityLimits struct {
 }
 
 // StatusResponse is the response payload for GET /api/v1/status.
+// @Description Response payload for daemon status
 type StatusResponse struct {
 	Daemon   DaemonStatusInfo   `json:"daemon"`
 	Tier     string             `json:"tier"`
@@ -175,8 +185,10 @@ type BodyStatusItem struct {
 
 // PortsStatusInfo describes port pool usage.
 type PortsStatusInfo struct {
-	Used      int `json:"used"`
-	Free      int `json:"free"`
+	// Placeholder — port tracking not yet implemented
+	Used int `json:"used"`
+	// Placeholder — port tracking not yet implemented
+	Free int `json:"free"`
 	PoolStart int `json:"pool_start"`
 	PoolEnd   int `json:"pool_end"`
 }
@@ -188,7 +200,8 @@ type IngressStatusInfo struct {
 
 // CapacityStatusInfo describes daemon host capacity.
 type CapacityStatusInfo struct {
-	CPUPercent    float64 `json:"cpu_percent"`
+	// CPUPercent is always 0.0 — real-time CPU sampling not implemented
+	CPUPercent float64 `json:"cpu_percent"`
 	MemoryMBUsed  int64   `json:"memory_mb_used"`
 	MemoryMBTotal int64   `json:"memory_mb_total"`
 	DiskGBUsed    float64 `json:"disk_gb_used"`

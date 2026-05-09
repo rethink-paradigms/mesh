@@ -7,6 +7,14 @@ import (
 	"github.com/rethink-paradigms/mesh/internal/orchestrator"
 )
 
+// @Summary List all nodes
+// @Description Returns all orchestration nodes managed by this daemon.
+// @Tags nodes
+// @Security BearerAuth
+// @Success 200 {object} ListNodesResponse
+// @Failure 401 {object} ErrorResponse
+// @Failure 502 {object} ErrorResponse
+// @Router /api/v1/nodes [get]
 func (h *Handler) ListNodes(w http.ResponseWriter, r *http.Request) {
 	if !orchestrator.HasCapability[orchestrator.NodeLister](h.cfg.Orchestrator) {
 		WriteError(w, ErrCodeInternal, "node listing not supported by this orchestrator", http.StatusNotImplemented)

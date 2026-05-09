@@ -7,6 +7,14 @@ import (
 	"os/exec"
 )
 
+// @Summary Get daemon capabilities
+// @Description Returns daemon capabilities including registered orchestrator adapters, infrastructure providers (from external mesh-provision CLI call — may be unavailable), enabled feature flags, and hard limits. The providers field is populated by calling 'mesh-provision providers' externally and may return {"status":"unavailable"} if the CLI is not installed.
+// @Tags system
+// @Security BearerAuth
+// @Success 200 {object} CapabilitiesResponse
+// @Failure 401 {object} ErrorResponse
+// @Failure 500 {object} ErrorResponse
+// @Router /api/v1/capabilities [get]
 func (h *Handler) Capabilities(w http.ResponseWriter, r *http.Request) {
 	var orchCaps []OrchestratorCapability
 	if h.cfg.OrchRegistry != nil {

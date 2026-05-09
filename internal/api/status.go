@@ -14,6 +14,14 @@ import (
 	"github.com/rethink-paradigms/mesh/internal/orchestrator"
 )
 
+// @Summary Get daemon status
+// @Description Returns detailed daemon status including version, uptime, body counts, port pool usage, ingress routes, and host capacity. Note that cpu_percent is always 0.0 (real-time CPU sampling not implemented) and ports.used/ports.free are placeholder values (port tracking not yet implemented).
+// @Tags system
+// @Security BearerAuth
+// @Success 200 {object} StatusResponse
+// @Failure 401 {object} ErrorResponse
+// @Failure 500 {object} ErrorResponse
+// @Router /api/v1/status [get]
 func (h *Handler) Status(w http.ResponseWriter, r *http.Request) {
 	resp := StatusResponse{}
 

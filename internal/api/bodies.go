@@ -29,6 +29,14 @@ func mapServiceError(err error) (code string, status int) {
 	return ErrCodeInternal, http.StatusInternalServerError
 }
 
+// @Summary List all bodies
+// @Description Returns all agent bodies managed by this daemon. Supports optional cluster-scoped filtering via the X-Cluster-ID header.
+// @Tags bodies
+// @Security BearerAuth
+// @Success 200 {object} ListBodiesResponse
+// @Failure 401 {object} ErrorResponse
+// @Failure 500 {object} ErrorResponse
+// @Router /api/v1/bodies [get]
 func (h *Handler) ListBodies(w http.ResponseWriter, r *http.Request) {
 	clusterID := ClusterIDFromContext(r.Context())
 
@@ -57,6 +65,16 @@ func (h *Handler) ListBodies(w http.ResponseWriter, r *http.Request) {
 	WriteJSON(w, http.StatusOK, ListBodiesResponse{Bodies: responses})
 }
 
+// @Summary Create a new body
+// @Description Creates a new agent body with the specified image, resources, and configuration.
+// @Tags bodies
+// @Security BearerAuth
+// @Param body body CreateBodyRequest true "Body creation request"
+// @Success 201 {object} CreateBodyResponse
+// @Failure 400 {object} ErrorResponse
+// @Failure 401 {object} ErrorResponse
+// @Failure 409 {object} ErrorResponse
+// @Router /api/v1/bodies [post]
 func (h *Handler) CreateBody(w http.ResponseWriter, r *http.Request) {
 	var req CreateBodyRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -79,6 +97,15 @@ func (h *Handler) CreateBody(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// @Summary Get body by ID
+// @Description Returns details for a single agent body by its unique identifier.
+// @Tags bodies
+// @Security BearerAuth
+// @Param id path string true "Body ID"
+// @Success 200 {object} BodyResponse
+// @Failure 401 {object} ErrorResponse
+// @Failure 404 {object} ErrorResponse
+// @Router /api/v1/bodies/{id} [get]
 func (h *Handler) GetBody(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	if id == "" {
@@ -109,6 +136,16 @@ func (h *Handler) GetBody(w http.ResponseWriter, r *http.Request) {
 	WriteJSON(w, http.StatusOK, resp)
 }
 
+// @Summary Stop a body
+// @Description Initiates a graceful stop of a running agent body.
+// @Tags bodies
+// @Security BearerAuth
+// @Param id path string true "Body ID"
+// @Success 200 {object} ActionResponse
+// @Failure 401 {object} ErrorResponse
+// @Failure 404 {object} ErrorResponse
+// @Failure 409 {object} ErrorResponse
+// @Router /api/v1/bodies/{id}/stop [post]
 func (h *Handler) StopBody(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	if id == "" {
@@ -128,6 +165,16 @@ func (h *Handler) StopBody(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// @Summary Start a stopped body
+// @Description Starts a previously stopped agent body.
+// @Tags bodies
+// @Security BearerAuth
+// @Param id path string true "Body ID"
+// @Success 200 {object} ActionResponse
+// @Failure 401 {object} ErrorResponse
+// @Failure 404 {object} ErrorResponse
+// @Failure 409 {object} ErrorResponse
+// @Router /api/v1/bodies/{id}/start [post]
 func (h *Handler) StartBody(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	if id == "" {
@@ -147,6 +194,16 @@ func (h *Handler) StartBody(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// @Summary Destroy a body
+// @Description Permanently destroys an agent body and its associated resources.
+// @Tags bodies
+// @Security BearerAuth
+// @Param id path string true "Body ID"
+// @Success 200 {object} ActionResponse
+// @Failure 401 {object} ErrorResponse
+// @Failure 404 {object} ErrorResponse
+// @Failure 409 {object} ErrorResponse
+// @Router /api/v1/bodies/{id} [delete]
 func (h *Handler) DestroyBody(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	if id == "" {

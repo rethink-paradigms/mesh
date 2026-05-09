@@ -1,3 +1,12 @@
+// @title Mesh Daemon API
+// @version 1.0.0
+// @description REST API for managing agent bodies on provisioned infrastructure. The daemon runs on each provisioned VM and exposes endpoints for body lifecycle management (CRUD), node listing, agent installation, status checks, and capability discovery.
+// @host localhost:8080
+// @BasePath /
+// @securityDefinitions.apikey BearerAuth
+// @in header
+// @name Authorization
+// @description Bearer token authentication. Accepts either a static bearer token or an Auth0 JWT. All /api/v1/* endpoints require this header. The /healthz endpoint is unauthenticated.
 package main
 
 import (

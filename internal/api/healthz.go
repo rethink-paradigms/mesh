@@ -6,6 +6,11 @@ import (
 	"github.com/rethink-paradigms/mesh/internal/orchestrator"
 )
 
+// @Summary Health check
+// @Description Returns daemon health status, including orchestrator connectivity and body/node counts.
+// @Tags system
+// @Success 200 {object} HealthzResponse
+// @Router /healthz [get]
 func (h *Handler) Healthz(w http.ResponseWriter, r *http.Request) {
 	nomadConnected := h.cfg.Orchestrator.IsHealthy(r.Context())
 

@@ -22,6 +22,16 @@ type InstallAgentRequest struct {
 	Env       map[string]string `json:"env,omitempty"`
 }
 
+// @Summary Install an agent
+// @Description Installs an agent (e.g., Hermes, OpenClaw) on the daemon with the specified type, name, and environment variables.
+// @Tags agents
+// @Security BearerAuth
+// @Param body body InstallAgentRequest true "Agent install request"
+// @Success 200 {object} agent.InstallResult
+// @Failure 400 {object} ErrorResponse
+// @Failure 401 {object} ErrorResponse
+// @Failure 500 {object} ErrorResponse
+// @Router /api/v1/agents/install [post]
 func (h *Handler) InstallAgent(w http.ResponseWriter, r *http.Request) {
 	if h.cfg.Installer == nil {
 		WriteError(w, ErrCodeInternal, "installer not configured", http.StatusInternalServerError)

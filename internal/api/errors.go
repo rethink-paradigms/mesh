@@ -19,12 +19,13 @@ const (
 
 // APIError represents a single error in an API response.
 type APIError struct {
-	Code    string `json:"code"`
-	Message string `json:"message"`
-	Status  int    `json:"status"`
+	Code    string `json:"code" example:"body_not_found"`
+	Message string `json:"message" example:"Body with ID 'xyz' not found"`
+	Status  int    `json:"status" example:"404"`
 }
 
 // ErrorResponse wraps APIError as the top-level error payload.
+// @Description Standard error response payload
 type ErrorResponse struct {
 	Error APIError `json:"error"`
 }
