@@ -494,15 +494,6 @@ func TestSchemaMigrationV1ToV2(t *testing.T) {
 
 	ctx := context.Background()
 
-	// Verify schema version is now 2
-	version, err := s.GetConfig(ctx, "schema_version")
-	if err != nil {
-		t.Fatalf("GetConfig schema_version: %v", err)
-	}
-	if version != "2" {
-		t.Errorf("schema_version = %q, want 2", version)
-	}
-
 	// Verify the old body now has substrate = "docker" (default)
 	b, err := s.GetBody(ctx, "v1-body")
 	if err != nil {
@@ -513,6 +504,18 @@ func TestSchemaMigrationV1ToV2(t *testing.T) {
 	}
 	if b.Name != "v1-body-name" {
 		t.Errorf("v1 body name = %q, want v1-body-name", b.Name)
+	}
+	if b.ClusterID != "" {
+		t.Errorf("v1 body cluster_id = %q, want empty string (NULL)", b.ClusterID)
+	}
+
+	// Verify schema version is now 3 (v1→v2→v3)
+	version, err := s.GetConfig(ctx, "schema_version")
+	if err != nil {
+		t.Fatalf("GetConfig schema_version: %v", err)
+	}
+	if version != "3" {
+		t.Errorf("schema_version = %q, want 3", version)
 	}
 
 	// Verify new bodies can be created with substrate

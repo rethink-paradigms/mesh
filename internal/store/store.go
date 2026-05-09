@@ -20,6 +20,7 @@ type BodyRecord struct {
 	SpecJSON   string
 	Substrate  string
 	InstanceID string
+	ClusterID  string
 	CreatedAt  string
 	UpdatedAt  string
 }
@@ -31,6 +32,7 @@ type SnapshotRecord struct {
 	ManifestJSON string
 	StoragePath  string
 	SizeBytes    int64
+	ClusterID    string
 	CreatedAt    string
 }
 
@@ -41,6 +43,7 @@ type MigrationRecord struct {
 	TargetSubstrate string
 	CurrentStep     int
 	SnapshotID      string
+	ClusterID       string
 	StartedAt       string
 	Error           string
 }
@@ -144,8 +147,8 @@ func migrate(db *sql.DB) error {
 		return fmt.Errorf("read schema_version: %w", err)
 	}
 
-	if version == "2" {
-		return nil // already migrated
+	if version == "3" {
+		return nil // already at latest
 	}
 
 	if version == "" {
@@ -158,7 +161,6 @@ func migrate(db *sql.DB) error {
 		if err != nil {
 			return fmt.Errorf("set schema_version: %w", err)
 		}
-		return nil
 	}
 
 	if version == "1" {
@@ -171,10 +173,27 @@ func migrate(db *sql.DB) error {
 		if err != nil {
 			return fmt.Errorf("set schema_version to 2: %w", err)
 		}
-		return nil
 	}
 
-	return fmt.Errorf("unsupported schema version %q", version)
+	// v2 → v3: add cluster_id column to bodies, snapshots, migrations
+	_, err = db.Exec(`ALTER TABLE bodies ADD COLUMN cluster_id TEXT DEFAULT NULL`)
+	if err != nil {
+		return fmt.Errorf("migrate v2→v3 add cluster_id to bodies: %w", err)
+	}
+	_, err = db.Exec(`ALTER TABLE snapshots ADD COLUMN cluster_id TEXT DEFAULT NULL`)
+	if err != nil {
+		return fmt.Errorf("migrate v2→v3 add cluster_id to snapshots: %w", err)
+	}
+	_, err = db.Exec(`ALTER TABLE migrations ADD COLUMN cluster_id TEXT DEFAULT NULL`)
+	if err != nil {
+		return fmt.Errorf("migrate v2→v3 add cluster_id to migrations: %w", err)
+	}
+	_, err = db.Exec("INSERT OR REPLACE INTO config (key, value) VALUES ('schema_version', '3')")
+	if err != nil {
+		return fmt.Errorf("set schema_version to 3: %w", err)
+	}
+
+	return nil
 }
 
 // bodyLock acquires the per-body mutex for the given id. Callers must unlock the returned mutex.
@@ -200,16 +219,21 @@ func now() string {
 
 // --- Body CRUD ---
 
-// CreateBody inserts a new body record.
+// CreateBody inserts a new body record without a cluster_id (legacy compat).
 func (s *Store) CreateBody(ctx context.Context, id, name string, state orchestrator.BodyState, specJSON, substrate, instanceID string) error {
+	return s.CreateBodyWithCluster(ctx, id, name, state, specJSON, substrate, instanceID, "")
+}
+
+// CreateBodyWithCluster inserts a new body record with a cluster_id.
+func (s *Store) CreateBodyWithCluster(ctx context.Context, id, name string, state orchestrator.BodyState, specJSON, substrate, instanceID, clusterID string) error {
 	unlock := s.bodyLock(id)
 	defer unlock.Unlock()
 
 	ts := now()
 	_, err := s.db.ExecContext(ctx,
-		`INSERT INTO bodies (id, name, state, spec_json, substrate, instance_id, created_at, updated_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-		id, name, string(state), specJSON, substrate, instanceID, ts, ts,
+		`INSERT INTO bodies (id, name, state, spec_json, substrate, instance_id, cluster_id, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		id, name, string(state), specJSON, substrate, instanceID, clusterID, ts, ts,
 	)
 	if err != nil {
 		return fmt.Errorf("create body %s: %w", id, err)
@@ -220,10 +244,12 @@ func (s *Store) CreateBody(ctx context.Context, id, name string, state orchestra
 // GetBody retrieves a body record by id.
 func (s *Store) GetBody(ctx context.Context, id string) (*BodyRecord, error) {
 	var b BodyRecord
+	var clusterID sql.NullString
 	err := s.db.QueryRowContext(ctx,
-		`SELECT id, name, state, spec_json, substrate, instance_id, created_at, updated_at
+		`SELECT id, name, state, spec_json, substrate, instance_id, cluster_id, created_at, updated_at
 		 FROM bodies WHERE id = ?`, id,
-	).Scan(&b.ID, &b.Name, &b.State, &b.SpecJSON, &b.Substrate, &b.InstanceID, &b.CreatedAt, &b.UpdatedAt)
+	).Scan(&b.ID, &b.Name, &b.State, &b.SpecJSON, &b.Substrate, &b.InstanceID, &clusterID, &b.CreatedAt, &b.UpdatedAt)
+	b.ClusterID = clusterID.String
 	if err == sql.ErrNoRows {
 		return nil, fmt.Errorf("body %s: not found", id)
 	}
@@ -236,7 +262,7 @@ func (s *Store) GetBody(ctx context.Context, id string) (*BodyRecord, error) {
 // ListBodiesBySubstrate returns all body records with the given substrate.
 func (s *Store) ListBodiesBySubstrate(ctx context.Context, substrate string) ([]*BodyRecord, error) {
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT id, name, state, spec_json, substrate, instance_id, created_at, updated_at
+		`SELECT id, name, state, spec_json, substrate, instance_id, cluster_id, created_at, updated_at
 		 FROM bodies WHERE substrate = ? ORDER BY created_at`, substrate)
 	if err != nil {
 		return nil, fmt.Errorf("list bodies by substrate %s: %w", substrate, err)
@@ -246,9 +272,11 @@ func (s *Store) ListBodiesBySubstrate(ctx context.Context, substrate string) ([]
 	var bodies []*BodyRecord
 	for rows.Next() {
 		var b BodyRecord
-		if err := rows.Scan(&b.ID, &b.Name, &b.State, &b.SpecJSON, &b.Substrate, &b.InstanceID, &b.CreatedAt, &b.UpdatedAt); err != nil {
+		var clusterID sql.NullString
+		if err := rows.Scan(&b.ID, &b.Name, &b.State, &b.SpecJSON, &b.Substrate, &b.InstanceID, &clusterID, &b.CreatedAt, &b.UpdatedAt); err != nil {
 			return nil, fmt.Errorf("scan body: %w", err)
 		}
+		b.ClusterID = clusterID.String
 		bodies = append(bodies, &b)
 	}
 	return bodies, rows.Err()
@@ -257,7 +285,7 @@ func (s *Store) ListBodiesBySubstrate(ctx context.Context, substrate string) ([]
 // ListBodies returns all body records.
 func (s *Store) ListBodies(ctx context.Context) ([]*BodyRecord, error) {
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT id, name, state, spec_json, substrate, instance_id, created_at, updated_at
+		`SELECT id, name, state, spec_json, substrate, instance_id, cluster_id, created_at, updated_at
 		 FROM bodies ORDER BY created_at`)
 	if err != nil {
 		return nil, fmt.Errorf("list bodies: %w", err)
@@ -267,9 +295,11 @@ func (s *Store) ListBodies(ctx context.Context) ([]*BodyRecord, error) {
 	var bodies []*BodyRecord
 	for rows.Next() {
 		var b BodyRecord
-		if err := rows.Scan(&b.ID, &b.Name, &b.State, &b.SpecJSON, &b.Substrate, &b.InstanceID, &b.CreatedAt, &b.UpdatedAt); err != nil {
+		var clusterID sql.NullString
+		if err := rows.Scan(&b.ID, &b.Name, &b.State, &b.SpecJSON, &b.Substrate, &b.InstanceID, &clusterID, &b.CreatedAt, &b.UpdatedAt); err != nil {
 			return nil, fmt.Errorf("scan body: %w", err)
 		}
+		b.ClusterID = clusterID.String
 		bodies = append(bodies, &b)
 	}
 	return bodies, rows.Err()
@@ -378,12 +408,17 @@ func (s *Store) DeleteBody(ctx context.Context, id string) error {
 
 // --- Snapshot CRUD ---
 
-// CreateSnapshot inserts a new snapshot record.
+// CreateSnapshot inserts a new snapshot record without a cluster_id (legacy compat).
 func (s *Store) CreateSnapshot(ctx context.Context, id, bodyID, manifestJSON, storagePath string, sizeBytes int64) error {
+	return s.CreateSnapshotWithCluster(ctx, id, bodyID, manifestJSON, storagePath, sizeBytes, "")
+}
+
+// CreateSnapshotWithCluster inserts a new snapshot record with a cluster_id.
+func (s *Store) CreateSnapshotWithCluster(ctx context.Context, id, bodyID, manifestJSON, storagePath string, sizeBytes int64, clusterID string) error {
 	_, err := s.db.ExecContext(ctx,
-		`INSERT INTO snapshots (id, body_id, manifest_json, storage_path, size_bytes, created_at)
-		 VALUES (?, ?, ?, ?, ?, ?)`,
-		id, bodyID, manifestJSON, storagePath, sizeBytes, now(),
+		`INSERT INTO snapshots (id, body_id, manifest_json, storage_path, size_bytes, cluster_id, created_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		id, bodyID, manifestJSON, storagePath, sizeBytes, clusterID, now(),
 	)
 	if err != nil {
 		return fmt.Errorf("create snapshot %s: %w", id, err)
@@ -394,7 +429,7 @@ func (s *Store) CreateSnapshot(ctx context.Context, id, bodyID, manifestJSON, st
 // ListSnapshots returns all snapshots for a given body.
 func (s *Store) ListSnapshots(ctx context.Context, bodyID string) ([]*SnapshotRecord, error) {
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT id, body_id, manifest_json, storage_path, size_bytes, created_at
+		`SELECT id, body_id, manifest_json, storage_path, size_bytes, cluster_id, created_at
 		 FROM snapshots WHERE body_id = ? ORDER BY created_at`, bodyID)
 	if err != nil {
 		return nil, fmt.Errorf("list snapshots for body %s: %w", bodyID, err)
@@ -404,9 +439,11 @@ func (s *Store) ListSnapshots(ctx context.Context, bodyID string) ([]*SnapshotRe
 	var snaps []*SnapshotRecord
 	for rows.Next() {
 		var snap SnapshotRecord
-		if err := rows.Scan(&snap.ID, &snap.BodyID, &snap.ManifestJSON, &snap.StoragePath, &snap.SizeBytes, &snap.CreatedAt); err != nil {
+		var clusterID sql.NullString
+		if err := rows.Scan(&snap.ID, &snap.BodyID, &snap.ManifestJSON, &snap.StoragePath, &snap.SizeBytes, &clusterID, &snap.CreatedAt); err != nil {
 			return nil, fmt.Errorf("scan snapshot: %w", err)
 		}
+		snap.ClusterID = clusterID.String
 		snaps = append(snaps, &snap)
 	}
 	return snaps, rows.Err()
@@ -415,10 +452,12 @@ func (s *Store) ListSnapshots(ctx context.Context, bodyID string) ([]*SnapshotRe
 // GetSnapshot retrieves a snapshot record by id.
 func (s *Store) GetSnapshot(ctx context.Context, id string) (*SnapshotRecord, error) {
 	var snap SnapshotRecord
+	var clusterID sql.NullString
 	err := s.db.QueryRowContext(ctx,
-		`SELECT id, body_id, manifest_json, storage_path, size_bytes, created_at
+		`SELECT id, body_id, manifest_json, storage_path, size_bytes, cluster_id, created_at
 		 FROM snapshots WHERE id = ?`, id,
-	).Scan(&snap.ID, &snap.BodyID, &snap.ManifestJSON, &snap.StoragePath, &snap.SizeBytes, &snap.CreatedAt)
+	).Scan(&snap.ID, &snap.BodyID, &snap.ManifestJSON, &snap.StoragePath, &snap.SizeBytes, &clusterID, &snap.CreatedAt)
+	snap.ClusterID = clusterID.String
 	if err == sql.ErrNoRows {
 		return nil, fmt.Errorf("snapshot %s: not found", id)
 	}
@@ -443,12 +482,17 @@ func (s *Store) DeleteSnapshot(ctx context.Context, id string) error {
 
 // --- Migration CRUD ---
 
-// CreateMigration inserts a new migration record.
+// CreateMigration inserts a new migration record without a cluster_id (legacy compat).
 func (s *Store) CreateMigration(ctx context.Context, id, bodyID, targetSubstrate, snapshotID string) error {
+	return s.CreateMigrationWithCluster(ctx, id, bodyID, targetSubstrate, snapshotID, "")
+}
+
+// CreateMigrationWithCluster inserts a new migration record with a cluster_id.
+func (s *Store) CreateMigrationWithCluster(ctx context.Context, id, bodyID, targetSubstrate, snapshotID, clusterID string) error {
 	_, err := s.db.ExecContext(ctx,
-		`INSERT INTO migrations (id, body_id, target_substrate, current_step, snapshot_id, started_at)
-		 VALUES (?, ?, ?, 0, ?, ?)`,
-		id, bodyID, targetSubstrate, snapshotID, now(),
+		`INSERT INTO migrations (id, body_id, target_substrate, current_step, snapshot_id, cluster_id, started_at)
+		 VALUES (?, ?, ?, 0, ?, ?, ?)`,
+		id, bodyID, targetSubstrate, snapshotID, clusterID, now(),
 	)
 	if err != nil {
 		return fmt.Errorf("create migration %s: %w", id, err)
@@ -475,11 +519,11 @@ func (s *Store) UpdateMigration(ctx context.Context, id string, currentStep int,
 // GetMigration retrieves a migration record by id.
 func (s *Store) GetMigration(ctx context.Context, id string) (*MigrationRecord, error) {
 	var m MigrationRecord
-	var snapID, errStr sql.NullString
+	var snapID, clusterID, errStr sql.NullString
 	err := s.db.QueryRowContext(ctx,
-		`SELECT id, body_id, target_substrate, current_step, snapshot_id, started_at, error
+		`SELECT id, body_id, target_substrate, current_step, snapshot_id, cluster_id, started_at, error
 		 FROM migrations WHERE id = ?`, id,
-	).Scan(&m.ID, &m.BodyID, &m.TargetSubstrate, &m.CurrentStep, &snapID, &m.StartedAt, &errStr)
+	).Scan(&m.ID, &m.BodyID, &m.TargetSubstrate, &m.CurrentStep, &snapID, &clusterID, &m.StartedAt, &errStr)
 	if err == sql.ErrNoRows {
 		return nil, fmt.Errorf("migration %s: not found", id)
 	}
@@ -487,6 +531,7 @@ func (s *Store) GetMigration(ctx context.Context, id string) (*MigrationRecord, 
 		return nil, fmt.Errorf("get migration %s: %w", id, err)
 	}
 	m.SnapshotID = snapID.String
+	m.ClusterID = clusterID.String
 	m.Error = errStr.String
 	return &m, nil
 }
