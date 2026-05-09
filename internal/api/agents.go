@@ -27,9 +27,11 @@ type InstallAgentRequest struct {
 // @Tags agents
 // @Security BearerAuth
 // @Param body body InstallAgentRequest true "Agent install request"
-// @Success 200 {object} agent.InstallResult
+// @Success 201 {object} agent.InstallResult
 // @Failure 400 {object} ErrorResponse
 // @Failure 401 {object} ErrorResponse
+// @Failure 404 {object} ErrorResponse
+// @Failure 409 {object} ErrorResponse
 // @Failure 500 {object} ErrorResponse
 // @Router /api/v1/agents/install [post]
 func (h *Handler) InstallAgent(w http.ResponseWriter, r *http.Request) {

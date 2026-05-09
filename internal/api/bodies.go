@@ -74,6 +74,7 @@ func (h *Handler) ListBodies(w http.ResponseWriter, r *http.Request) {
 // @Failure 400 {object} ErrorResponse
 // @Failure 401 {object} ErrorResponse
 // @Failure 409 {object} ErrorResponse
+// @Failure 500 {object} ErrorResponse
 // @Router /api/v1/bodies [post]
 func (h *Handler) CreateBody(w http.ResponseWriter, r *http.Request) {
 	var req CreateBodyRequest
@@ -105,6 +106,7 @@ func (h *Handler) CreateBody(w http.ResponseWriter, r *http.Request) {
 // @Success 200 {object} BodyResponse
 // @Failure 401 {object} ErrorResponse
 // @Failure 404 {object} ErrorResponse
+// @Failure 500 {object} ErrorResponse
 // @Router /api/v1/bodies/{id} [get]
 func (h *Handler) GetBody(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
@@ -145,6 +147,7 @@ func (h *Handler) GetBody(w http.ResponseWriter, r *http.Request) {
 // @Failure 401 {object} ErrorResponse
 // @Failure 404 {object} ErrorResponse
 // @Failure 409 {object} ErrorResponse
+// @Failure 500 {object} ErrorResponse
 // @Router /api/v1/bodies/{id}/stop [post]
 func (h *Handler) StopBody(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
@@ -174,6 +177,7 @@ func (h *Handler) StopBody(w http.ResponseWriter, r *http.Request) {
 // @Failure 401 {object} ErrorResponse
 // @Failure 404 {object} ErrorResponse
 // @Failure 409 {object} ErrorResponse
+// @Failure 500 {object} ErrorResponse
 // @Router /api/v1/bodies/{id}/start [post]
 func (h *Handler) StartBody(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
@@ -203,6 +207,7 @@ func (h *Handler) StartBody(w http.ResponseWriter, r *http.Request) {
 // @Failure 401 {object} ErrorResponse
 // @Failure 404 {object} ErrorResponse
 // @Failure 409 {object} ErrorResponse
+// @Failure 500 {object} ErrorResponse
 // @Router /api/v1/bodies/{id} [delete]
 func (h *Handler) DestroyBody(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")

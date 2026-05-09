@@ -13,6 +13,7 @@ import (
 // @Security BearerAuth
 // @Success 200 {object} ListNodesResponse
 // @Failure 401 {object} ErrorResponse
+// @Failure 501 {object} ErrorResponse
 // @Failure 502 {object} ErrorResponse
 // @Router /api/v1/nodes [get]
 func (h *Handler) ListNodes(w http.ResponseWriter, r *http.Request) {
