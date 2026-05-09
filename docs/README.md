@@ -27,7 +27,7 @@ The snapshot primitive is `docker export | zstd` — a flat filesystem tarball. 
 - [Architecture Overview](architecture.md) — System design and component diagrams
 - [CLI Reference](cli-reference.md) — Command-line interface documentation
 - [MCP API](mcp-api.md) — Model Context Protocol API reference
-- [REST API](rest-api.md) — HTTP REST API for scripting and tooling
+- [REST API](../../contracts/mesh-daemon-openapi.yaml) — HTTP REST API (OpenAPI 3.1 spec)
 - [Migration Guide](migration.md) — Migrating from v0 to v1
 - [Package Documentation](internal/packages.md) — Internal package reference
 
@@ -85,7 +85,7 @@ sudo systemctl enable --now mesh
 
 ### Authentication
 
-The REST API uses Bearer token authentication. Configure the token in `mesh.yaml` under `auth_token`. See the [REST API authentication docs](rest-api.md#authentication) for details.
+The REST API uses Bearer token authentication. Configure the token in `mesh.yaml` under `auth_token`. See the [REST API authentication docs](../../contracts/mesh-daemon-openapi.yaml) for details.
 
 ## License
 
