@@ -8,7 +8,6 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"encoding/pem"
-	"fmt"
 	"math/big"
 	"net/http"
 	"net/http/httptest"
@@ -16,7 +15,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/MicahParks/keyfunc/v2"
 	"github.com/golang-jwt/jwt/v5"
 )
 
@@ -91,33 +89,12 @@ func newTestValidator(t *testing.T, key *rsa.PrivateKey, audience, issuer, owner
 	server := testJWKSServer(t, &key.PublicKey)
 
 	jwksURL := server.URL + "/.well-known/jwks.json"
-	validator, err := newJWTValidatorWithURL(jwksURL, audience, issuer, ownerID)
+	validator, err := NewJWTValidatorWithURL(jwksURL, audience, issuer, ownerID)
 	if err != nil {
 		server.Close()
 		t.Fatalf("create validator: %v", err)
 	}
 	return validator, server
-}
-
-func newJWTValidatorWithURL(jwksURL, audience, issuer, ownerID string) (*JWTValidator, error) {
-	if audience == "" {
-		return nil, fmt.Errorf("auth0_audience is required")
-	}
-
-	k, err := keyfunc.Get(jwksURL, keyfunc.Options{
-		RefreshErrorHandler: func(err error) {},
-	})
-	if err != nil {
-		return nil, fmt.Errorf("fetch JWKS from %s: %w", jwksURL, err)
-	}
-
-	return &JWTValidator{
-		jwks:      k,
-		audience:  audience,
-		issuer:    issuer,
-		ownerID:   ownerID,
-		clockSkew: 60 * time.Second,
-	}, nil
 }
 
 func TestJWTValidToken(t *testing.T) {
@@ -135,7 +112,7 @@ func TestJWTValidToken(t *testing.T) {
 	}
 	token := generateTestJWT(t, key, "test-key-1", claims)
 
-	sub, err := validator.validate(token)
+	sub, err := validator.Validate(token)
 	if err != nil {
 		t.Fatalf("validate valid token: %v", err)
 	}
@@ -159,7 +136,7 @@ func TestJWTExpiredToken(t *testing.T) {
 	}
 	token := generateTestJWT(t, key, "test-key-1", claims)
 
-	_, err := validator.validate(token)
+	_, err := validator.Validate(token)
 	if err == nil {
 		t.Fatal("expected error for expired token")
 	}
@@ -183,7 +160,7 @@ func TestJWTWrongIssuer(t *testing.T) {
 	}
 	token := generateTestJWT(t, key, "test-key-1", claims)
 
-	_, err := validator.validate(token)
+	_, err := validator.Validate(token)
 	if err == nil {
 		t.Fatal("expected error for wrong issuer")
 	}
@@ -207,7 +184,7 @@ func TestJWTWrongAudience(t *testing.T) {
 	}
 	token := generateTestJWT(t, key, "test-key-1", claims)
 
-	_, err := validator.validate(token)
+	_, err := validator.Validate(token)
 	if err == nil {
 		t.Fatal("expected error for wrong audience")
 	}
@@ -232,7 +209,7 @@ func TestJWTInvalidSignature(t *testing.T) {
 	}
 	token := generateTestJWT(t, wrongKey, "test-key-1", claims)
 
-	_, err := validator.validate(token)
+	_, err := validator.Validate(token)
 	if err == nil {
 		t.Fatal("expected error for invalid signature")
 	}
@@ -255,7 +232,7 @@ func TestJWTMissingSubClaim(t *testing.T) {
 	}
 	token := generateTestJWT(t, key, "test-key-1", claims)
 
-	_, err := validator.validate(token)
+	_, err := validator.Validate(token)
 	if err == nil {
 		t.Fatal("expected error for missing sub claim")
 	}
@@ -279,7 +256,7 @@ func TestJWTWrongOwner(t *testing.T) {
 	}
 	token := generateTestJWT(t, key, "test-key-1", claims)
 
-	_, err := validator.validate(token)
+	_, err := validator.Validate(token)
 	if err == nil {
 		t.Fatal("expected error for wrong owner")
 	}

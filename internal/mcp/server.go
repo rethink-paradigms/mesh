@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/rethink-paradigms/mesh/internal/agent"
+	"github.com/rethink-paradigms/mesh/internal/api"
 	"github.com/rethink-paradigms/mesh/internal/body"
 	"github.com/rethink-paradigms/mesh/internal/ingress"
 	"github.com/rethink-paradigms/mesh/internal/orchestrator"
@@ -79,6 +80,11 @@ type Server struct {
 	startedAt  time.Time
 	ingress    ingress.IngressAdapter
 
+	authValidator *api.JWTValidator
+	authEnabled   bool
+	authMu        sync.Mutex
+	clusterID     string
+
 	reader io.Reader
 	writer io.Writer
 }
@@ -141,6 +147,25 @@ func (s *Server) SetStartedAt(t time.Time) {
 
 func (s *Server) SetInstaller(i *agent.Installer) {
 	s.installer = i
+}
+
+func (s *Server) SetAuth(domain, audience, ownerID string) error {
+	if domain == "" || audience == "" {
+		s.authEnabled = true
+		return nil
+	}
+
+	validator, err := api.NewJWTValidator(domain, audience, ownerID)
+	if err != nil {
+		return fmt.Errorf("mcp: set auth: %w", err)
+	}
+	s.authValidator = validator
+	s.authEnabled = true
+	return nil
+}
+
+func (s *Server) SetClusterID(id string) {
+	s.clusterID = id
 }
 
 // New creates a new MCP server backed by the given store.
@@ -278,6 +303,13 @@ func (s *Server) handle(ctx context.Context, req Request) {
 
 // handleToolCall dispatches a tools/call request to the registered handler.
 func (s *Server) handleToolCall(ctx context.Context, req Request) {
+	if s.authEnabled {
+		if err := s.validateAuth(); err != nil {
+			s.writeError(req.ID, -32000, err.Error())
+			return
+		}
+	}
+
 	var p struct {
 		Name      string          `json:"name"`
 		Arguments json.RawMessage `json:"arguments"`
@@ -312,6 +344,38 @@ func (s *Server) handleToolCall(ctx context.Context, req Request) {
 			{"type": "text", "text": marshalJSON(result)},
 		},
 	})
+}
+
+func (s *Server) validateAuth() error {
+	if !s.authEnabled {
+		return nil
+	}
+	if s.clusterID != "" {
+		return nil
+	}
+
+	s.authMu.Lock()
+	defer s.authMu.Unlock()
+
+	if s.clusterID != "" {
+		return nil
+	}
+
+	token := os.Getenv("MESH_JWT_TOKEN")
+	if token == "" {
+		return fmt.Errorf("authentication required — set MESH_JWT_TOKEN environment variable")
+	}
+
+	if s.authValidator == nil {
+		return fmt.Errorf("authentication not configured")
+	}
+
+	sub, err := s.authValidator.Validate(token)
+	if err != nil {
+		return fmt.Errorf("authentication failed: %s", err.Error())
+	}
+	s.clusterID = sub
+	return nil
 }
 
 // writeResult writes a successful JSON-RPC response.

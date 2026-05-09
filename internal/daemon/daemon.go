@@ -89,6 +89,13 @@ func (d *Daemon) SetMCP(srv interface{ Stop(context.Context) error }) {
 			is.SetIngress(d.ingress)
 		}
 	}
+	if d.cfg != nil && d.cfg.Daemon.Auth0Domain != "" && d.cfg.Daemon.Auth0Audience != "" {
+		if ms, ok := srv.(interface{ SetAuth(string, string, string) error }); ok {
+			if err := ms.SetAuth(d.cfg.Daemon.Auth0Domain, d.cfg.Daemon.Auth0Audience, d.cfg.Daemon.ClusterOwnerID); err != nil {
+				fmt.Fprintf(os.Stderr, "daemon: mcp set auth: %v\n", err)
+			}
+		}
+	}
 }
 
 func (d *Daemon) SetVersion(v string) {

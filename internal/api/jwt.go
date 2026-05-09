@@ -42,6 +42,14 @@ func NewJWTValidator(domain, audience, ownerID string) (*JWTValidator, error) {
 	jwksURL := fmt.Sprintf("https://%s/.well-known/jwks.json", domain)
 	issuer := fmt.Sprintf("https://%s/", domain)
 
+	return NewJWTValidatorWithURL(jwksURL, audience, issuer, ownerID)
+}
+
+func NewJWTValidatorWithURL(jwksURL, audience, issuer, ownerID string) (*JWTValidator, error) {
+	if audience == "" {
+		return nil, fmt.Errorf("auth0_audience is required")
+	}
+
 	k, err := keyfunc.Get(jwksURL, keyfunc.Options{
 		RefreshErrorHandler: func(err error) {},
 	})
@@ -58,7 +66,7 @@ func NewJWTValidator(domain, audience, ownerID string) (*JWTValidator, error) {
 	}, nil
 }
 
-func (v *JWTValidator) validate(tokenString string) (string, error) {
+func (v *JWTValidator) Validate(tokenString string) (string, error) {
 	token, err := jwt.Parse(tokenString, v.jwks.Keyfunc,
 		jwt.WithAudience(v.audience),
 		jwt.WithIssuer(v.issuer),
@@ -120,7 +128,7 @@ func (v *JWTValidator) JWTMiddleware(next http.Handler) http.Handler {
 			return
 		}
 
-		sub, err := v.validate(tokenString)
+		sub, err := v.Validate(tokenString)
 		if err != nil {
 			WriteError(w, ErrCodeUnauthorized, err.Error(), http.StatusUnauthorized)
 			return

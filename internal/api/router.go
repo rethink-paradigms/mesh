@@ -12,6 +12,17 @@ import (
 	"github.com/rethink-paradigms/mesh/internal/store"
 )
 
+func createJWTValidator(cfg RouterConfig) *JWTValidator {
+	if cfg.Auth0Domain == "" || cfg.Auth0Audience == "" {
+		return nil
+	}
+	validator, err := NewJWTValidator(cfg.Auth0Domain, cfg.Auth0Audience, cfg.ClusterOwnerID)
+	if err != nil {
+		return nil
+	}
+	return validator
+}
+
 type RouterConfig struct {
 	BodyManager  *body.BodyManager
 	BodyService  bodyServiceAdapter
@@ -62,7 +73,12 @@ func NewRouter(cfg RouterConfig) http.Handler {
 	apiMux.HandleFunc("GET /api/v1/status", handleStatus(cfg))
 	apiMux.HandleFunc("POST /api/v1/agents/install", handleInstallAgent(cfg))
 
-	mux.Handle("/api/v1/", BearerAuth(cfg.AuthToken, apiMux))
+	var validator *JWTValidator
+	if cfg.AuthMode == "jwt" || cfg.AuthMode == "both" {
+		validator = createJWTValidator(cfg)
+	}
+
+	mux.Handle("/api/v1/", JWTOrTokenAuth(cfg, validator, apiMux))
 
 	return jsonContentType(mux)
 }
