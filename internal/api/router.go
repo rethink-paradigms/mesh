@@ -46,11 +46,14 @@ type RouterConfig struct {
 
 type bodyServiceAdapter interface {
 	List(ctx context.Context) ([]*body.Body, error)
+	ListByCluster(ctx context.Context, clusterID string) ([]*body.Body, error)
 	Create(ctx context.Context, name, image string, opts orchestrator.BodySpec) (*body.Body, error)
 	Get(ctx context.Context, id string) (*body.Body, error)
+	GetByCluster(ctx context.Context, id, clusterID string) (*body.Body, error)
 	Start(ctx context.Context, id string) error
 	Stop(ctx context.Context, id string) error
 	Destroy(ctx context.Context, id string) error
+	DestroyByCluster(ctx context.Context, id, clusterID string) error
 	GetStatus(ctx context.Context, id string) (orchestrator.BodyStatus, error)
 }
 

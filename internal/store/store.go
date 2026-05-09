@@ -305,6 +305,129 @@ func (s *Store) ListBodies(ctx context.Context) ([]*BodyRecord, error) {
 	return bodies, rows.Err()
 }
 
+func (s *Store) ListBodiesByCluster(ctx context.Context, clusterID string) ([]*BodyRecord, error) {
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT id, name, state, spec_json, substrate, instance_id, cluster_id, created_at, updated_at
+		 FROM bodies WHERE cluster_id = ? OR cluster_id IS NULL ORDER BY created_at`, clusterID)
+	if err != nil {
+		return nil, fmt.Errorf("list bodies by cluster %s: %w", clusterID, err)
+	}
+	defer rows.Close()
+
+	var bodies []*BodyRecord
+	for rows.Next() {
+		var b BodyRecord
+		var cid sql.NullString
+		if err := rows.Scan(&b.ID, &b.Name, &b.State, &b.SpecJSON, &b.Substrate, &b.InstanceID, &cid, &b.CreatedAt, &b.UpdatedAt); err != nil {
+			return nil, fmt.Errorf("scan body: %w", err)
+		}
+		b.ClusterID = cid.String
+		bodies = append(bodies, &b)
+	}
+	return bodies, rows.Err()
+}
+
+func (s *Store) GetBodyByCluster(ctx context.Context, id, clusterID string) (*BodyRecord, error) {
+	var b BodyRecord
+	var cid sql.NullString
+	err := s.db.QueryRowContext(ctx,
+		`SELECT id, name, state, spec_json, substrate, instance_id, cluster_id, created_at, updated_at
+		 FROM bodies WHERE id = ? AND (cluster_id = ? OR cluster_id IS NULL)`, id, clusterID,
+	).Scan(&b.ID, &b.Name, &b.State, &b.SpecJSON, &b.Substrate, &b.InstanceID, &cid, &b.CreatedAt, &b.UpdatedAt)
+	b.ClusterID = cid.String
+	if err == sql.ErrNoRows {
+		return nil, fmt.Errorf("body %s: not found", id)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get body %s by cluster %s: %w", id, clusterID, err)
+	}
+	return &b, nil
+}
+
+func (s *Store) UpdateBodyStateByCluster(ctx context.Context, id string, state orchestrator.BodyState, clusterID string) error {
+	unlock := s.bodyLock(id)
+	defer unlock.Unlock()
+
+	res, err := s.db.ExecContext(ctx,
+		`UPDATE bodies SET state = ?, updated_at = ? WHERE id = ? AND cluster_id = ?`,
+		string(state), now(), id, clusterID,
+	)
+	if err != nil {
+		return fmt.Errorf("update body state %s by cluster %s: %w", id, clusterID, err)
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		return fmt.Errorf("body %s: not found", id)
+	}
+	return nil
+}
+
+func (s *Store) UpdateBodyInstanceIDByCluster(ctx context.Context, id, instanceID, clusterID string) error {
+	unlock := s.bodyLock(id)
+	defer unlock.Unlock()
+
+	res, err := s.db.ExecContext(ctx,
+		`UPDATE bodies SET instance_id = ?, updated_at = ? WHERE id = ? AND cluster_id = ?`,
+		instanceID, now(), id, clusterID,
+	)
+	if err != nil {
+		return fmt.Errorf("update body instance_id %s by cluster %s: %w", id, clusterID, err)
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		return fmt.Errorf("body %s: not found", id)
+	}
+	return nil
+}
+
+func (s *Store) UpdateBodySubstrateByCluster(ctx context.Context, id, substrate, clusterID string) error {
+	unlock := s.bodyLock(id)
+	defer unlock.Unlock()
+
+	res, err := s.db.ExecContext(ctx,
+		`UPDATE bodies SET substrate = ?, updated_at = ? WHERE id = ? AND cluster_id = ?`,
+		substrate, now(), id, clusterID,
+	)
+	if err != nil {
+		return fmt.Errorf("update body substrate %s by cluster %s: %w", id, clusterID, err)
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		return fmt.Errorf("body %s: not found", id)
+	}
+	return nil
+}
+
+func (s *Store) DeleteBodyByCluster(ctx context.Context, id, clusterID string) error {
+	unlock := s.bodyLock(id)
+	defer unlock.Unlock()
+
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin tx: %w", err)
+	}
+	defer tx.Rollback()
+
+	_, err = tx.ExecContext(ctx, `DELETE FROM snapshots WHERE body_id = ?`, id)
+	if err != nil {
+		return fmt.Errorf("delete snapshots for body %s: %w", id, err)
+	}
+	_, err = tx.ExecContext(ctx, `DELETE FROM migrations WHERE body_id = ?`, id)
+	if err != nil {
+		return fmt.Errorf("delete migrations for body %s: %w", id, err)
+	}
+	res, err := tx.ExecContext(ctx, `DELETE FROM bodies WHERE id = ? AND cluster_id = ?`, id, clusterID)
+	if err != nil {
+		return fmt.Errorf("delete body %s by cluster %s: %w", id, clusterID, err)
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		return fmt.Errorf("body %s: not found", id)
+	}
+
+	return tx.Commit()
+}
+
 // UpdateBodyState updates the state and updated_at timestamp of a body.
 func (s *Store) UpdateBodyState(ctx context.Context, id string, state orchestrator.BodyState) error {
 	unlock := s.bodyLock(id)
@@ -426,7 +549,6 @@ func (s *Store) CreateSnapshotWithCluster(ctx context.Context, id, bodyID, manif
 	return nil
 }
 
-// ListSnapshots returns all snapshots for a given body.
 func (s *Store) ListSnapshots(ctx context.Context, bodyID string) ([]*SnapshotRecord, error) {
 	rows, err := s.db.QueryContext(ctx,
 		`SELECT id, body_id, manifest_json, storage_path, size_bytes, cluster_id, created_at
@@ -449,7 +571,28 @@ func (s *Store) ListSnapshots(ctx context.Context, bodyID string) ([]*SnapshotRe
 	return snaps, rows.Err()
 }
 
-// GetSnapshot retrieves a snapshot record by id.
+func (s *Store) ListSnapshotsByCluster(ctx context.Context, bodyID, clusterID string) ([]*SnapshotRecord, error) {
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT id, body_id, manifest_json, storage_path, size_bytes, cluster_id, created_at
+		 FROM snapshots WHERE body_id = ? AND (cluster_id = ? OR cluster_id IS NULL) ORDER BY created_at`, bodyID, clusterID)
+	if err != nil {
+		return nil, fmt.Errorf("list snapshots for body %s by cluster %s: %w", bodyID, clusterID, err)
+	}
+	defer rows.Close()
+
+	var snaps []*SnapshotRecord
+	for rows.Next() {
+		var snap SnapshotRecord
+		var cid sql.NullString
+		if err := rows.Scan(&snap.ID, &snap.BodyID, &snap.ManifestJSON, &snap.StoragePath, &snap.SizeBytes, &cid, &snap.CreatedAt); err != nil {
+			return nil, fmt.Errorf("scan snapshot: %w", err)
+		}
+		snap.ClusterID = cid.String
+		snaps = append(snaps, &snap)
+	}
+	return snaps, rows.Err()
+}
+
 func (s *Store) GetSnapshot(ctx context.Context, id string) (*SnapshotRecord, error) {
 	var snap SnapshotRecord
 	var clusterID sql.NullString
@@ -467,11 +610,39 @@ func (s *Store) GetSnapshot(ctx context.Context, id string) (*SnapshotRecord, er
 	return &snap, nil
 }
 
-// DeleteSnapshot deletes a snapshot record by id.
+func (s *Store) GetSnapshotByCluster(ctx context.Context, id, clusterID string) (*SnapshotRecord, error) {
+	var snap SnapshotRecord
+	var cid sql.NullString
+	err := s.db.QueryRowContext(ctx,
+		`SELECT id, body_id, manifest_json, storage_path, size_bytes, cluster_id, created_at
+		 FROM snapshots WHERE id = ? AND (cluster_id = ? OR cluster_id IS NULL)`, id, clusterID,
+	).Scan(&snap.ID, &snap.BodyID, &snap.ManifestJSON, &snap.StoragePath, &snap.SizeBytes, &cid, &snap.CreatedAt)
+	snap.ClusterID = cid.String
+	if err == sql.ErrNoRows {
+		return nil, fmt.Errorf("snapshot %s: not found", id)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get snapshot %s by cluster %s: %w", id, clusterID, err)
+	}
+	return &snap, nil
+}
+
 func (s *Store) DeleteSnapshot(ctx context.Context, id string) error {
 	res, err := s.db.ExecContext(ctx, `DELETE FROM snapshots WHERE id = ?`, id)
 	if err != nil {
 		return fmt.Errorf("delete snapshot %s: %w", id, err)
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		return fmt.Errorf("snapshot %s: not found", id)
+	}
+	return nil
+}
+
+func (s *Store) DeleteSnapshotByCluster(ctx context.Context, id, clusterID string) error {
+	res, err := s.db.ExecContext(ctx, `DELETE FROM snapshots WHERE id = ? AND cluster_id = ?`, id, clusterID)
+	if err != nil {
+		return fmt.Errorf("delete snapshot %s by cluster %s: %w", id, clusterID, err)
 	}
 	n, _ := res.RowsAffected()
 	if n == 0 {
@@ -500,7 +671,6 @@ func (s *Store) CreateMigrationWithCluster(ctx context.Context, id, bodyID, targ
 	return nil
 }
 
-// UpdateMigration updates the current step and error fields of a migration.
 func (s *Store) UpdateMigration(ctx context.Context, id string, currentStep int, errStr string) error {
 	res, err := s.db.ExecContext(ctx,
 		`UPDATE migrations SET current_step = ?, error = ? WHERE id = ?`,
@@ -516,7 +686,21 @@ func (s *Store) UpdateMigration(ctx context.Context, id string, currentStep int,
 	return nil
 }
 
-// GetMigration retrieves a migration record by id.
+func (s *Store) UpdateMigrationByCluster(ctx context.Context, id string, currentStep int, errStr, clusterID string) error {
+	res, err := s.db.ExecContext(ctx,
+		`UPDATE migrations SET current_step = ?, error = ? WHERE id = ? AND cluster_id = ?`,
+		currentStep, errStr, id, clusterID,
+	)
+	if err != nil {
+		return fmt.Errorf("update migration %s by cluster %s: %w", id, clusterID, err)
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		return fmt.Errorf("migration %s: not found", id)
+	}
+	return nil
+}
+
 func (s *Store) GetMigration(ctx context.Context, id string) (*MigrationRecord, error) {
 	var m MigrationRecord
 	var snapID, clusterID, errStr sql.NullString
@@ -534,6 +718,37 @@ func (s *Store) GetMigration(ctx context.Context, id string) (*MigrationRecord, 
 	m.ClusterID = clusterID.String
 	m.Error = errStr.String
 	return &m, nil
+}
+
+func (s *Store) GetMigrationByCluster(ctx context.Context, id, clusterID string) (*MigrationRecord, error) {
+	var m MigrationRecord
+	var snapID, cid, errStr sql.NullString
+	err := s.db.QueryRowContext(ctx,
+		`SELECT id, body_id, target_substrate, current_step, snapshot_id, cluster_id, started_at, error
+		 FROM migrations WHERE id = ? AND (cluster_id = ? OR cluster_id IS NULL)`, id, clusterID,
+	).Scan(&m.ID, &m.BodyID, &m.TargetSubstrate, &m.CurrentStep, &snapID, &cid, &m.StartedAt, &errStr)
+	if err == sql.ErrNoRows {
+		return nil, fmt.Errorf("migration %s: not found", id)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get migration %s by cluster %s: %w", id, clusterID, err)
+	}
+	m.SnapshotID = snapID.String
+	m.ClusterID = cid.String
+	m.Error = errStr.String
+	return &m, nil
+}
+
+func (s *Store) DeleteMigrationByCluster(ctx context.Context, id, clusterID string) error {
+	res, err := s.db.ExecContext(ctx, `DELETE FROM migrations WHERE id = ? AND cluster_id = ?`, id, clusterID)
+	if err != nil {
+		return fmt.Errorf("delete migration %s by cluster %s: %w", id, clusterID, err)
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		return fmt.Errorf("migration %s: not found", id)
+	}
+	return nil
 }
 
 func (s *Store) QueryRow(ctx context.Context, query string, args ...interface{}) *sql.Row {

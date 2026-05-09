@@ -219,6 +219,40 @@ func (bm *BodyManager) Destroy(ctx context.Context, bodyID string) error {
 	return nil
 }
 
+func (bm *BodyManager) DestroyByCluster(ctx context.Context, bodyID, clusterID string) error {
+	b, err := bm.GetByCluster(ctx, bodyID, clusterID)
+	if err != nil {
+		return err
+	}
+
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	if b.State != orchestrator.StateStopped && b.State != orchestrator.StateError {
+		return fmt.Errorf("cannot destroy body in state %s (must be Stopped or Error)", b.State)
+	}
+
+	bm.preStop(ctx, b)
+
+	if err := bm.orch.DestroyBody(ctx, orchestrator.Handle(b.InstanceID)); err != nil {
+		return fmt.Errorf("orchestrator destroy body: %w", err)
+	}
+
+	if err := bm.store.UpdateBodyStateByCluster(ctx, b.ID, orchestrator.StateDestroyed, clusterID); err != nil {
+		return err
+	}
+
+	if err := bm.store.DeleteBodyByCluster(ctx, bodyID, clusterID); err != nil {
+		return fmt.Errorf("store delete body: %w", err)
+	}
+
+	bm.mu.Lock()
+	delete(bm.bodies, bodyID)
+	bm.mu.Unlock()
+
+	return nil
+}
+
 // GetStatus returns the current status of a body by combining store and orchestrator state.
 func (bm *BodyManager) GetStatus(ctx context.Context, bodyID string) (orchestrator.BodyStatus, error) {
 	b := bm.getOrCreateBody(bodyID)
@@ -242,6 +276,28 @@ func (bm *BodyManager) GetStatus(ctx context.Context, bodyID string) (orchestrat
 // List returns all bodies from the store, refreshing the in-memory cache.
 func (bm *BodyManager) List(ctx context.Context) ([]*Body, error) {
 	records, err := bm.store.ListBodies(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	var bodies []*Body
+	for _, rec := range records {
+		b := bm.getOrCreateBody(rec.ID)
+		b.mu.Lock()
+		b.ID = rec.ID
+		b.Name = rec.Name
+		b.State = rec.State
+		b.InstanceID = orchestrator.Handle(rec.InstanceID)
+		b.Substrate = rec.Substrate
+		b.mu.Unlock()
+		bodies = append(bodies, b)
+	}
+
+	return bodies, nil
+}
+
+func (bm *BodyManager) ListByCluster(ctx context.Context, clusterID string) ([]*Body, error) {
+	records, err := bm.store.ListBodiesByCluster(ctx, clusterID)
 	if err != nil {
 		return nil, err
 	}
@@ -298,6 +354,25 @@ func (bm *BodyManager) Inspect(ctx context.Context, bodyID string) (orchestrator
 // Get retrieves a single body by ID from the store.
 func (bm *BodyManager) Get(ctx context.Context, bodyID string) (*Body, error) {
 	rec, err := bm.store.GetBody(ctx, bodyID)
+	if err != nil {
+		return nil, err
+	}
+
+	b := bm.getOrCreateBody(rec.ID)
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	b.ID = rec.ID
+	b.Name = rec.Name
+	b.State = rec.State
+	b.InstanceID = orchestrator.Handle(rec.InstanceID)
+	b.Substrate = rec.Substrate
+
+	return b, nil
+}
+
+func (bm *BodyManager) GetByCluster(ctx context.Context, bodyID, clusterID string) (*Body, error) {
+	rec, err := bm.store.GetBodyByCluster(ctx, bodyID, clusterID)
 	if err != nil {
 		return nil, err
 	}

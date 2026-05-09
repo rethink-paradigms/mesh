@@ -13,13 +13,16 @@ import (
 )
 
 type mockBodyService struct {
-	listFunc   func(ctx context.Context) ([]*body.Body, error)
-	createFunc func(ctx context.Context, name, image string, opts orchestrator.BodySpec) (*body.Body, error)
-	getFunc    func(ctx context.Context, id string) (*body.Body, error)
-	startFunc  func(ctx context.Context, id string) error
-	stopFunc   func(ctx context.Context, id string) error
-	destroyFunc func(ctx context.Context, id string) error
-	getStatusFunc func(ctx context.Context, id string) (orchestrator.BodyStatus, error)
+	listFunc        func(ctx context.Context) ([]*body.Body, error)
+	listByClusterFunc func(ctx context.Context, clusterID string) ([]*body.Body, error)
+	createFunc      func(ctx context.Context, name, image string, opts orchestrator.BodySpec) (*body.Body, error)
+	getFunc         func(ctx context.Context, id string) (*body.Body, error)
+	getByClusterFunc func(ctx context.Context, id, clusterID string) (*body.Body, error)
+	startFunc       func(ctx context.Context, id string) error
+	stopFunc        func(ctx context.Context, id string) error
+	destroyFunc     func(ctx context.Context, id string) error
+	destroyByClusterFunc func(ctx context.Context, id, clusterID string) error
+	getStatusFunc   func(ctx context.Context, id string) (orchestrator.BodyStatus, error)
 }
 
 func (m *mockBodyService) List(ctx context.Context) ([]*body.Body, error) {
@@ -69,6 +72,27 @@ func (m *mockBodyService) GetStatus(ctx context.Context, id string) (orchestrato
 		return m.getStatusFunc(ctx, id)
 	}
 	return orchestrator.BodyStatus{}, nil
+}
+
+func (m *mockBodyService) ListByCluster(ctx context.Context, clusterID string) ([]*body.Body, error) {
+	if m.listByClusterFunc != nil {
+		return m.listByClusterFunc(ctx, clusterID)
+	}
+	return nil, nil
+}
+
+func (m *mockBodyService) GetByCluster(ctx context.Context, id, clusterID string) (*body.Body, error) {
+	if m.getByClusterFunc != nil {
+		return m.getByClusterFunc(ctx, id, clusterID)
+	}
+	return nil, nil
+}
+
+func (m *mockBodyService) DestroyByCluster(ctx context.Context, id, clusterID string) error {
+	if m.destroyByClusterFunc != nil {
+		return m.destroyByClusterFunc(ctx, id, clusterID)
+	}
+	return nil
 }
 
 func TestMapServiceError_NotFound(t *testing.T) {

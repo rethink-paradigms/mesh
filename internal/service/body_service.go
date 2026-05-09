@@ -92,6 +92,26 @@ func (s *BodyService) Destroy(ctx context.Context, id string) error {
 	return s.bodyMgr.Destroy(ctx, id)
 }
 
+func (s *BodyService) DestroyByCluster(ctx context.Context, id, clusterID string) error {
+	var b *body.Body
+	var err error
+	if clusterID != "" {
+		b, err = s.bodyMgr.GetByCluster(ctx, id, clusterID)
+	} else {
+		b, err = s.bodyMgr.Get(ctx, id)
+	}
+	if err != nil {
+		return &NotFoundError{ID: id}
+	}
+	if b.State == orchestrator.StateRunning {
+		return &ConflictError{State: string(b.State), Required: "Stopped or Error"}
+	}
+	if clusterID != "" {
+		return s.bodyMgr.DestroyByCluster(ctx, id, clusterID)
+	}
+	return s.bodyMgr.Destroy(ctx, id)
+}
+
 // Get delegates to BodyManager.Get and wraps nil/error in NotFoundError.
 func (s *BodyService) Get(ctx context.Context, id string) (*body.Body, error) {
 	b, err := s.bodyMgr.Get(ctx, id)
@@ -101,8 +121,29 @@ func (s *BodyService) Get(ctx context.Context, id string) (*body.Body, error) {
 	return b, nil
 }
 
+func (s *BodyService) GetByCluster(ctx context.Context, id, clusterID string) (*body.Body, error) {
+	var b *body.Body
+	var err error
+	if clusterID != "" {
+		b, err = s.bodyMgr.GetByCluster(ctx, id, clusterID)
+	} else {
+		b, err = s.bodyMgr.Get(ctx, id)
+	}
+	if err != nil {
+		return nil, &NotFoundError{ID: id}
+	}
+	return b, nil
+}
+
 // List delegates to BodyManager.List.
 func (s *BodyService) List(ctx context.Context) ([]*body.Body, error) {
+	return s.bodyMgr.List(ctx)
+}
+
+func (s *BodyService) ListByCluster(ctx context.Context, clusterID string) ([]*body.Body, error) {
+	if clusterID != "" {
+		return s.bodyMgr.ListByCluster(ctx, clusterID)
+	}
 	return s.bodyMgr.List(ctx)
 }
 

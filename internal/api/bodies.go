@@ -31,7 +31,15 @@ func mapServiceError(err error) (code string, status int) {
 
 func handleListBodies(cfg RouterConfig) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		bodies, err := cfg.BodyService.List(r.Context())
+		clusterID := ClusterIDFromContext(r.Context())
+
+		var bodies []*body.Body
+		var err error
+		if clusterID != "" {
+			bodies, err = cfg.BodyService.ListByCluster(r.Context(), clusterID)
+		} else {
+			bodies, err = cfg.BodyService.List(r.Context())
+		}
 		if err != nil {
 			code, status := mapServiceError(err)
 			WriteError(w, code, fmt.Sprintf("list bodies: %v", err), status)
@@ -83,7 +91,15 @@ func handleGetBody(cfg RouterConfig) http.HandlerFunc {
 			return
 		}
 
-		b, err := cfg.BodyService.Get(r.Context(), id)
+		clusterID := ClusterIDFromContext(r.Context())
+
+		var b *body.Body
+		var err error
+		if clusterID != "" {
+			b, err = cfg.BodyService.GetByCluster(r.Context(), id, clusterID)
+		} else {
+			b, err = cfg.BodyService.Get(r.Context(), id)
+		}
 		if err != nil {
 			code, status := mapServiceError(err)
 			WriteError(w, code, fmt.Sprintf("get body: %v", err), status)
@@ -149,7 +165,15 @@ func handleDestroyBody(cfg RouterConfig) http.HandlerFunc {
 			return
 		}
 
-		if err := cfg.BodyService.Destroy(r.Context(), id); err != nil {
+		clusterID := ClusterIDFromContext(r.Context())
+
+		var err error
+		if clusterID != "" {
+			err = cfg.BodyService.DestroyByCluster(r.Context(), id, clusterID)
+		} else {
+			err = cfg.BodyService.Destroy(r.Context(), id)
+		}
+		if err != nil {
 			code, status := mapServiceError(err)
 			WriteError(w, code, fmt.Sprintf("destroy body: %v", err), status)
 			return
