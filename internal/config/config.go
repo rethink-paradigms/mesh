@@ -50,6 +50,14 @@ type PluginConfig struct {
 	Enabled []string `yaml:"enabled"`
 }
 
+type IngressConfig struct {
+	Adapter       string `yaml:"adapter"`
+	AdminURL      string `yaml:"admin_url"`
+	PortPoolStart int    `yaml:"port_pool_start"`
+	PortPoolEnd   int    `yaml:"port_pool_end"`
+	DomainSuffix  string `yaml:"domain_suffix"`
+}
+
 // Config is the top-level v1 configuration.
 type Config struct {
 	Daemon        DaemonConfig                 `yaml:"daemon"`
@@ -59,6 +67,7 @@ type Config struct {
 	Bodies        []BodyConfig                 `yaml:"bodies"`
 	Registry      RegistryConfig               `yaml:"registry"`
 	Plugin        PluginConfig                 `yaml:"plugin"`
+	Ingress       IngressConfig                `yaml:"ingress"`
 	Tier          string                       `yaml:"tier"`
 	Features      map[string]bool              `yaml:"features"`
 	Limits        LimitsConfig                 `yaml:"limits"`
@@ -147,6 +156,21 @@ func applyDefaults(cfg *Config) {
 	}
 	if cfg.Limits.MaxSnapshots == 0 {
 		cfg.Limits.MaxSnapshots = 5
+	}
+	if cfg.Ingress.Adapter == "" {
+		cfg.Ingress.Adapter = "noop"
+	}
+	if cfg.Ingress.AdminURL == "" {
+		cfg.Ingress.AdminURL = "http://127.0.0.1:2019"
+	}
+	if cfg.Ingress.PortPoolStart == 0 {
+		cfg.Ingress.PortPoolStart = 9000
+	}
+	if cfg.Ingress.PortPoolEnd == 0 {
+		cfg.Ingress.PortPoolEnd = 9999
+	}
+	if cfg.Ingress.DomainSuffix == "" {
+		cfg.Ingress.DomainSuffix = ".mesh.local"
 	}
 
 	// Initialize maps

@@ -8,18 +8,24 @@ import (
 	"github.com/rethink-paradigms/mesh/internal/orchestrator"
 )
 
-// Body wraps a store record with an in-memory state machine and per-body mutex.
-type Body struct {
-	mu         sync.Mutex
-	ID         string
-	Name       string
-	State      orchestrator.BodyState
-	InstanceID orchestrator.Handle
-	Spec       orchestrator.BodySpec
-	Substrate  string
+type AllocatedPort struct {
+	Name          string
+	ContainerPort int
+	HostPort      int
+	Protocol      string
 }
 
-// validTransitions defines which state transitions are allowed.
+type Body struct {
+	mu              sync.Mutex
+	ID              string
+	Name            string
+	State           orchestrator.BodyState
+	InstanceID      orchestrator.Handle
+	Spec            orchestrator.BodySpec
+	Substrate       string
+	PortAllocations []AllocatedPort
+}
+
 var validTransitions = map[orchestrator.BodyState][]orchestrator.BodyState{
 	orchestrator.StateCreated:   {orchestrator.StateStarting, orchestrator.StateError},
 	orchestrator.StateStarting:  {orchestrator.StateRunning, orchestrator.StateError},
@@ -31,7 +37,6 @@ var validTransitions = map[orchestrator.BodyState][]orchestrator.BodyState{
 	orchestrator.StateDestroyed: {},
 }
 
-// CanTransition reports whether transitioning to target is valid from current state.
 func (b *Body) CanTransition(target orchestrator.BodyState) bool {
 	allowed, ok := validTransitions[b.State]
 	if !ok {
@@ -45,7 +50,6 @@ func (b *Body) CanTransition(target orchestrator.BodyState) bool {
 	return false
 }
 
-// Transition moves the body to the target state if valid.
 func (b *Body) Transition(target orchestrator.BodyState) error {
 	if !b.CanTransition(target) {
 		return fmt.Errorf("invalid transition: %s → %s", b.State, target)

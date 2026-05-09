@@ -5,28 +5,33 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"os"
 	"sync"
 
 	"github.com/google/uuid"
+	"github.com/rethink-paradigms/mesh/internal/ingress"
 	"github.com/rethink-paradigms/mesh/internal/orchestrator"
 	"github.com/rethink-paradigms/mesh/internal/store"
 )
 
-// BodyManager orchestrates body lifecycle operations against a store and orchestrator adapter.
 type BodyManager struct {
-	store  *store.Store
-	orch   orchestrator.OrchestratorAdapter
-	mu     sync.Mutex
-	bodies map[string]*Body
+	store   *store.Store
+	orch    orchestrator.OrchestratorAdapter
+	ingress ingress.IngressAdapter
+	mu      sync.Mutex
+	bodies  map[string]*Body
 }
 
-// NewBodyManager creates a new BodyManager.
 func NewBodyManager(s *store.Store, orchAdapter orchestrator.OrchestratorAdapter) *BodyManager {
 	return &BodyManager{
 		store:  s,
 		orch:   orchAdapter,
 		bodies: make(map[string]*Body),
 	}
+}
+
+func (bm *BodyManager) SetIngress(ing ingress.IngressAdapter) {
+	bm.ingress = ing
 }
 
 func (bm *BodyManager) getOrCreateBody(id string) *Body {
@@ -92,10 +97,53 @@ func (bm *BodyManager) Create(ctx context.Context, name string, spec orchestrato
 		return nil, err
 	}
 
+	bm.postStart(ctx, b)
+
 	return b, nil
 }
 
-// Start resumes a stopped body: transitions Stopped → Starting → Running.
+func (bm *BodyManager) postStart(ctx context.Context, b *Body) {
+	if bm.ingress == nil || len(b.Spec.Ports) == 0 {
+		return
+	}
+	for _, p := range b.Spec.Ports {
+		if !p.Expose {
+			continue
+		}
+		hostPort, err := bm.ingress.AllocPort(ctx, p.ContainerPort)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "body %s: alloc port for %d: %v\n", b.ID, p.ContainerPort, err)
+			continue
+		}
+		b.PortAllocations = append(b.PortAllocations, AllocatedPort{
+			Name:          p.Name,
+			ContainerPort: p.ContainerPort,
+			HostPort:      hostPort,
+			Protocol:      p.Protocol,
+		})
+		domain := fmt.Sprintf("%s-%d%s", b.Name, p.ContainerPort, ".mesh.local")
+		if err := bm.ingress.AddRoute(ctx, domain, "127.0.0.1", hostPort); err != nil {
+			fmt.Fprintf(os.Stderr, "body %s: add route for %s: %v\n", b.ID, domain, err)
+		}
+	}
+}
+
+func (bm *BodyManager) preStop(ctx context.Context, b *Body) {
+	if bm.ingress == nil || len(b.PortAllocations) == 0 {
+		return
+	}
+	for _, alloc := range b.PortAllocations {
+		if err := bm.ingress.FreePort(alloc.HostPort); err != nil {
+			fmt.Fprintf(os.Stderr, "body %s: free port %d: %v\n", b.ID, alloc.HostPort, err)
+		}
+		domain := fmt.Sprintf("%s-%d%s", b.Name, alloc.ContainerPort, ".mesh.local")
+		if err := bm.ingress.RemoveRoute(ctx, domain); err != nil {
+			fmt.Fprintf(os.Stderr, "body %s: remove route %s: %v\n", b.ID, domain, err)
+		}
+	}
+	b.PortAllocations = nil
+}
+
 func (bm *BodyManager) Start(ctx context.Context, bodyID string) error {
 	b := bm.getOrCreateBody(bodyID)
 	b.mu.Lock()
@@ -114,10 +162,14 @@ func (bm *BodyManager) Start(ctx context.Context, bodyID string) error {
 		return fmt.Errorf("orchestrator start body: %w", err)
 	}
 
-	return bm.transitionPersisted(ctx, b, orchestrator.StateRunning)
+	if err := bm.transitionPersisted(ctx, b, orchestrator.StateRunning); err != nil {
+		return err
+	}
+
+	bm.postStart(ctx, b)
+	return nil
 }
 
-// Stop stops a running body: transitions Running → Stopping → Stopped.
 func (bm *BodyManager) Stop(ctx context.Context, bodyID string, opts orchestrator.StopOpts) error {
 	b := bm.getOrCreateBody(bodyID)
 	b.mu.Lock()
@@ -127,6 +179,8 @@ func (bm *BodyManager) Stop(ctx context.Context, bodyID string, opts orchestrato
 		return err
 	}
 
+	bm.preStop(ctx, b)
+
 	if err := bm.orch.StopBody(ctx, orchestrator.Handle(b.InstanceID)); err != nil {
 		_ = bm.transitionPersisted(ctx, b, orchestrator.StateError)
 		return fmt.Errorf("orchestrator stop body: %w", err)
@@ -135,7 +189,6 @@ func (bm *BodyManager) Stop(ctx context.Context, bodyID string, opts orchestrato
 	return bm.transitionPersisted(ctx, b, orchestrator.StateStopped)
 }
 
-// Destroy destroys a stopped or errored body.
 func (bm *BodyManager) Destroy(ctx context.Context, bodyID string) error {
 	b := bm.getOrCreateBody(bodyID)
 	b.mu.Lock()
@@ -144,6 +197,8 @@ func (bm *BodyManager) Destroy(ctx context.Context, bodyID string) error {
 	if b.State != orchestrator.StateStopped && b.State != orchestrator.StateError {
 		return fmt.Errorf("cannot destroy body in state %s (must be Stopped or Error)", b.State)
 	}
+
+	bm.preStop(ctx, b)
 
 	if err := bm.orch.DestroyBody(ctx, orchestrator.Handle(b.InstanceID)); err != nil {
 		return fmt.Errorf("orchestrator destroy body: %w", err)

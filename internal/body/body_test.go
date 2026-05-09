@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/rethink-paradigms/mesh/internal/ingress"
 	"github.com/rethink-paradigms/mesh/internal/orchestrator"
 	"github.com/rethink-paradigms/mesh/internal/provisioner"
 	"github.com/rethink-paradigms/mesh/internal/store"
@@ -1459,3 +1460,217 @@ func TestMigrationCrossMachineResumeAfterTransfer(t *testing.T) {
 		t.Fatal("migration record should be deleted after successful completion")
 	}
 }
+
+type mockIngressAdapter struct {
+	mu        sync.Mutex
+	allocs    []int
+	frees     []int
+	routes    []string
+	removed   []string
+	failAlloc bool
+}
+
+func (m *mockIngressAdapter) Name() string { return "mock-ingress" }
+
+func (m *mockIngressAdapter) AddRoute(ctx context.Context, domain, upstream string, port int) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.routes = append(m.routes, domain)
+	return nil
+}
+
+func (m *mockIngressAdapter) RemoveRoute(ctx context.Context, domain string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.removed = append(m.removed, domain)
+	return nil
+}
+
+func (m *mockIngressAdapter) ListRoutes(ctx context.Context) ([]ingress.Route, error) {
+	return nil, nil
+}
+
+func (m *mockIngressAdapter) AllocPort(ctx context.Context, containerPort int) (int, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.failAlloc {
+		return 0, errors.New("alloc failed")
+	}
+	port := 9000 + len(m.allocs)
+	m.allocs = append(m.allocs, port)
+	return port, nil
+}
+
+func (m *mockIngressAdapter) FreePort(hostPort int) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.frees = append(m.frees, hostPort)
+	return nil
+}
+
+func TestPostStartAllocatesPorts(t *testing.T) {
+	s := openTestStore(t)
+	ma := newMockOrchAdapter()
+	bm := NewBodyManager(s, ma)
+	ing := &mockIngressAdapter{}
+	bm.SetIngress(ing)
+
+	ctx := context.Background()
+	spec := orchestrator.BodySpec{
+		Image: "alpine",
+		Ports: []orchestrator.BodyPort{
+			{Name: "web", ContainerPort: 8080, Protocol: "tcp", Expose: true},
+			{Name: "api", ContainerPort: 3000, Protocol: "tcp", Expose: true},
+		},
+	}
+	b, err := bm.Create(ctx, "ingress-test", spec)
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	ing.mu.Lock()
+	allocs := len(ing.allocs)
+	routes := len(ing.routes)
+	ing.mu.Unlock()
+
+	if allocs != 2 {
+		t.Errorf("allocs = %d, want 2", allocs)
+	}
+	if routes != 2 {
+		t.Errorf("routes = %d, want 2", routes)
+	}
+	if len(b.PortAllocations) != 2 {
+		t.Errorf("PortAllocations = %d, want 2", len(b.PortAllocations))
+	}
+}
+
+func TestPreStopFreesPorts(t *testing.T) {
+	s := openTestStore(t)
+	ma := newMockOrchAdapter()
+	bm := NewBodyManager(s, ma)
+	ing := &mockIngressAdapter{}
+	bm.SetIngress(ing)
+
+	ctx := context.Background()
+	spec := orchestrator.BodySpec{
+		Image: "alpine",
+		Ports: []orchestrator.BodyPort{
+			{Name: "web", ContainerPort: 8080, Protocol: "tcp", Expose: true},
+		},
+	}
+	b, err := bm.Create(ctx, "stop-test", spec)
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	if err := bm.Stop(ctx, b.ID, orchestrator.StopOpts{}); err != nil {
+		t.Fatalf("Stop: %v", err)
+	}
+
+	ing.mu.Lock()
+	frees := len(ing.frees)
+	removed := len(ing.removed)
+	ing.mu.Unlock()
+
+	if frees != 1 {
+		t.Errorf("frees = %d, want 1", frees)
+	}
+	if removed != 1 {
+		t.Errorf("removed = %d, want 1", removed)
+	}
+	if len(b.PortAllocations) != 0 {
+		t.Errorf("PortAllocations after stop = %d, want 0", len(b.PortAllocations))
+	}
+}
+
+func TestDestroyFreesPorts(t *testing.T) {
+	s := openTestStore(t)
+	ma := newMockOrchAdapter()
+	bm := NewBodyManager(s, ma)
+	ing := &mockIngressAdapter{}
+	bm.SetIngress(ing)
+
+	ctx := context.Background()
+	spec := orchestrator.BodySpec{
+		Image: "alpine",
+		Ports: []orchestrator.BodyPort{
+			{Name: "web", ContainerPort: 8080, Protocol: "tcp", Expose: true},
+		},
+	}
+	b, err := bm.Create(ctx, "destroy-test", spec)
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	if err := bm.Stop(ctx, b.ID, orchestrator.StopOpts{}); err != nil {
+		t.Fatalf("Stop: %v", err)
+	}
+
+	ing.mu.Lock()
+	freesBefore := len(ing.frees)
+	ing.mu.Unlock()
+
+	if err := bm.Destroy(ctx, b.ID); err != nil {
+		t.Fatalf("Destroy: %v", err)
+	}
+
+	ing.mu.Lock()
+	freesAfter := len(ing.frees)
+	ing.mu.Unlock()
+
+	if freesAfter != freesBefore {
+		t.Errorf("Destroy triggered extra frees: before=%d after=%d", freesBefore, freesAfter)
+	}
+}
+
+func TestPostStartNoExposedPorts(t *testing.T) {
+	s := openTestStore(t)
+	ma := newMockOrchAdapter()
+	bm := NewBodyManager(s, ma)
+	ing := &mockIngressAdapter{}
+	bm.SetIngress(ing)
+
+	ctx := context.Background()
+	spec := orchestrator.BodySpec{
+		Image: "alpine",
+		Ports: []orchestrator.BodyPort{
+			{Name: "web", ContainerPort: 8080, Protocol: "tcp", Expose: false},
+		},
+	}
+	_, err := bm.Create(ctx, "no-expose-test", spec)
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	ing.mu.Lock()
+	allocs := len(ing.allocs)
+	ing.mu.Unlock()
+
+	if allocs != 0 {
+		t.Errorf("allocs = %d, want 0 (port not exposed)", allocs)
+	}
+}
+
+func TestPostStartNoIngress(t *testing.T) {
+	s := openTestStore(t)
+	ma := newMockOrchAdapter()
+	bm := NewBodyManager(s, ma)
+
+	ctx := context.Background()
+	spec := orchestrator.BodySpec{
+		Image: "alpine",
+		Ports: []orchestrator.BodyPort{
+			{Name: "web", ContainerPort: 8080, Protocol: "tcp", Expose: true},
+		},
+	}
+	b, err := bm.Create(ctx, "no-ingress-test", spec)
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	if len(b.PortAllocations) != 0 {
+		t.Errorf("PortAllocations = %d, want 0 (no ingress adapter)", len(b.PortAllocations))
+	}
+}
+
+var _ ingress.IngressAdapter = (*mockIngressAdapter)(nil)
