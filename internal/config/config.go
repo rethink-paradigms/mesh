@@ -17,6 +17,39 @@ type DaemonConfig struct {
 	LogLevel   string `yaml:"log_level"`
 	ListenAddr string `yaml:"listen_addr"`
 	AuthToken  string `yaml:"auth_token"`
+
+	AuthMode       string `yaml:"auth_mode"`        // "token" | "jwt" | "both"
+	Auth0Domain    string `yaml:"auth0_domain"`     // Auth0 tenant domain
+	Auth0Audience  string `yaml:"auth0_audience"`   // Auth0 API audience identifier
+	ClusterOwnerID string `yaml:"cluster_owner_id"` // Auth0 user ID that owns this cluster
+	ClusterID      string `yaml:"cluster_id"`       // Cluster UUID assigned by gateway
+}
+
+// AuthConfig holds authentication configuration for API consumption.
+// It is a subset of DaemonConfig for passing auth settings to services.
+type AuthConfig struct {
+	Mode           string // "token", "jwt", or "both"
+	Token          string // daemon auth_token
+	Auth0Domain    string
+	Auth0Audience  string
+	ClusterOwnerID string
+	ClusterID      string
+}
+
+// AuthConfig returns the auth configuration derived from daemon settings.
+func (c *Config) AuthConfig() AuthConfig {
+	mode := c.Daemon.AuthMode
+	if mode == "" {
+		mode = "token"
+	}
+	return AuthConfig{
+		Mode:           mode,
+		Token:          c.Daemon.AuthToken,
+		Auth0Domain:    c.Daemon.Auth0Domain,
+		Auth0Audience:  c.Daemon.Auth0Audience,
+		ClusterOwnerID: c.Daemon.ClusterOwnerID,
+		ClusterID:      c.Daemon.ClusterID,
+	}
 }
 
 // StoreConfig holds SQLite store settings.
@@ -248,5 +281,21 @@ func validate(cfg *Config) error {
 	if cfg.Registry.Type == "s3" && cfg.Registry.Bucket == "" {
 		return fmt.Errorf("config: registry bucket is required when type is s3")
 	}
+
+	// Validate auth_mode
+	switch cfg.Daemon.AuthMode {
+	case "jwt", "both":
+		if cfg.Daemon.Auth0Domain == "" {
+			return fmt.Errorf("config: auth0_domain is required when auth_mode is %q", cfg.Daemon.AuthMode)
+		}
+		if cfg.Daemon.Auth0Audience == "" {
+			return fmt.Errorf("config: auth0_audience is required when auth_mode is %q", cfg.Daemon.AuthMode)
+		}
+	case "token", "":
+		// auth_mode defaults to "token", no JWT fields required
+	default:
+		return fmt.Errorf("config: auth_mode %q is invalid — must be \"token\", \"jwt\", or \"both\"", cfg.Daemon.AuthMode)
+	}
+
 	return nil
 }

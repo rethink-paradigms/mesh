@@ -195,8 +195,21 @@ func (d *Daemon) Start(ctx context.Context) error {
 	}
 	defer d.removePIDFile()
 
-	if d.cfg.Daemon.AuthToken == "" {
-		return fmt.Errorf("daemon: auth_token is not set in config — refusing to start with unprotected API")
+	// Validate authentication configuration based on auth_mode
+	switch d.cfg.Daemon.AuthMode {
+	case "jwt", "both":
+		if d.cfg.Daemon.Auth0Domain == "" || d.cfg.Daemon.Auth0Audience == "" {
+			return fmt.Errorf("daemon: auth_mode %q requires auth0_domain and auth0_audience in config", d.cfg.Daemon.AuthMode)
+		}
+		if d.cfg.Daemon.AuthToken == "" && d.cfg.Daemon.AuthMode == "both" {
+			return fmt.Errorf("daemon: auth_mode %q requires auth_token and auth0 config", d.cfg.Daemon.AuthMode)
+		}
+	case "token", "":
+		if d.cfg.Daemon.AuthToken == "" {
+			return fmt.Errorf("daemon: auth_token is not set in config — refusing to start with unprotected API")
+		}
+	default:
+		return fmt.Errorf("daemon: auth_mode %q is invalid", d.cfg.Daemon.AuthMode)
 	}
 
 	if err := d.startAPIServer(); err != nil {
@@ -366,18 +379,23 @@ func (d *Daemon) startAPIServer() error {
 	d.ingress = ing
 
 	router := api.NewRouter(api.RouterConfig{
-		BodyManager:  d.bodyMgr,
-		BodyService:  d.bodySvc,
-		Store:        d.store,
-		Orchestrator: primaryOrch,
-		Ingress:      ing,
-		AuthToken:    d.cfg.Daemon.AuthToken,
-		Version:      d.version,
-		Tier:         d.tier,
-		OrchRegistry: d.orchRegistry,
-		Features:     d.cfg.Features,
-		Uptime:       d.startedAt,
-		Installer:    d.installer,
+		BodyManager:    d.bodyMgr,
+		BodyService:    d.bodySvc,
+		Store:          d.store,
+		Orchestrator:   primaryOrch,
+		Ingress:        ing,
+		AuthToken:      d.cfg.Daemon.AuthToken,
+		AuthMode:       d.cfg.Daemon.AuthMode,
+		Auth0Domain:    d.cfg.Daemon.Auth0Domain,
+		Auth0Audience:  d.cfg.Daemon.Auth0Audience,
+		ClusterOwnerID: d.cfg.Daemon.ClusterOwnerID,
+		ClusterID:      d.cfg.Daemon.ClusterID,
+		Version:        d.version,
+		Tier:           d.tier,
+		OrchRegistry:   d.orchRegistry,
+		Features:       d.cfg.Features,
+		Uptime:         d.startedAt,
+		Installer:      d.installer,
 	})
 
 	listenAddr := d.cfg.Daemon.ListenAddr

@@ -18,8 +18,13 @@ type RouterConfig struct {
 	Store        *store.Store
 	Orchestrator orchestrator.OrchestratorAdapter
 	Ingress      ingress.IngressAdapter
-	AuthToken    string
-	Version      string
+	AuthToken     string
+	AuthMode      string
+	Auth0Domain   string
+	Auth0Audience string
+	ClusterOwnerID string
+	ClusterID     string
+	Version       string
 	Tier         string
 	OrchRegistry *orchestrator.Registry
 	Features     map[string]bool
