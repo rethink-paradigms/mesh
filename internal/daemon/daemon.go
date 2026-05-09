@@ -12,6 +12,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/rethink-paradigms/mesh/internal/agent"
 	"github.com/rethink-paradigms/mesh/internal/api"
 	"github.com/rethink-paradigms/mesh/internal/body"
 	"github.com/rethink-paradigms/mesh/internal/config"
@@ -34,6 +35,7 @@ type Daemon struct {
 	bodyMgr      *body.BodyManager
 	bodySvc      *service.BodyService
 	pluginMgr    *plugin.PluginManager
+	installer    *agent.Installer
 
 	mcpServer   interface{ Stop(context.Context) error }
 	mcpServerMu sync.Mutex
@@ -51,6 +53,8 @@ type Daemon struct {
 	reconcileSteps int
 	version        string
 	tier           string
+
+	ingress ingress.IngressAdapter
 }
 
 func New(cfg *config.Config) (*Daemon, error) {
@@ -80,6 +84,11 @@ func (d *Daemon) SetMCP(srv interface{ Stop(context.Context) error }) {
 	d.mcpServerMu.Lock()
 	defer d.mcpServerMu.Unlock()
 	d.mcpServer = srv
+	if d.ingress != nil {
+		if is, ok := srv.(interface{ SetIngress(ingress.IngressAdapter) }); ok {
+			is.SetIngress(d.ingress)
+		}
+	}
 }
 
 func (d *Daemon) SetVersion(v string) {
@@ -163,6 +172,19 @@ func (d *Daemon) Start(ctx context.Context) error {
 	}
 	pm.StartHealthChecks()
 	d.pluginMgr = pm
+
+	// Wire agent installer from agents directory
+	if d.cfg.AgentsDir != "" {
+		manifests, err := agent.LoadManifestDir(d.cfg.AgentsDir)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "daemon: load agent manifests from %s: %v\n", d.cfg.AgentsDir, err)
+			// Not fatal — daemon can operate without agent installer
+		} else if len(manifests) > 0 {
+			d.installer = agent.NewInstaller(d.bodyMgr, ingress.NewNoopAdapter(), d.orchRegistry, manifests)
+		} else {
+			fmt.Fprintf(os.Stderr, "daemon: info: no agent manifests found in %s\n", d.cfg.AgentsDir)
+		}
+	}
 
 	if err := d.reconcile(ctx); err != nil {
 		return fmt.Errorf("daemon: reconcile: %w", err)
@@ -326,18 +348,36 @@ func (d *Daemon) startAPIServer() error {
 		primaryOrch, _ = d.orchRegistry.Open(names[0])
 	}
 
+	var ing ingress.IngressAdapter
+	switch d.cfg.Ingress.Adapter {
+	case "caddy":
+		ing = ingress.NewCaddyAdapter(ingress.CaddyConfig{
+			AdminURL:      d.cfg.Ingress.AdminURL,
+			PortPoolStart: d.cfg.Ingress.PortPoolStart,
+			PortPoolEnd:   d.cfg.Ingress.PortPoolEnd,
+			DomainSuffix:  d.cfg.Ingress.DomainSuffix,
+		})
+	case "noop", "":
+		ing = ingress.NewNoopAdapter()
+	default:
+		fmt.Fprintf(os.Stderr, "daemon: unknown ingress adapter %q, falling back to noop\n", d.cfg.Ingress.Adapter)
+		ing = ingress.NewNoopAdapter()
+	}
+	d.ingress = ing
+
 	router := api.NewRouter(api.RouterConfig{
 		BodyManager:  d.bodyMgr,
 		BodyService:  d.bodySvc,
 		Store:        d.store,
 		Orchestrator: primaryOrch,
-		Ingress:      ingress.NewNoopAdapter(),
+		Ingress:      ing,
 		AuthToken:    d.cfg.Daemon.AuthToken,
 		Version:      d.version,
 		Tier:         d.tier,
 		OrchRegistry: d.orchRegistry,
 		Features:     d.cfg.Features,
 		Uptime:       d.startedAt,
+		Installer:    d.installer,
 	})
 
 	listenAddr := d.cfg.Daemon.ListenAddr
