@@ -230,10 +230,14 @@ func (s *Store) CreateBodyWithCluster(ctx context.Context, id, name string, stat
 	defer unlock.Unlock()
 
 	ts := now()
+	var cid interface{}
+	if clusterID != "" {
+		cid = clusterID
+	}
 	_, err := s.db.ExecContext(ctx,
 		`INSERT INTO bodies (id, name, state, spec_json, substrate, instance_id, cluster_id, created_at, updated_at)
 		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		id, name, string(state), specJSON, substrate, instanceID, clusterID, ts, ts,
+		id, name, string(state), specJSON, substrate, instanceID, cid, ts, ts,
 	)
 	if err != nil {
 		return fmt.Errorf("create body %s: %w", id, err)
@@ -306,6 +310,9 @@ func (s *Store) ListBodies(ctx context.Context) ([]*BodyRecord, error) {
 }
 
 func (s *Store) ListBodiesByCluster(ctx context.Context, clusterID string) ([]*BodyRecord, error) {
+	if clusterID == "" {
+		return s.ListBodies(ctx)
+	}
 	rows, err := s.db.QueryContext(ctx,
 		`SELECT id, name, state, spec_json, substrate, instance_id, cluster_id, created_at, updated_at
 		 FROM bodies WHERE cluster_id = ? OR cluster_id IS NULL ORDER BY created_at`, clusterID)
@@ -328,6 +335,9 @@ func (s *Store) ListBodiesByCluster(ctx context.Context, clusterID string) ([]*B
 }
 
 func (s *Store) GetBodyByCluster(ctx context.Context, id, clusterID string) (*BodyRecord, error) {
+	if clusterID == "" {
+		return s.GetBody(ctx, id)
+	}
 	var b BodyRecord
 	var cid sql.NullString
 	err := s.db.QueryRowContext(ctx,
@@ -345,6 +355,9 @@ func (s *Store) GetBodyByCluster(ctx context.Context, id, clusterID string) (*Bo
 }
 
 func (s *Store) UpdateBodyStateByCluster(ctx context.Context, id string, state orchestrator.BodyState, clusterID string) error {
+	if clusterID == "" {
+		return s.UpdateBodyState(ctx, id, state)
+	}
 	unlock := s.bodyLock(id)
 	defer unlock.Unlock()
 
@@ -363,6 +376,9 @@ func (s *Store) UpdateBodyStateByCluster(ctx context.Context, id string, state o
 }
 
 func (s *Store) UpdateBodyInstanceIDByCluster(ctx context.Context, id, instanceID, clusterID string) error {
+	if clusterID == "" {
+		return s.UpdateBodyInstanceID(ctx, id, instanceID)
+	}
 	unlock := s.bodyLock(id)
 	defer unlock.Unlock()
 
@@ -381,6 +397,9 @@ func (s *Store) UpdateBodyInstanceIDByCluster(ctx context.Context, id, instanceI
 }
 
 func (s *Store) UpdateBodySubstrateByCluster(ctx context.Context, id, substrate, clusterID string) error {
+	if clusterID == "" {
+		return s.UpdateBodySubstrate(ctx, id, substrate)
+	}
 	unlock := s.bodyLock(id)
 	defer unlock.Unlock()
 
@@ -399,6 +418,9 @@ func (s *Store) UpdateBodySubstrateByCluster(ctx context.Context, id, substrate,
 }
 
 func (s *Store) DeleteBodyByCluster(ctx context.Context, id, clusterID string) error {
+	if clusterID == "" {
+		return s.DeleteBody(ctx, id)
+	}
 	unlock := s.bodyLock(id)
 	defer unlock.Unlock()
 

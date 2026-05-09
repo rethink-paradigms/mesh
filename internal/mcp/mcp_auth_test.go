@@ -143,7 +143,7 @@ func setupAuthTest(t *testing.T) (*Server, *api.JWTValidator, string, func()) {
 	return srv, validator, token, cleanup
 }
 
-func TestMCP_NoAuthToken_Rejected(t *testing.T) {
+func TestMCPAuth_NoAuthToken_Rejected(t *testing.T) {
 	srv, _, _, cleanup := setupAuthTest(t)
 	defer cleanup()
 
@@ -175,7 +175,7 @@ func TestMCP_NoAuthToken_Rejected(t *testing.T) {
 	}
 }
 
-func TestMCP_ValidAuthToken_Accepted(t *testing.T) {
+func TestMCPAuth_ValidAuthToken_Accepted(t *testing.T) {
 	srv, _, token, cleanup := setupAuthTest(t)
 	defer cleanup()
 
@@ -202,7 +202,7 @@ func TestMCP_ValidAuthToken_Accepted(t *testing.T) {
 	}
 }
 
-func TestMCP_ExpiredAuthToken_Rejected(t *testing.T) {
+func TestMCPAuth_ExpiredAuthToken_Rejected(t *testing.T) {
 	s, err := store.Open(t.TempDir() + "/test.db")
 	if err != nil {
 		t.Fatalf("open store: %v", err)
@@ -265,7 +265,7 @@ func TestMCP_ExpiredAuthToken_Rejected(t *testing.T) {
 	}
 }
 
-func TestMCP_InvalidAuthToken_Rejected(t *testing.T) {
+func TestMCPAuth_InvalidAuthToken_Rejected(t *testing.T) {
 	s, err := store.Open(t.TempDir() + "/test.db")
 	if err != nil {
 		t.Fatalf("open store: %v", err)
@@ -316,7 +316,7 @@ func TestMCP_InvalidAuthToken_Rejected(t *testing.T) {
 	}
 }
 
-func TestMCP_AuthDisabled_NoTokenRequired(t *testing.T) {
+func TestMCPAuth_AuthDisabled_NoTokenRequired(t *testing.T) {
 	s, err := store.Open(t.TempDir() + "/test.db")
 	if err != nil {
 		t.Fatalf("open store: %v", err)
@@ -347,6 +347,133 @@ func TestMCP_AuthDisabled_NoTokenRequired(t *testing.T) {
 	}
 	if resp.Error != nil {
 		t.Fatalf("unexpected error when auth disabled: code=%d msg=%s", resp.Error.Code, resp.Error.Message)
+	}
+}
+
+func TestMCPAuthGating_NoToken(t *testing.T) {
+	srv, _, _, cleanup := setupAuthTest(t)
+	defer cleanup()
+
+	os.Unsetenv("MESH_JWT_TOKEN")
+
+	var buf strings.Builder
+	srv.writer = &buf
+
+	req := Request{
+		JSONRPC: "2.0",
+		ID:      1,
+		Method:  "tools/call",
+		Params:  json.RawMessage(`{"name":"list_bodies","arguments":{}}`),
+	}
+	srv.handle(context.Background(), req)
+
+	var resp Response
+	if err := json.Unmarshal([]byte(buf.String()), &resp); err != nil {
+		t.Fatalf("unmarshal response: %v", err)
+	}
+	if resp.Error == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if resp.Error.Code != -32000 {
+		t.Errorf("error code = %d, want %d", resp.Error.Code, -32000)
+	}
+	if !strings.Contains(resp.Error.Message, "authentication required") {
+		t.Errorf("error message = %q, want containing 'authentication required'", resp.Error.Message)
+	}
+}
+
+func TestMCPAuthGating_ValidToken(t *testing.T) {
+	srv, _, token, cleanup := setupAuthTest(t)
+	defer cleanup()
+
+	os.Setenv("MESH_JWT_TOKEN", token)
+	defer os.Unsetenv("MESH_JWT_TOKEN")
+
+	var buf strings.Builder
+	srv.writer = &buf
+
+	req := Request{
+		JSONRPC: "2.0",
+		ID:      1,
+		Method:  "tools/call",
+		Params:  json.RawMessage(`{"name":"list_bodies","arguments":{}}`),
+	}
+	srv.handle(context.Background(), req)
+
+	var resp Response
+	if err := json.Unmarshal([]byte(buf.String()), &resp); err != nil {
+		t.Fatalf("unmarshal response: %v", err)
+	}
+	if resp.Error != nil {
+		t.Fatalf("unexpected error: code=%d msg=%s", resp.Error.Code, resp.Error.Message)
+	}
+}
+
+func TestMCPAuthGating_AllToolsRequireAuth(t *testing.T) {
+	srv, _, _, cleanup := setupAuthTest(t)
+	defer cleanup()
+
+	os.Unsetenv("MESH_JWT_TOKEN")
+
+	tools := []string{"ping", "list_bodies", "get_body", "get_snapshot", "execute_command", "create_body", "delete_body", "migrate_body", "start_body", "stop_body", "create_snapshot", "list_snapshots", "restore_body", "get_body_logs", "get_body_status", "list_plugins", "plugin_health"}
+
+	for _, toolName := range tools {
+		var buf strings.Builder
+		srv.writer = &buf
+
+		req := Request{
+			JSONRPC: "2.0",
+			ID:      1,
+			Method:  "tools/call",
+			Params:  json.RawMessage(`{"name":"` + toolName + `","arguments":{}}`),
+		}
+		srv.handle(context.Background(), req)
+
+		var resp Response
+		if err := json.Unmarshal([]byte(buf.String()), &resp); err != nil {
+			t.Fatalf("tool %s: unmarshal response: %v", toolName, err)
+		}
+		if resp.Error == nil {
+			t.Fatalf("tool %s: expected error, got nil", toolName)
+		}
+		if resp.Error.Code != -32000 {
+			t.Fatalf("tool %s: error code = %d, want %d", toolName, resp.Error.Code, -32000)
+		}
+		if !strings.Contains(resp.Error.Message, "authentication required") {
+			t.Fatalf("tool %s: error message = %q, want 'authentication required'", toolName, resp.Error.Message)
+		}
+	}
+}
+
+func TestMCPAuthGating_PingRequiresAuth(t *testing.T) {
+	srv, _, _, cleanup := setupAuthTest(t)
+	defer cleanup()
+
+	os.Unsetenv("MESH_JWT_TOKEN")
+
+	var buf strings.Builder
+	srv.writer = &buf
+
+	req := Request{
+		JSONRPC: "2.0",
+		ID:      1,
+		Method:  "tools/call",
+		Params:  json.RawMessage(`{"name":"ping","arguments":{}}`),
+	}
+	srv.handle(context.Background(), req)
+
+	var resp Response
+	if err := json.Unmarshal([]byte(buf.String()), &resp); err != nil {
+		t.Fatalf("unmarshal response: %v", err)
+	}
+	if resp.Error == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if resp.Error.Code != -32000 {
+		t.Errorf("error code = %d, want %d", resp.Error.Code, -32000)
+	}
+	if !strings.Contains(resp.Error.Message, "authentication required") {
+		t.Errorf("error message = %q, want containing 'authentication required'", resp.Error.Message)
 	}
 }
 

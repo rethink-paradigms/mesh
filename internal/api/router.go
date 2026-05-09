@@ -13,6 +13,9 @@ import (
 )
 
 func createJWTValidator(cfg RouterConfig) *JWTValidator {
+	if cfg.JWTValidator != nil {
+		return cfg.JWTValidator
+	}
 	if cfg.Auth0Domain == "" || cfg.Auth0Audience == "" {
 		return nil
 	}
@@ -42,6 +45,7 @@ type RouterConfig struct {
 	Limits       CapabilityLimits
 	Uptime       time.Time // daemon start time, used for uptime calculation
 	Installer    Installer
+	JWTValidator *JWTValidator
 }
 
 type bodyServiceAdapter interface {
