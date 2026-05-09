@@ -181,7 +181,9 @@ func (s *Server) RegisterTool(name string, handler ToolHandler, def ToolDefiniti
 // Start begins reading JSON-RPC requests and dispatching them.
 // Blocks until the reader returns EOF or the context is cancelled.
 func (s *Server) Start(ctx context.Context) error {
+	s.mu.Lock()
 	ctx, s.cancel = context.WithCancel(ctx)
+	s.mu.Unlock()
 	defer func() {
 		s.mu.Lock()
 		s.running = false

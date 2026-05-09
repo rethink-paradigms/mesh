@@ -87,8 +87,8 @@ func TestHandleStatus(t *testing.T) {
 	// Ports section - pool defaults set when ingress adapter is present
 	assert.Equal(t, 0, resp.Ports.Used)
 	assert.Equal(t, 0, resp.Ports.Free)
-	assert.Equal(t, 20000, resp.Ports.PoolStart)
-	assert.Equal(t, 30000, resp.Ports.PoolEnd)
+	assert.Equal(t, 9000, resp.Ports.PoolStart)
+	assert.Equal(t, 9999, resp.Ports.PoolEnd)
 
 	// Ingress section
 	assert.Equal(t, 0, resp.Ingress.RouteCount)

@@ -42,8 +42,8 @@ func handleStatus(cfg RouterConfig) http.HandlerFunc {
 		resp.Ports = PortsStatusInfo{}
 		if cfg.Ingress != nil {
 			resp.Ports = PortsStatusInfo{
-				PoolStart: 20000,
-				PoolEnd:   30000,
+				PoolStart: 9000,
+				PoolEnd:   9999,
 			}
 		}
 

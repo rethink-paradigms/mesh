@@ -33,8 +33,6 @@ func handleHealthz(cfg RouterConfig) http.HandlerFunc {
 			status = "degraded"
 		}
 
-		orchestratorConnected := cfg.Orchestrator.IsHealthy(r.Context())
-
 		WriteJSON(w, http.StatusOK, HealthzResponse{
 			Status:                status,
 			Version:               cfg.Version,
@@ -42,7 +40,7 @@ func handleHealthz(cfg RouterConfig) http.HandlerFunc {
 			ConsulConnected:       false,
 			BodiesCount:           bodiesCount,
 			NodesCount:            nodesCount,
-			OrchestratorConnected: orchestratorConnected,
+			OrchestratorConnected: nomadConnected,
 		})
 	}
 }

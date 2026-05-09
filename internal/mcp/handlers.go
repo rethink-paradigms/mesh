@@ -736,8 +736,8 @@ func (s *Server) handleDaemonStatus(ctx context.Context, params json.RawMessage)
 	status["ports"] = map[string]interface{}{
 		"used":       0,
 		"free":       0,
-		"pool_start": 20000,
-		"pool_end":   30000,
+		"pool_start": 9000,
+		"pool_end":   9999,
 	}
 
 	// Ingress
