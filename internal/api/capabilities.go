@@ -7,52 +7,50 @@ import (
 	"os/exec"
 )
 
-func handleCapabilities(cfg RouterConfig) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		var orchCaps []OrchestratorCapability
-		if cfg.OrchRegistry != nil {
-			for _, name := range cfg.OrchRegistry.List() {
-				adapter, err := cfg.OrchRegistry.Open(name)
-				healthy := err == nil && adapter.IsHealthy(r.Context())
-				orchCaps = append(orchCaps, OrchestratorCapability{
-					Name:    name,
-					Healthy: healthy,
-				})
-			}
+func (h *Handler) Capabilities(w http.ResponseWriter, r *http.Request) {
+	var orchCaps []OrchestratorCapability
+	if h.cfg.OrchRegistry != nil {
+		for _, name := range h.cfg.OrchRegistry.List() {
+			adapter, err := h.cfg.OrchRegistry.Open(name)
+			healthy := err == nil && adapter.IsHealthy(r.Context())
+			orchCaps = append(orchCaps, OrchestratorCapability{
+				Name:    name,
+				Healthy: healthy,
+			})
 		}
-		if orchCaps == nil {
-			orchCaps = []OrchestratorCapability{}
-		}
-
-		providers := getProviders()
-
-		features := cfg.Features
-		if features == nil {
-			features = make(map[string]bool)
-		}
-
-		tier := cfg.Tier
-		if tier == "" {
-			tier = "lite"
-		}
-
-		limits := cfg.Limits
-		if limits.MaxBodies == 0 {
-			limits.MaxBodies = 10
-		}
-		if limits.MaxSnapshots == 0 {
-			limits.MaxSnapshots = 5
-		}
-
-		WriteJSON(w, http.StatusOK, CapabilitiesResponse{
-			Version:       cfg.Version,
-			Tier:          tier,
-			Orchestrators: orchCaps,
-			Providers:     providers,
-			Features:      features,
-			Limits:        limits,
-		})
 	}
+	if orchCaps == nil {
+		orchCaps = []OrchestratorCapability{}
+	}
+
+	providers := getProviders()
+
+	features := h.cfg.Features
+	if features == nil {
+		features = make(map[string]bool)
+	}
+
+	tier := h.cfg.Tier
+	if tier == "" {
+		tier = "lite"
+	}
+
+	limits := h.cfg.Limits
+	if limits.MaxBodies == 0 {
+		limits.MaxBodies = 10
+	}
+	if limits.MaxSnapshots == 0 {
+		limits.MaxSnapshots = 5
+	}
+
+	WriteJSON(w, http.StatusOK, CapabilitiesResponse{
+		Version:       h.cfg.Version,
+		Tier:          tier,
+		Orchestrators: orchCaps,
+		Providers:     providers,
+		Features:      features,
+		Limits:        limits,
+	})
 }
 
 // getProviders runs mesh-provision providers --output json and returns the output.

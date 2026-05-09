@@ -66,19 +66,20 @@ var _ bodyServiceAdapter = (*service.BodyService)(nil)
 func NewRouter(cfg RouterConfig) http.Handler {
 	mux := http.NewServeMux()
 
-	mux.HandleFunc("GET /healthz", handleHealthz(cfg))
+	h := NewHandler(cfg)
+	mux.HandleFunc("GET /healthz", h.Healthz)
 
 	apiMux := http.NewServeMux()
-	apiMux.HandleFunc("GET /api/v1/bodies", handleListBodies(cfg))
-	apiMux.HandleFunc("POST /api/v1/bodies", handleCreateBody(cfg))
-	apiMux.HandleFunc("GET /api/v1/bodies/{id}", handleGetBody(cfg))
-	apiMux.HandleFunc("POST /api/v1/bodies/{id}/stop", handleStopBody(cfg))
-	apiMux.HandleFunc("POST /api/v1/bodies/{id}/start", handleStartBody(cfg))
-	apiMux.HandleFunc("DELETE /api/v1/bodies/{id}", handleDestroyBody(cfg))
-	apiMux.HandleFunc("GET /api/v1/nodes", handleListNodes(cfg))
-	apiMux.HandleFunc("GET /api/v1/capabilities", handleCapabilities(cfg))
-	apiMux.HandleFunc("GET /api/v1/status", handleStatus(cfg))
-	apiMux.HandleFunc("POST /api/v1/agents/install", handleInstallAgent(cfg))
+	apiMux.HandleFunc("GET /api/v1/bodies", h.ListBodies)
+	apiMux.HandleFunc("POST /api/v1/bodies", h.CreateBody)
+	apiMux.HandleFunc("GET /api/v1/bodies/{id}", h.GetBody)
+	apiMux.HandleFunc("POST /api/v1/bodies/{id}/stop", h.StopBody)
+	apiMux.HandleFunc("POST /api/v1/bodies/{id}/start", h.StartBody)
+	apiMux.HandleFunc("DELETE /api/v1/bodies/{id}", h.DestroyBody)
+	apiMux.HandleFunc("GET /api/v1/nodes", h.ListNodes)
+	apiMux.HandleFunc("GET /api/v1/capabilities", h.Capabilities)
+	apiMux.HandleFunc("GET /api/v1/status", h.Status)
+	apiMux.HandleFunc("POST /api/v1/agents/install", h.InstallAgent)
 
 	var validator *JWTValidator
 	if cfg.AuthMode == "jwt" || cfg.AuthMode == "both" {

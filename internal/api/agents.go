@@ -22,37 +22,35 @@ type InstallAgentRequest struct {
 	Env       map[string]string `json:"env,omitempty"`
 }
 
-func handleInstallAgent(cfg RouterConfig) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		if cfg.Installer == nil {
-			WriteError(w, ErrCodeInternal, "installer not configured", http.StatusInternalServerError)
-			return
-		}
-
-		var req InstallAgentRequest
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			WriteError(w, ErrCodeBadRequest, fmt.Sprintf("decode request: %v", err), http.StatusBadRequest)
-			return
-		}
-
-		if req.AgentType == "" {
-			WriteError(w, ErrCodeBadRequest, "agent_type is required", http.StatusBadRequest)
-			return
-		}
-		if req.Name == "" {
-			WriteError(w, ErrCodeBadRequest, "name is required", http.StatusBadRequest)
-			return
-		}
-
-		result, err := cfg.Installer.Install(r.Context(), req.AgentType, req.Name, req.Env)
-		if err != nil {
-			code, status := mapAgentInstallError(err)
-			WriteError(w, code, fmt.Sprintf("install agent: %v", err), status)
-			return
-		}
-
-		WriteJSON(w, http.StatusCreated, result)
+func (h *Handler) InstallAgent(w http.ResponseWriter, r *http.Request) {
+	if h.cfg.Installer == nil {
+		WriteError(w, ErrCodeInternal, "installer not configured", http.StatusInternalServerError)
+		return
 	}
+
+	var req InstallAgentRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		WriteError(w, ErrCodeBadRequest, fmt.Sprintf("decode request: %v", err), http.StatusBadRequest)
+		return
+	}
+
+	if req.AgentType == "" {
+		WriteError(w, ErrCodeBadRequest, "agent_type is required", http.StatusBadRequest)
+		return
+	}
+	if req.Name == "" {
+		WriteError(w, ErrCodeBadRequest, "name is required", http.StatusBadRequest)
+		return
+	}
+
+	result, err := h.cfg.Installer.Install(r.Context(), req.AgentType, req.Name, req.Env)
+	if err != nil {
+		code, status := mapAgentInstallError(err)
+		WriteError(w, code, fmt.Sprintf("install agent: %v", err), status)
+		return
+	}
+
+	WriteJSON(w, http.StatusCreated, result)
 }
 
 func mapAgentInstallError(err error) (code string, status int) {

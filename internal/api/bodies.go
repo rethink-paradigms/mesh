@@ -29,161 +29,149 @@ func mapServiceError(err error) (code string, status int) {
 	return ErrCodeInternal, http.StatusInternalServerError
 }
 
-func handleListBodies(cfg RouterConfig) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		clusterID := ClusterIDFromContext(r.Context())
+func (h *Handler) ListBodies(w http.ResponseWriter, r *http.Request) {
+	clusterID := ClusterIDFromContext(r.Context())
 
-		var bodies []*body.Body
-		var err error
-		if clusterID != "" {
-			bodies, err = cfg.BodyService.ListByCluster(r.Context(), clusterID)
-		} else {
-			bodies, err = cfg.BodyService.List(r.Context())
-		}
-		if err != nil {
-			code, status := mapServiceError(err)
-			WriteError(w, code, fmt.Sprintf("list bodies: %v", err), status)
-			return
-		}
-
-		responses := make([]BodyResponse, 0, len(bodies))
-		for _, b := range bodies {
-			status, err := cfg.BodyService.GetStatus(r.Context(), b.ID)
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "api: get status for body %s: %v\n", b.ID, err)
-			}
-			responses = append(responses, bodyToResponse(b, status))
-		}
-
-		WriteJSON(w, http.StatusOK, ListBodiesResponse{Bodies: responses})
+	var bodies []*body.Body
+	var err error
+	if clusterID != "" {
+		bodies, err = h.cfg.BodyService.ListByCluster(r.Context(), clusterID)
+	} else {
+		bodies, err = h.cfg.BodyService.List(r.Context())
 	}
+	if err != nil {
+		code, status := mapServiceError(err)
+		WriteError(w, code, fmt.Sprintf("list bodies: %v", err), status)
+		return
+	}
+
+	responses := make([]BodyResponse, 0, len(bodies))
+	for _, b := range bodies {
+		status, err := h.cfg.BodyService.GetStatus(r.Context(), b.ID)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "api: get status for body %s: %v\n", b.ID, err)
+		}
+		responses = append(responses, bodyToResponse(b, status))
+	}
+
+	WriteJSON(w, http.StatusOK, ListBodiesResponse{Bodies: responses})
 }
 
-func handleCreateBody(cfg RouterConfig) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		var req CreateBodyRequest
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			WriteError(w, ErrCodeBadRequest, fmt.Sprintf("decode request: %v", err), http.StatusBadRequest)
-			return
-		}
-
-		spec := requestToSpec(req)
-		b, err := cfg.BodyService.Create(r.Context(), req.Name, req.Image, spec)
-		if err != nil {
-			code, status := mapServiceError(err)
-			WriteError(w, code, fmt.Sprintf("create body: %v", err), status)
-			return
-		}
-
-		WriteJSON(w, http.StatusCreated, CreateBodyResponse{
-			ID:      b.ID,
-			State:   string(b.State),
-			Message: "Body created",
-		})
+func (h *Handler) CreateBody(w http.ResponseWriter, r *http.Request) {
+	var req CreateBodyRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		WriteError(w, ErrCodeBadRequest, fmt.Sprintf("decode request: %v", err), http.StatusBadRequest)
+		return
 	}
+
+	spec := requestToSpec(req)
+	b, err := h.cfg.BodyService.Create(r.Context(), req.Name, req.Image, spec)
+	if err != nil {
+		code, status := mapServiceError(err)
+		WriteError(w, code, fmt.Sprintf("create body: %v", err), status)
+		return
+	}
+
+	WriteJSON(w, http.StatusCreated, CreateBodyResponse{
+		ID:      b.ID,
+		State:   string(b.State),
+		Message: "Body created",
+	})
 }
 
-func handleGetBody(cfg RouterConfig) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		id := r.PathValue("id")
-		if id == "" {
-			WriteError(w, ErrCodeBadRequest, "body id is required", http.StatusBadRequest)
-			return
-		}
-
-		clusterID := ClusterIDFromContext(r.Context())
-
-		var b *body.Body
-		var err error
-		if clusterID != "" {
-			b, err = cfg.BodyService.GetByCluster(r.Context(), id, clusterID)
-		} else {
-			b, err = cfg.BodyService.Get(r.Context(), id)
-		}
-		if err != nil {
-			code, status := mapServiceError(err)
-			WriteError(w, code, fmt.Sprintf("get body: %v", err), status)
-			return
-		}
-
-		status, err := cfg.BodyService.GetStatus(r.Context(), id)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "api: get status for body %s: %v\n", id, err)
-		}
-		resp := bodyToResponse(b, status)
-		WriteJSON(w, http.StatusOK, resp)
+func (h *Handler) GetBody(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if id == "" {
+		WriteError(w, ErrCodeBadRequest, "body id is required", http.StatusBadRequest)
+		return
 	}
+
+	clusterID := ClusterIDFromContext(r.Context())
+
+	var b *body.Body
+	var err error
+	if clusterID != "" {
+		b, err = h.cfg.BodyService.GetByCluster(r.Context(), id, clusterID)
+	} else {
+		b, err = h.cfg.BodyService.Get(r.Context(), id)
+	}
+	if err != nil {
+		code, status := mapServiceError(err)
+		WriteError(w, code, fmt.Sprintf("get body: %v", err), status)
+		return
+	}
+
+	status, err := h.cfg.BodyService.GetStatus(r.Context(), id)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "api: get status for body %s: %v\n", id, err)
+	}
+	resp := bodyToResponse(b, status)
+	WriteJSON(w, http.StatusOK, resp)
 }
 
-func handleStopBody(cfg RouterConfig) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		id := r.PathValue("id")
-		if id == "" {
-			WriteError(w, ErrCodeBadRequest, "body id is required", http.StatusBadRequest)
-			return
-		}
-
-		if err := cfg.BodyService.Stop(r.Context(), id); err != nil {
-			code, status := mapServiceError(err)
-			WriteError(w, code, fmt.Sprintf("stop body: %v", err), status)
-			return
-		}
-
-		WriteJSON(w, http.StatusOK, ActionResponse{
-			ID:    id,
-			State: "stopping",
-		})
+func (h *Handler) StopBody(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if id == "" {
+		WriteError(w, ErrCodeBadRequest, "body id is required", http.StatusBadRequest)
+		return
 	}
+
+	if err := h.cfg.BodyService.Stop(r.Context(), id); err != nil {
+		code, status := mapServiceError(err)
+		WriteError(w, code, fmt.Sprintf("stop body: %v", err), status)
+		return
+	}
+
+	WriteJSON(w, http.StatusOK, ActionResponse{
+		ID:    id,
+		State: "stopping",
+	})
 }
 
-func handleStartBody(cfg RouterConfig) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		id := r.PathValue("id")
-		if id == "" {
-			WriteError(w, ErrCodeBadRequest, "body id is required", http.StatusBadRequest)
-			return
-		}
-
-		if err := cfg.BodyService.Start(r.Context(), id); err != nil {
-			code, status := mapServiceError(err)
-			WriteError(w, code, fmt.Sprintf("start body: %v", err), status)
-			return
-		}
-
-		WriteJSON(w, http.StatusOK, ActionResponse{
-			ID:    id,
-			State: "starting",
-		})
+func (h *Handler) StartBody(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if id == "" {
+		WriteError(w, ErrCodeBadRequest, "body id is required", http.StatusBadRequest)
+		return
 	}
+
+	if err := h.cfg.BodyService.Start(r.Context(), id); err != nil {
+		code, status := mapServiceError(err)
+		WriteError(w, code, fmt.Sprintf("start body: %v", err), status)
+		return
+	}
+
+	WriteJSON(w, http.StatusOK, ActionResponse{
+		ID:    id,
+		State: "starting",
+	})
 }
 
-func handleDestroyBody(cfg RouterConfig) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		id := r.PathValue("id")
-		if id == "" {
-			WriteError(w, ErrCodeBadRequest, "body id is required", http.StatusBadRequest)
-			return
-		}
-
-		clusterID := ClusterIDFromContext(r.Context())
-
-		var err error
-		if clusterID != "" {
-			err = cfg.BodyService.DestroyByCluster(r.Context(), id, clusterID)
-		} else {
-			err = cfg.BodyService.Destroy(r.Context(), id)
-		}
-		if err != nil {
-			code, status := mapServiceError(err)
-			WriteError(w, code, fmt.Sprintf("destroy body: %v", err), status)
-			return
-		}
-
-		WriteJSON(w, http.StatusOK, ActionResponse{
-			ID:    id,
-			State: "destroyed",
-		})
+func (h *Handler) DestroyBody(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if id == "" {
+		WriteError(w, ErrCodeBadRequest, "body id is required", http.StatusBadRequest)
+		return
 	}
+
+	clusterID := ClusterIDFromContext(r.Context())
+
+	var err error
+	if clusterID != "" {
+		err = h.cfg.BodyService.DestroyByCluster(r.Context(), id, clusterID)
+	} else {
+		err = h.cfg.BodyService.Destroy(r.Context(), id)
+	}
+	if err != nil {
+		code, status := mapServiceError(err)
+		WriteError(w, code, fmt.Sprintf("destroy body: %v", err), status)
+		return
+	}
+
+	WriteJSON(w, http.StatusOK, ActionResponse{
+		ID:    id,
+		State: "destroyed",
+	})
 }
 
 func bodyToResponse(b *body.Body, status orchestrator.BodyStatus) BodyResponse {

@@ -14,55 +14,53 @@ import (
 	"github.com/rethink-paradigms/mesh/internal/orchestrator"
 )
 
-func handleStatus(cfg RouterConfig) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		resp := StatusResponse{}
+func (h *Handler) Status(w http.ResponseWriter, r *http.Request) {
+	resp := StatusResponse{}
 
-		// Daemon info
-		uptime := time.Duration(0)
-		if !cfg.Uptime.IsZero() {
-			uptime = time.Since(cfg.Uptime)
-		}
-		resp.Daemon = DaemonStatusInfo{
-			Version:   cfg.Version,
-			UptimeSec: int64(uptime.Seconds()),
-			StartTime: cfg.Uptime.Format(time.RFC3339),
-		}
-
-		// Tier
-		resp.Tier = cfg.Tier
-		if resp.Tier == "" {
-			resp.Tier = "lite"
-		}
-
-		// Bodies
-		resp.Bodies = buildBodiesStatus(cfg, r.Context())
-
-		// Ports
-		resp.Ports = PortsStatusInfo{}
-		if cfg.Ingress != nil {
-			resp.Ports = PortsStatusInfo{
-				PoolStart: 9000,
-				PoolEnd:   9999,
-			}
-		}
-
-		// Ingress
-		routeCount := 0
-		if cfg.Ingress != nil {
-			if routes, err := cfg.Ingress.ListRoutes(r.Context()); err == nil {
-				routeCount = len(routes)
-			}
-		}
-		resp.Ingress = IngressStatusInfo{
-			RouteCount: routeCount,
-		}
-
-		// Capacity
-		resp.Capacity = collectCapacity()
-
-		WriteJSON(w, http.StatusOK, resp)
+	// Daemon info
+	uptime := time.Duration(0)
+	if !h.cfg.Uptime.IsZero() {
+		uptime = time.Since(h.cfg.Uptime)
 	}
+	resp.Daemon = DaemonStatusInfo{
+		Version:   h.cfg.Version,
+		UptimeSec: int64(uptime.Seconds()),
+		StartTime: h.cfg.Uptime.Format(time.RFC3339),
+	}
+
+	// Tier
+	resp.Tier = h.cfg.Tier
+	if resp.Tier == "" {
+		resp.Tier = "lite"
+	}
+
+	// Bodies
+	resp.Bodies = buildBodiesStatus(h.cfg, r.Context())
+
+	// Ports
+	resp.Ports = PortsStatusInfo{}
+	if h.cfg.Ingress != nil {
+		resp.Ports = PortsStatusInfo{
+			PoolStart: 9000,
+			PoolEnd:   9999,
+		}
+	}
+
+	// Ingress
+	routeCount := 0
+	if h.cfg.Ingress != nil {
+		if routes, err := h.cfg.Ingress.ListRoutes(r.Context()); err == nil {
+			routeCount = len(routes)
+		}
+	}
+	resp.Ingress = IngressStatusInfo{
+		RouteCount: routeCount,
+	}
+
+	// Capacity
+	resp.Capacity = collectCapacity()
+
+	WriteJSON(w, http.StatusOK, resp)
 }
 
 func buildBodiesStatus(cfg RouterConfig, ctx context.Context) BodiesStatusInfo {
