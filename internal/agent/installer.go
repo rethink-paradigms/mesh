@@ -45,9 +45,19 @@ func NewInstaller(bodyMgr *body.BodyManager, ing ingress.IngressAdapter, orchReg
 // Flow: resolve manifest → validate env → create body → allocate ports → start → health check → create routes.
 func (i *Installer) Install(ctx context.Context, agentType, name string, env map[string]string, manifest string) (*InstallResult, error) {
 	// 1. Resolve manifest
-	agentManifest, ok := i.manifests[agentType]
-	if !ok {
-		return nil, &service.NotFoundError{ID: agentType}
+	var agentManifest *AgentManifest
+	if manifest != "" {
+		var err error
+		agentManifest, err = ParseManifest([]byte(manifest))
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		var ok bool
+		agentManifest, ok = i.manifests[agentType]
+		if !ok {
+			return nil, &service.NotFoundError{ID: agentType}
+		}
 	}
 
 	// 2. Validate required env vars

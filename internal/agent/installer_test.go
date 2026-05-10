@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/rethink-paradigms/mesh/internal/body"
@@ -189,4 +190,140 @@ func TestInstallAgentUnknownType(t *testing.T) {
 		t.Fatalf("expected NotFoundError, got %T", err)
 	}
 	_ = notFound
+}
+
+func TestInstallAgentInlineManifest(t *testing.T) {
+	s := tempStore(t)
+	bm := body.NewBodyManager(s, &mockOrchAdapter{})
+	ing := &mockIngress{}
+
+	installer := NewInstaller(bm, ing, nil, map[string]*AgentManifest{})
+	installer.healthPoll = func(context.Context, *AgentManifest, string) {}
+	ctx := context.Background()
+
+	inlineYAML := `
+name: inline-agent
+image: inline-image
+command: ["/app/inline"]
+ports:
+  - name: api
+    container_port: 8080
+    protocol: http
+    expose: true
+env:
+  required: [API_KEY]
+resources:
+  memory_mb: 256
+  cpu_shares: 128
+`
+
+	result, err := installer.Install(ctx, "inline-agent", "my-inline", map[string]string{"API_KEY": "secret"}, inlineYAML)
+	if err != nil {
+		t.Fatalf("Install with inline manifest: %v", err)
+	}
+	if result.BodyID == "" {
+		t.Error("BodyID is empty")
+	}
+	if result.Name != "my-inline" {
+		t.Errorf("Name = %q, want my-inline", result.Name)
+	}
+	if len(result.AccessURLs) != 1 {
+		t.Errorf("AccessURLs len = %d, want 1", len(result.AccessURLs))
+	}
+}
+
+func TestInstallAgentInlineManifestInvalidYAML(t *testing.T) {
+	s := tempStore(t)
+	bm := body.NewBodyManager(s, &mockOrchAdapter{})
+
+	installer := NewInstaller(bm, nil, nil, map[string]*AgentManifest{})
+	ctx := context.Background()
+
+	invalidYAML := `
+name: [broken
+image: test
+`
+
+	_, err := installer.Install(ctx, "anything", "my-test", map[string]string{}, invalidYAML)
+	if err == nil {
+		t.Fatal("expected error for invalid inline YAML, got nil")
+	}
+	if !strings.Contains(err.Error(), "parse") {
+		t.Errorf("expected error containing 'parse', got %q", err.Error())
+	}
+}
+
+func TestInstallAgentInlineManifestMissingEnv(t *testing.T) {
+	s := tempStore(t)
+	bm := body.NewBodyManager(s, &mockOrchAdapter{})
+
+	installer := NewInstaller(bm, nil, nil, map[string]*AgentManifest{})
+	ctx := context.Background()
+
+	inlineYAML := `
+name: inline-agent
+image: inline-image
+env:
+  required: [API_KEY]
+`
+
+	_, err := installer.Install(ctx, "inline-agent", "my-test", map[string]string{}, inlineYAML)
+	if err == nil {
+		t.Fatal("expected error for missing env var, got nil")
+	}
+
+	var valErr *service.ValidationError
+	if ok := err.(*service.ValidationError); ok == nil {
+		t.Fatalf("expected ValidationError, got %T", err)
+	}
+	_ = valErr
+}
+
+func TestInstallAgentEmptyManifestFallsBackToLocal(t *testing.T) {
+	s := tempStore(t)
+	bm := body.NewBodyManager(s, &mockOrchAdapter{})
+
+	manifests := map[string]*AgentManifest{
+		"test-agent": {
+			Name:  "test-agent",
+			Image: "test-image",
+			Env:   EnvConfig{Required: []string{"API_KEY"}},
+		},
+	}
+
+	installer := NewInstaller(bm, nil, nil, manifests)
+	ctx := context.Background()
+
+	_, err := installer.Install(ctx, "test-agent", "my-test", map[string]string{"API_KEY": "secret"}, "")
+	if err != nil {
+		t.Fatalf("Install with empty manifest (fallback): %v", err)
+	}
+}
+
+func TestInstallAgentInlineManifestTakesPrecedence(t *testing.T) {
+	s := tempStore(t)
+	bm := body.NewBodyManager(s, &mockOrchAdapter{})
+
+	manifests := map[string]*AgentManifest{
+		"test-agent": {
+			Name:  "test-agent",
+			Image: "local-image",
+			Env:   EnvConfig{Required: []string{"API_KEY"}},
+		},
+	}
+
+	installer := NewInstaller(bm, nil, nil, manifests)
+	ctx := context.Background()
+
+	inlineYAML := `
+name: inline-agent
+image: inline-image
+env:
+  required: [API_KEY]
+`
+
+	_, err := installer.Install(ctx, "test-agent", "my-test", map[string]string{"API_KEY": "secret"}, inlineYAML)
+	if err != nil {
+		t.Fatalf("Install with inline manifest (precedence): %v", err)
+	}
 }
