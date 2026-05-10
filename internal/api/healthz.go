@@ -37,6 +37,8 @@ func (h *Handler) Healthz(w http.ResponseWriter, r *http.Request) {
 		status = "degraded"
 	}
 
+	heartbeatEnabled := h.cfg.GatewayURL != "" && h.cfg.HeartbeatIntervalSeconds > 0
+
 	WriteJSON(w, http.StatusOK, HealthzResponse{
 		Status:                status,
 		Version:               h.cfg.Version,
@@ -45,5 +47,7 @@ func (h *Handler) Healthz(w http.ResponseWriter, r *http.Request) {
 		BodiesCount:           bodiesCount,
 		NodesCount:            nodesCount,
 		OrchestratorConnected: nomadConnected,
+		GatewayURL:            h.cfg.GatewayURL,
+		HeartbeatEnabled:      heartbeatEnabled,
 	})
 }

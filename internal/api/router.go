@@ -44,8 +44,10 @@ type RouterConfig struct {
 	Features     map[string]bool
 	Limits       CapabilityLimits
 	Uptime       time.Time // daemon start time, used for uptime calculation
-	Installer    Installer
-	JWTValidator *JWTValidator
+	Installer              Installer
+	JWTValidator           *JWTValidator
+	GatewayURL             string
+	HeartbeatIntervalSeconds int
 }
 
 type bodyServiceAdapter interface {
