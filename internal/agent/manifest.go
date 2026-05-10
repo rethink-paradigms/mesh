@@ -48,23 +48,25 @@ type ResourceLimits struct {
 	CPUShares int `yaml:"cpu_shares"`
 }
 
-// LoadManifest parses a single YAML manifest file.
+// ParseManifest parses a YAML manifest from raw bytes.
+func ParseManifest(data []byte) (*AgentManifest, error) {
+	var m AgentManifest
+	if err := yaml.Unmarshal(data, &m); err != nil {
+		return nil, fmt.Errorf("parse manifest: %w", err)
+	}
+	if err := validateManifest(&m); err != nil {
+		return nil, fmt.Errorf("validate manifest: %w", err)
+	}
+	return &m, nil
+}
+
+// LoadManifest reads and parses a single YAML manifest file.
 func LoadManifest(path string) (*AgentManifest, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("read manifest %s: %w", path, err)
 	}
-
-	var m AgentManifest
-	if err := yaml.Unmarshal(data, &m); err != nil {
-		return nil, fmt.Errorf("parse manifest %s: %w", path, err)
-	}
-
-	if err := validateManifest(&m); err != nil {
-		return nil, fmt.Errorf("validate manifest %s: %w", path, err)
-	}
-
-	return &m, nil
+	return ParseManifest(data)
 }
 
 // LoadManifestDir loads all .yaml files from a directory, keyed by manifest name.

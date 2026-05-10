@@ -3,6 +3,7 @@ package agent
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -150,6 +151,55 @@ func TestLoadManifestDir(t *testing.T) {
 	if manifests["agent-a"].Image != "img-a" {
 		t.Errorf("agent-a.Image = %q, want img-a", manifests["agent-a"].Image)
 	}
+}
+
+func TestParseManifest(t *testing.T) {
+	t.Run("valid yaml", func(t *testing.T) {
+		data := []byte("name: test-agent\nimage: test:latest\n")
+		m, err := ParseManifest(data)
+		if err != nil {
+			t.Fatalf("ParseManifest: %v", err)
+		}
+		if m.Name != "test-agent" {
+			t.Errorf("Name = %q, want test-agent", m.Name)
+		}
+		if m.Image != "test:latest" {
+			t.Errorf("Image = %q, want test:latest", m.Image)
+		}
+	})
+
+	t.Run("invalid yaml", func(t *testing.T) {
+		data := []byte("{{invalid:::yaml")
+		_, err := ParseManifest(data)
+		if err == nil {
+			t.Fatal("expected error for invalid YAML, got nil")
+		}
+		if !strings.Contains(err.Error(), "parse manifest") {
+			t.Errorf("error = %q, want it to contain 'parse manifest'", err.Error())
+		}
+	})
+
+	t.Run("missing name", func(t *testing.T) {
+		data := []byte("image: test:latest\n")
+		_, err := ParseManifest(data)
+		if err == nil {
+			t.Fatal("expected error for missing name, got nil")
+		}
+		if !strings.Contains(err.Error(), "name") {
+			t.Errorf("error = %q, want it to contain 'name'", err.Error())
+		}
+	})
+
+	t.Run("missing image", func(t *testing.T) {
+		data := []byte("name: test-agent\n")
+		_, err := ParseManifest(data)
+		if err == nil {
+			t.Fatal("expected error for missing image, got nil")
+		}
+		if !strings.Contains(err.Error(), "image") {
+			t.Errorf("error = %q, want it to contain 'image'", err.Error())
+		}
+	})
 }
 
 func TestValidateEnv(t *testing.T) {
