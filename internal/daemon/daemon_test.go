@@ -189,10 +189,11 @@ func TestHealthEndpoint(t *testing.T) {
 	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
 		t.Fatalf("decode response: %v", err)
 	}
-	// The new API router returns "degraded" when the orchestrator is not healthy.
-	// With no orchestrators registered, the noop orchestrator is used which reports unhealthy.
-	if body["status"] != "degraded" {
-		t.Fatalf("status = %v, want degraded", body["status"])
+	// The daemon always registers the Docker orchestrator by default.
+	// When Docker is available (socket responds to /info), the orchestrator
+	// reports healthy. When unavailable, it reports degraded.
+	if body["status"] != "healthy" && body["status"] != "degraded" {
+		t.Fatalf("status = %v, want healthy or degraded", body["status"])
 	}
 
 	cancel()

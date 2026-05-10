@@ -3,6 +3,8 @@ package docker_test
 import (
 	"context"
 	"io"
+	"net"
+	"net/http"
 	"os"
 	"strings"
 	"testing"
@@ -28,6 +30,49 @@ func skipIfNoDocker(t *testing.T) {
 	if !dockerAvailable() {
 		t.Skip("Docker socket not available; skipping integration test")
 	}
+}
+
+// ensureAlpineImage pulls alpine:latest via the Docker API if not already available.
+// This prevents test failures in CI runners where the image hasn't been cached.
+func ensureAlpineImage(t *testing.T) {
+	t.Helper()
+
+	socketPath := os.Getenv("DOCKER_HOST")
+	if socketPath == "" {
+		socketPath = "/var/run/docker.sock"
+	}
+
+	client := &http.Client{
+		Transport: &http.Transport{
+			DialContext: func(_ context.Context, _, _ string) (net.Conn, error) {
+				return net.Dial("unix", strings.TrimPrefix(socketPath, "unix://"))
+			},
+		},
+	}
+
+	// Check if image already exists
+	ctx := context.Background()
+	req, _ := http.NewRequestWithContext(ctx, "GET", "http://localhost/images/alpine:latest/json", nil)
+	resp, err := client.Do(req)
+	if err == nil {
+		resp.Body.Close()
+		if resp.StatusCode == http.StatusOK {
+			return // image already available
+		}
+	}
+
+	// Pull alpine:latest
+	t.Log("pulling alpine:latest image...")
+	req, _ = http.NewRequestWithContext(ctx, "POST", "http://localhost/images/create?fromImage=alpine:latest", nil)
+	resp, err = client.Do(req)
+	if err != nil {
+		t.Fatalf("pull alpine:latest: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("pull alpine:latest: status %d", resp.StatusCode)
+	}
+	t.Log("alpine:latest pulled successfully")
 }
 
 func TestNew(t *testing.T) {
@@ -70,6 +115,7 @@ func TestIsHealthy(t *testing.T) {
 
 func TestDockerAdapterLifecycle(t *testing.T) {
 	skipIfNoDocker(t)
+	ensureAlpineImage(t)
 
 	a := docker.New(docker.Config{})
 	ctx := context.Background()
@@ -129,6 +175,7 @@ func TestDockerAdapterLifecycle(t *testing.T) {
 
 func TestDockerAdapterGetBodyStatus(t *testing.T) {
 	skipIfNoDocker(t)
+	ensureAlpineImage(t)
 
 	a := docker.New(docker.Config{})
 	ctx := context.Background()
@@ -169,6 +216,7 @@ func TestDockerAdapterGetBodyStatus(t *testing.T) {
 
 func TestDockerAdapterWithPorts(t *testing.T) {
 	skipIfNoDocker(t)
+	ensureAlpineImage(t)
 
 	a := docker.New(docker.Config{})
 	ctx := context.Background()
@@ -210,6 +258,7 @@ func TestDockerAdapterWithPorts(t *testing.T) {
 
 func TestDockerAdapterExec(t *testing.T) {
 	skipIfNoDocker(t)
+	ensureAlpineImage(t)
 
 	a := docker.New(docker.Config{})
 	ctx := context.Background()
@@ -247,6 +296,7 @@ func TestDockerAdapterExec(t *testing.T) {
 
 func TestDockerAdapterExportImport(t *testing.T) {
 	skipIfNoDocker(t)
+	ensureAlpineImage(t)
 
 	a := docker.New(docker.Config{})
 	ctx := context.Background()
