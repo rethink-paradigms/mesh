@@ -1,0 +1,15 @@
+[Unit]
+Description=Mesh Daemon — Portable agent-body runtime
+After=network-online.target docker.service
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/mesh-daemon serve --config /etc/mesh/config.yaml
+Restart=on-failure
+RestartSec=5
+User=root
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
