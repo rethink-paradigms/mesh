@@ -36,9 +36,19 @@ builds:
       - CGO_ENABLED=0
 
 archives:
-  - formats: [tar.gz]
+  - id: mesh
+    ids: [mesh]
+    formats: [tar.gz]
     name_template: >-
-      {{ .ProjectName }}_
+      mesh_
+      {{- .Version }}_
+      {{- .Os }}_
+      {{- .Arch }}
+  - id: mesh-daemon
+    ids: [mesh-daemon]
+    formats: [tar.gz]
+    name_template: >-
+      mesh-daemon_
       {{- .Version }}_
       {{- .Os }}_
       {{- .Arch }}
@@ -64,6 +74,7 @@ changelog:
 
 brews:
   - name: mesh
+    ids: [mesh]
     repository:
       owner: rethink-paradigms
       name: homebrew-tap
