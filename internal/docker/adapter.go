@@ -68,7 +68,7 @@ func (a *Adapter) getClient() (*http.Client, error) {
 
 	a.client = &http.Client{
 		Transport: transport,
-		Timeout:   30 * time.Second,
+		Timeout:   5 * time.Minute,
 	}
 	return a.client, nil
 }
