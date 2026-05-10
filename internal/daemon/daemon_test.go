@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net"
 	"net/http"
 	"os"
 	"os/exec"
@@ -1041,5 +1042,57 @@ func TestDaemonReconcileDockerOrphan(t *testing.T) {
 	}
 	if d.reconcileSteps != 1 {
 		t.Fatalf("reconcileSteps = %d, want 1", d.reconcileSteps)
+	}
+}
+
+// startCaddyTestServer starts an HTTP server on 127.0.0.1:2019 for testing caddyDetected.
+// It skips the test if port 2019 is already in use.
+func startCaddyTestServer(t *testing.T, handler http.Handler) *http.Server {
+	t.Helper()
+	l, err := net.Listen("tcp", "127.0.0.1:2019")
+	if err != nil {
+		t.Skipf("port 2019 unavailable for test: %v", err)
+	}
+	srv := &http.Server{Handler: handler}
+	go srv.Serve(l)
+	return srv
+}
+
+func TestCaddyDetected_ConnectionRefused(t *testing.T) {
+	if caddyDetected() {
+		t.Error("caddyDetected() = true, want false (connection refused)")
+	}
+}
+
+func TestCaddyDetected_HTTP200(t *testing.T) {
+	srv := startCaddyTestServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	if !caddyDetected() {
+		t.Error("caddyDetected() = false, want true (HTTP 200)")
+	}
+}
+
+func TestCaddyDetected_HTTP500(t *testing.T) {
+	srv := startCaddyTestServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer srv.Close()
+
+	if caddyDetected() {
+		t.Error("caddyDetected() = true, want false (HTTP 500)")
+	}
+}
+
+func TestCaddyDetected_HTTP401(t *testing.T) {
+	srv := startCaddyTestServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized)
+	}))
+	defer srv.Close()
+
+	if caddyDetected() {
+		t.Error("caddyDetected() = true, want false (HTTP 401)")
 	}
 }

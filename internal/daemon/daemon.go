@@ -477,4 +477,19 @@ func (d *Daemon) removePIDFile() {
 	}
 }
 
+// caddyDetected checks whether a Caddy instance is running on this host
+// by querying the Caddy admin API at http://127.0.0.1:2019/config/.
+// Returns true only when the API responds with HTTP 200.
+func caddyDetected() bool {
+	client := &http.Client{
+		Timeout: 2 * time.Second,
+	}
+	resp, err := client.Get("http://127.0.0.1:2019/config/")
+	if err != nil {
+		return false
+	}
+	defer resp.Body.Close()
+	return resp.StatusCode == http.StatusOK
+}
+
 
