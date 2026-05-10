@@ -7,8 +7,23 @@ before:
     - go mod tidy
 
 builds:
-  - main: ./cmd/mesh/
+  - id: mesh
+    main: ./cmd/mesh/
     binary: mesh
+    goos:
+      - linux
+      - darwin
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w
+    env:
+      - CGO_ENABLED=0
+
+  - id: mesh-daemon
+    main: ./cmd/mesh-daemon/
+    binary: mesh-daemon
     goos:
       - linux
       - darwin
