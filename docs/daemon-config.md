@@ -20,7 +20,14 @@ plugin loading.
 | `pid_file` | string | No | `~/.mesh/mesh.pid` | PID file path |
 | `log_level` | string | No | `info` | One of: debug, info, warn, error |
 | `listen_addr` | string | No | `127.0.0.1:8080` | HTTP REST API listen address |
-| `auth_token` | string | **Yes** | -- | Bearer token for REST API authentication |
+| `auth_token` | string | **Yes** | -- | Bearer token for REST API authentication and heartbeat authentication to agent-bodies gateway |
+| `auth_mode` | string | No | `token` | Authentication mode: `token`, `jwt`, or `both` |
+| `auth0_domain` | string | Conditional | -- | Auth0 tenant domain (required when `auth_mode` is `jwt` or `both`) |
+| `auth0_audience` | string | Conditional | -- | Auth0 API audience identifier (required when `auth_mode` is `jwt` or `both`) |
+| `cluster_owner_id` | string | No | -- | Auth0 user ID that owns this cluster |
+| `cluster_id` | string | No | -- | Cluster UUID assigned by the agent-bodies gateway |
+| `gateway_url` | string | No | (empty) | URL of the agent-bodies gateway for heartbeat and registration. Empty string disables heartbeat. Example: `https://gateway.example.com` |
+| `heartbeat_interval_seconds` | int | No | `30` | Seconds between heartbeats to the gateway. Set to `0` to disable heartbeat (also disables when `gateway_url` is empty) |
 
 ### `store:` (StoreConfig)
 
@@ -71,6 +78,55 @@ A list of static body definitions the daemon should know about at startup.
 | `dir` | string | No | `~/.mesh/plugins` | Directory to load plugins from |
 | `enabled` | []string | No | -- | List of plugin names to enable |
 
+### `ingress:` (IngressConfig)
+
+| Field | Type | Required | Default | Description |
+|-------|------|----------|---------|-------------|
+| `adapter` | string | No | `noop` (auto-detected) | Ingress adapter to use. `caddy` for Caddy-based HTTP routing, `noop` for no routing, or empty to auto-detect |
+| `admin_url` | string | No | `http://127.0.0.1:2019` | Caddy admin API URL (only used when adapter is `caddy`) |
+| `port_pool_start` | int | No | `9000` | Start of the port pool range for exposed body ports |
+| `port_pool_end` | int | No | `9999` | End of the port pool range for exposed body ports |
+| `domain_suffix` | string | No | `.mesh.local` | Domain suffix appended to exposed body routes |
+
+**Caddy auto-detection behavior:**
+
+When `adapter` is empty or set to `"noop"`, the daemon automatically probes the
+Caddy admin API at `http://127.0.0.1:2019/config/`. If Caddy responds with
+HTTP 200, the adapter is automatically upgraded to `"caddy"`. If Caddy does not
+respond (not installed, not running, or on a different port), the adapter stays
+as `"noop"` and no HTTP routing is configured.
+
+When `adapter` is explicitly set to `"caddy"`, no auto-detection runs. The
+daemon uses Caddy regardless of whether it is actually reachable.
+
+To force no routing without auto-detection probing, set `adapter: "noop"`.
+
+### `agents_dir`
+
+| Field | Type | Required | Default | Description |
+|-------|------|----------|---------|-------------|
+| `agents_dir` | string | No | `~/.mesh/agents` | Directory containing agent manifest YAML files loaded at startup |
+
+## REST API: Agent Install Manifest
+
+The `POST /api/v1/agents/install` endpoint accepts an optional `manifest` field
+in the request body. This field contains inline YAML that defines or overrides
+the agent manifest for the installed agent.
+
+```json
+{
+  "agent_type": "hermes",
+  "name": "my-agent",
+  "env": { "LOG_LEVEL": "debug" },
+  "manifest": "name: agent\nimage: hermes:latest\n"
+}
+```
+
+When provided, the manifest is parsed by the daemon to extract agent
+configuration (name, image, etc.) and takes precedence over any manifest
+loaded from the agents directory. When omitted, the daemon uses the manifest
+from the configured `agents_dir`.
+
 ## Examples
 
 ### LITE mode (Docker adapter, no Nomad)
@@ -103,7 +159,7 @@ plugin:
 ### STANDARD mode (Nomad adapter, full fleet)
 
 Full production config with Nomad orchestrator, S3 artifact registry, static
-bodies, and plugin loading.
+bodies, plugin loading, gateway heartbeat, and ingress routing.
 
 ```yaml
 daemon:
@@ -112,6 +168,8 @@ daemon:
   log_level: "info"
   listen_addr: "0.0.0.0:8080"
   auth_token: "${DAEMON_TOKEN}"
+  gateway_url: "https://gateway.example.com"
+  heartbeat_interval_seconds: 30
 
 store:
   path: "/var/lib/mesh/state.db"
@@ -121,6 +179,13 @@ orchestrators:
     address: "http://nomad.service.consul:4646"
     region: "us-east-1"
     namespace: "mesh"
+
+ingress:
+  adapter: "caddy"
+  admin_url: "http://127.0.0.1:2019"
+  port_pool_start: 9000
+  port_pool_end: 9999
+  domain_suffix: ".mesh.example.com"
 
 bodies:
   - name: "build-worker"
@@ -152,6 +217,24 @@ plugin:
 ```
 
 ## Warnings
+
+### `auth_token` dual purpose
+
+The `auth_token` field serves two roles:
+1. **REST API authentication** -- sent as a Bearer token in `Authorization` headers
+2. **Heartbeat authentication** -- sent to the agent-bodies gateway at `gateway_url` to authenticate heartbeat requests
+
+When `gateway_url` is configured and heartbeat is enabled, the daemon sends
+periodic heartbeats using the same `auth_token` for authentication. Keep this
+token secure. If compromised, an attacker can impersonate the daemon to both
+the REST API and the gateway.
+
+### Ingress `adapter` port binding
+
+When using the `caddy` adapter, bodies with exposed HTTP ports are routed via
+Caddy reverse proxy. The port pool (`port_pool_start` to `port_pool_end`)
+defines the range of host ports available for port mapping. Ensure this range
+does not conflict with other services on the host.
 
 ### `auth_token` nesting
 
@@ -202,3 +285,8 @@ The daemon validates the following at startup:
 - **S3 registry**: When `registry.type` is `s3`, the `bucket` field is
   required. Missing it produces `config: registry bucket is required when
   type is s3`.
+- **Auth mode**: `auth_mode` must be one of `"token"`, `"jwt"`, or `"both"`.
+  Invalid values produce `config: auth_mode "X" is invalid`.
+- **Auth0 fields**: When `auth_mode` is `"jwt"` or `"both"`, both
+  `auth0_domain` and `auth0_audience` are required. Missing either produces
+  a `config: auth0_domain is required when auth_mode is "X"` error.
