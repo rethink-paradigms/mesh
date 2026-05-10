@@ -61,7 +61,8 @@ func ensureAlpineImage(t *testing.T) {
 		}
 	}
 
-	// Pull alpine:latest
+	// Pull alpine:latest. The Docker API returns a streaming JSON response;
+	// we must read the entire body to wait for the pull to complete.
 	t.Log("pulling alpine:latest image...")
 	req, _ = http.NewRequestWithContext(ctx, "POST", "http://localhost/images/create?fromImage=alpine:latest", nil)
 	resp, err = client.Do(req)
@@ -71,6 +72,10 @@ func ensureAlpineImage(t *testing.T) {
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("pull alpine:latest: status %d", resp.StatusCode)
+	}
+	// Read entire streaming body to wait for pull completion
+	if _, err := io.ReadAll(resp.Body); err != nil {
+		t.Fatalf("pull alpine:latest: read body: %v", err)
 	}
 	t.Log("alpine:latest pulled successfully")
 }
