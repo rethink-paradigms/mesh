@@ -12,6 +12,7 @@
 #   MESH_VERSION   - release tag to install (default: latest)
 #   MESH_BINDIR    - install directory (default: /usr/local/bin)
 #   MESH_DRY_RUN   - set to 1 to skip download and actual install (for testing)
+#   MESH_SKIP_INIT - set to 1 to skip 'mesh init' after install (for cloud-init)
 
 set -e
 
@@ -204,28 +205,50 @@ check_path() {
 
 # --- Post-install: init and verify ---
 post_install() {
+  MESH_CMD="${BINDIR}/mesh"
+
   if [ "$MESH_DRY_RUN" = "1" ]; then
-    ok "DRY-RUN: would run: mesh init"
+    if [ "$MESH_SKIP_INIT" = "1" ]; then
+      ok "DRY-RUN: MESH_SKIP_INIT=1, skipping mesh init"
+    else
+      ok "DRY-RUN: would run: mesh init"
+    fi
     ok "DRY-RUN: would run: mesh --version"
+    # Check if systemd service would be installed
+    SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+    if [ -d "/etc/systemd/system" ] && [ -f "${SCRIPT_DIR}/mesh-daemon.service" ]; then
+      ok "DRY-RUN: would install systemd service from ${SCRIPT_DIR}/mesh-daemon.service"
+    fi
     return
   fi
-
-  MESH_CMD="${BINDIR}/mesh"
 
   # Create ~/.mesh/ directory
   info "Creating ~/.mesh/..."
   mkdir -p "$HOME/.mesh"
   ok "Created $HOME/.mesh"
 
-  # Run mesh init
-  info "Running mesh init..."
-  "$MESH_CMD" init
-  ok "Mesh initialized"
+  # Run mesh init (unless skipped via MESH_SKIP_INIT)
+  if [ "$MESH_SKIP_INIT" = "1" ]; then
+    info "MESH_SKIP_INIT=1, skipping mesh init"
+  else
+    info "Running mesh init..."
+    "$MESH_CMD" init
+    ok "Mesh initialized"
+  fi
 
   # Verify installation
   info "Verifying installation..."
   "$MESH_CMD" --version
   ok "Mesh $(mesh --version) installed successfully"
+
+  # Install systemd service if available
+  SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+  if [ -d "/etc/systemd/system" ] && [ -f "${SCRIPT_DIR}/mesh-daemon.service" ]; then
+    info "Installing systemd service..."
+    cp "${SCRIPT_DIR}/mesh-daemon.service" /etc/systemd/system/mesh-daemon.service
+    systemctl daemon-reload
+    ok "Installed systemd service"
+  fi
 }
 
 # --- Cleanup ---
@@ -259,7 +282,11 @@ EOF
   install_binary
   check_path
   post_install
-  ok "Mesh is ready. Run 'mesh serve' to start the daemon."
+  if [ "$MESH_SKIP_INIT" = "1" ]; then
+    ok "Mesh installed (init skipped). Run 'mesh serve' to start the daemon."
+  else
+    ok "Mesh is ready. Run 'mesh serve' to start the daemon."
+  fi
 }
 
 main "$@"
