@@ -142,6 +142,94 @@ bodies:
 	}
 }
 
+func TestDaemonConfigGatewayURL(t *testing.T) {
+	content := `
+daemon:
+  gateway_url: "https://agent-bodies.example.com"
+registry:
+  type: s3
+  bucket: my-bucket
+plugin:
+  dir: /tmp
+bodies:
+  - name: agent1
+    image: alpine:latest
+`
+	path := writeConfig(t, content)
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if cfg.Daemon.GatewayURL != "https://agent-bodies.example.com" {
+		t.Errorf("GatewayURL = %q, want %q", cfg.Daemon.GatewayURL, "https://agent-bodies.example.com")
+	}
+}
+
+func TestDaemonConfigGatewayURLDefault(t *testing.T) {
+	content := `
+registry:
+  type: s3
+  bucket: my-bucket
+plugin:
+  dir: /tmp
+bodies:
+  - name: agent1
+    image: alpine:latest
+`
+	path := writeConfig(t, content)
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if cfg.Daemon.GatewayURL != "" {
+		t.Errorf("GatewayURL = %q, want empty string", cfg.Daemon.GatewayURL)
+	}
+}
+
+func TestDaemonConfigHeartbeatDefault(t *testing.T) {
+	content := `
+registry:
+  type: s3
+  bucket: my-bucket
+plugin:
+  dir: /tmp
+bodies:
+  - name: agent1
+    image: alpine:latest
+`
+	path := writeConfig(t, content)
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if cfg.Daemon.HeartbeatIntervalSeconds != 30 {
+		t.Errorf("HeartbeatIntervalSeconds = %d, want 30", cfg.Daemon.HeartbeatIntervalSeconds)
+	}
+}
+
+func TestDaemonConfigHeartbeatCustom(t *testing.T) {
+	content := `
+daemon:
+  heartbeat_interval_seconds: 60
+registry:
+  type: s3
+  bucket: my-bucket
+plugin:
+  dir: /tmp
+bodies:
+  - name: agent1
+    image: alpine:latest
+`
+	path := writeConfig(t, content)
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if cfg.Daemon.HeartbeatIntervalSeconds != 60 {
+		t.Errorf("HeartbeatIntervalSeconds = %d, want 60", cfg.Daemon.HeartbeatIntervalSeconds)
+	}
+}
+
 // TestLoadMissingRequiredFields verifies errors for missing required fields.
 func TestLoadMissingRequiredFields(t *testing.T) {
 	tests := []struct {

@@ -23,6 +23,9 @@ type DaemonConfig struct {
 	Auth0Audience  string `yaml:"auth0_audience"`   // Auth0 API audience identifier
 	ClusterOwnerID string `yaml:"cluster_owner_id"` // Auth0 user ID that owns this cluster
 	ClusterID      string `yaml:"cluster_id"`       // Cluster UUID assigned by gateway
+
+	GatewayURL              string `yaml:"gateway_url"`
+	HeartbeatIntervalSeconds int    `yaml:"heartbeat_interval_seconds"`
 }
 
 // AuthConfig holds authentication configuration for API consumption.
@@ -169,6 +172,9 @@ func applyDefaults(cfg *Config) {
 	}
 	if cfg.Daemon.ListenAddr == "" {
 		cfg.Daemon.ListenAddr = "127.0.0.1:8080"
+	}
+	if cfg.Daemon.HeartbeatIntervalSeconds == 0 {
+		cfg.Daemon.HeartbeatIntervalSeconds = 30
 	}
 	if cfg.Store.Path == "" {
 		home, err := os.UserHomeDir()
