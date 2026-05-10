@@ -25,6 +25,20 @@ type Client struct {
 	bodiesCount  func() int
 }
 
+// NewClient creates a new heartbeat client with the given configuration.
+func NewClient(gatewayURL, authToken, authMode, clusterID, version, tier, orchestrator string, bodiesCount func() int) *Client {
+	return &Client{
+		gatewayURL:   gatewayURL,
+		authToken:    authToken,
+		authMode:     authMode,
+		clusterID:    clusterID,
+		version:      version,
+		tier:         tier,
+		orchestrator: orchestrator,
+		bodiesCount:  bodiesCount,
+	}
+}
+
 // heartbeatPayload is the JSON shape sent on each heartbeat.
 type heartbeatPayload struct {
 	ClusterID    string `json:"cluster_id"`

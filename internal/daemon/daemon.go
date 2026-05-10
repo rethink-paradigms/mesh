@@ -17,6 +17,7 @@ import (
 	"github.com/rethink-paradigms/mesh/internal/body"
 	"github.com/rethink-paradigms/mesh/internal/config"
 	"github.com/rethink-paradigms/mesh/internal/docker"
+	"github.com/rethink-paradigms/mesh/internal/heartbeat"
 	"github.com/rethink-paradigms/mesh/internal/ingress"
 	"github.com/rethink-paradigms/mesh/internal/nomad"
 	"github.com/rethink-paradigms/mesh/internal/orchestrator"
@@ -55,6 +56,8 @@ type Daemon struct {
 	tier           string
 
 	ingress ingress.IngressAdapter
+
+	heartbeat *heartbeat.Client
 }
 
 func New(cfg *config.Config) (*Daemon, error) {
@@ -239,6 +242,31 @@ func (d *Daemon) Start(ctx context.Context) error {
 	defer d.stopAPIServer()
 
 	fmt.Fprintf(os.Stderr, "daemon: API server listening on %s\n", d.httpAddr)
+
+	// Start heartbeat goroutine if gateway URL is configured
+	if d.cfg.Daemon.GatewayURL != "" && d.cfg.Daemon.HeartbeatIntervalSeconds > 0 {
+		if d.cfg.Daemon.AuthMode == "jwt" && d.cfg.Daemon.AuthToken == "" {
+			fmt.Fprintf(os.Stderr, "daemon: heartbeat disabled: JWT-only mode requires auth_token for heartbeat\n")
+		} else {
+			var orchName string
+			if defOrch, err := d.orchRegistry.Default(); err == nil {
+				orchName = defOrch.Name()
+			}
+			d.heartbeat = heartbeat.NewClient(
+				d.cfg.Daemon.GatewayURL,
+				d.cfg.Daemon.AuthToken,
+				d.cfg.Daemon.AuthMode,
+				d.cfg.Daemon.ClusterID,
+				d.version,
+				d.tier,
+				orchName,
+				func() int { return d.bodyMgr.Count() },
+			)
+			interval := time.Duration(d.cfg.Daemon.HeartbeatIntervalSeconds) * time.Second
+			d.heartbeat.Start(ctx, interval)
+			fmt.Fprintf(os.Stderr, "daemon: heartbeat started to %s every %v\n", d.cfg.Daemon.GatewayURL, interval)
+		}
+	}
 
 	signal.Notify(d.sigs, syscall.SIGTERM, syscall.SIGINT)
 

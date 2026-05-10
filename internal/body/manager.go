@@ -34,6 +34,13 @@ func (bm *BodyManager) SetIngress(ing ingress.IngressAdapter) {
 	bm.ingress = ing
 }
 
+// Count returns the number of bodies currently managed.
+func (bm *BodyManager) Count() int {
+	bm.mu.Lock()
+	defer bm.mu.Unlock()
+	return len(bm.bodies)
+}
+
 func (bm *BodyManager) getOrCreateBody(id string) *Body {
 	bm.mu.Lock()
 	defer bm.mu.Unlock()

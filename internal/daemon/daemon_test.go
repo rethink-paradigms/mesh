@@ -6,10 +6,12 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"syscall"
 	"testing"
 	"time"
@@ -1094,5 +1096,122 @@ func TestCaddyDetected_HTTP401(t *testing.T) {
 
 	if caddyDetected() {
 		t.Error("caddyDetected() = true, want false (HTTP 401)")
+	}
+}
+
+func TestDaemonHeartbeatEnabled(t *testing.T) {
+	var received bool
+	mu := sync.Mutex{}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/internal/heartbeat" {
+			mu.Lock()
+			received = true
+			mu.Unlock()
+			w.WriteHeader(http.StatusOK)
+		}
+	}))
+	defer server.Close()
+
+	cfg := testConfig(t)
+	cfg.Daemon.GatewayURL = server.URL
+	cfg.Daemon.HeartbeatIntervalSeconds = 1
+
+	d, err := New(cfg)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() {
+		done <- d.Start(ctx)
+	}()
+
+	for i := 0; i < 50; i++ {
+		if d.Ready() {
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	if !d.Ready() {
+		cancel()
+		t.Fatal("daemon never became ready")
+	}
+
+	time.Sleep(1500 * time.Millisecond)
+
+	mu.Lock()
+	if !received {
+		mu.Unlock()
+		cancel()
+		t.Fatal("heartbeat POST was not received")
+	}
+	mu.Unlock()
+
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("Start did not return within timeout")
+	}
+}
+
+func TestDaemonHeartbeatDisabledEmptyGatewayURL(t *testing.T) {
+	cfg := testConfig(t)
+	cfg.Daemon.GatewayURL = ""
+	cfg.Daemon.HeartbeatIntervalSeconds = 1
+
+	d, err := New(cfg)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() {
+		done <- d.Start(ctx)
+	}()
+
+	for i := 0; i < 50; i++ {
+		if d.Ready() {
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	if !d.Ready() {
+		cancel()
+		t.Fatal("daemon never became ready")
+	}
+
+	if d.heartbeat != nil {
+		cancel()
+		t.Fatal("heartbeat client should be nil when gateway_url is empty")
+	}
+
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("Start did not return within timeout")
+	}
+}
+
+func TestDaemonHeartbeatDisabledJWTNoToken(t *testing.T) {
+	cfg := testConfig(t)
+	cfg.Daemon.AuthMode = "jwt"
+	cfg.Daemon.Auth0Domain = "test.auth0.com"
+	cfg.Daemon.Auth0Audience = "test-audience"
+	cfg.Daemon.AuthToken = ""
+	cfg.Daemon.GatewayURL = "http://127.0.0.1:9999"
+	cfg.Daemon.HeartbeatIntervalSeconds = 1
+
+	d, err := New(cfg)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	if d.heartbeat != nil {
+		t.Fatal("heartbeat client should be nil before Start()")
 	}
 }
