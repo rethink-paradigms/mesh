@@ -180,6 +180,24 @@ func (d *Daemon) Start(ctx context.Context) error {
 	pm.StartHealthChecks()
 	d.pluginMgr = pm
 
+	if err := d.reconcile(ctx); err != nil {
+		return fmt.Errorf("daemon: reconcile: %w", err)
+	}
+
+	// Auto-detect Caddy ingress adapter when not explicitly configured
+	if d.cfg.Ingress.Adapter == "" || d.cfg.Ingress.Adapter == "noop" {
+		if caddyDetected() {
+			if d.cfg.Ingress.AdminURL == "" {
+				d.cfg.Ingress.AdminURL = "http://127.0.0.1:2019"
+			}
+			d.cfg.Ingress.Adapter = "caddy"
+			fmt.Fprintf(os.Stderr, "daemon: info: caddy detected at %s, using caddy ingress adapter\n", d.cfg.Ingress.AdminURL)
+		}
+	}
+
+	// Create ingress adapter early so both installer and API server share it
+	d.ingress = d.createIngressAdapter()
+
 	// Wire agent installer from agents directory
 	if d.cfg.AgentsDir != "" {
 		manifests, err := agent.LoadManifestDir(d.cfg.AgentsDir)
@@ -187,14 +205,10 @@ func (d *Daemon) Start(ctx context.Context) error {
 			fmt.Fprintf(os.Stderr, "daemon: load agent manifests from %s: %v\n", d.cfg.AgentsDir, err)
 			// Not fatal — daemon can operate without agent installer
 		} else if len(manifests) > 0 {
-			d.installer = agent.NewInstaller(d.bodyMgr, ingress.NewNoopAdapter(), d.orchRegistry, manifests)
+			d.installer = agent.NewInstaller(d.bodyMgr, d.ingress, d.orchRegistry, manifests)
 		} else {
 			fmt.Fprintf(os.Stderr, "daemon: info: no agent manifests found in %s\n", d.cfg.AgentsDir)
 		}
-	}
-
-	if err := d.reconcile(ctx); err != nil {
-		return fmt.Errorf("daemon: reconcile: %w", err)
 	}
 
 	if err := d.writePIDFile(); err != nil {
@@ -362,35 +376,39 @@ func (d *Daemon) hasActiveMigration(ctx context.Context, bodyID string) bool {
 	return count > 0
 }
 
-func (d *Daemon) startAPIServer() error {
-	var primaryOrch orchestrator.OrchestratorAdapter
-	if names := d.orchRegistry.List(); len(names) > 0 {
-		primaryOrch, _ = d.orchRegistry.Open(names[0])
-	}
-
-	var ing ingress.IngressAdapter
+func (d *Daemon) createIngressAdapter() ingress.IngressAdapter {
 	switch d.cfg.Ingress.Adapter {
 	case "caddy":
-		ing = ingress.NewCaddyAdapter(ingress.CaddyConfig{
+		return ingress.NewCaddyAdapter(ingress.CaddyConfig{
 			AdminURL:      d.cfg.Ingress.AdminURL,
 			PortPoolStart: d.cfg.Ingress.PortPoolStart,
 			PortPoolEnd:   d.cfg.Ingress.PortPoolEnd,
 			DomainSuffix:  d.cfg.Ingress.DomainSuffix,
 		})
 	case "noop", "":
-		ing = ingress.NewNoopAdapter()
+		return ingress.NewNoopAdapter()
 	default:
 		fmt.Fprintf(os.Stderr, "daemon: unknown ingress adapter %q, falling back to noop\n", d.cfg.Ingress.Adapter)
-		ing = ingress.NewNoopAdapter()
+		return ingress.NewNoopAdapter()
 	}
-	d.ingress = ing
+}
+
+func (d *Daemon) startAPIServer() error {
+	var primaryOrch orchestrator.OrchestratorAdapter
+	if names := d.orchRegistry.List(); len(names) > 0 {
+		primaryOrch, _ = d.orchRegistry.Open(names[0])
+	}
+
+	if d.ingress == nil {
+		d.ingress = d.createIngressAdapter()
+	}
 
 	router := api.NewRouter(api.RouterConfig{
 		BodyManager:    d.bodyMgr,
 		BodyService:    d.bodySvc,
 		Store:          d.store,
 		Orchestrator:   primaryOrch,
-		Ingress:        ing,
+		Ingress:        d.ingress,
 		AuthToken:      d.cfg.Daemon.AuthToken,
 		AuthMode:       d.cfg.Daemon.AuthMode,
 		Auth0Domain:    d.cfg.Daemon.Auth0Domain,
