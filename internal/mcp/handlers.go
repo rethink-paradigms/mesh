@@ -822,6 +822,7 @@ func (s *Server) handleInstallAgent(ctx context.Context, params json.RawMessage)
 		AgentType string            `json:"agent_type"`
 		Name      string            `json:"name"`
 		Env       map[string]string `json:"env,omitempty"`
+		Manifest  string            `json:"manifest,omitempty"`
 	}
 	if err := json.Unmarshal(params, &p); err != nil {
 		return nil, &RPCError{Code: -32602, Message: "invalid params: " + err.Error()}
@@ -830,7 +831,7 @@ func (s *Server) handleInstallAgent(ctx context.Context, params json.RawMessage)
 		return nil, &RPCError{Code: -32602, Message: "agent_type and name are required"}
 	}
 
-	result, err := s.installer.Install(ctx, p.AgentType, p.Name, p.Env)
+	result, err := s.installer.Install(ctx, p.AgentType, p.Name, p.Env, p.Manifest)
 	if err != nil {
 		return nil, mapServiceError(err)
 	}

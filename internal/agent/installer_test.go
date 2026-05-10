@@ -89,7 +89,7 @@ func TestInstallAgent(t *testing.T) {
 	installer.healthPoll = func(context.Context, *AgentManifest, string) {}
 	ctx := context.Background()
 
-	result, err := installer.Install(ctx, "test-agent", "my-test", map[string]string{"API_KEY": "secret"})
+	result, err := installer.Install(ctx, "test-agent", "my-test", map[string]string{"API_KEY": "secret"}, "")
 	if err != nil {
 		t.Fatalf("Install: %v", err)
 	}
@@ -126,7 +126,7 @@ func TestInstallAgentMissingEnvVar(t *testing.T) {
 	installer := NewInstaller(bm, nil, nil, manifests)
 	ctx := context.Background()
 
-	_, err := installer.Install(ctx, "test-agent", "my-test", map[string]string{})
+	_, err := installer.Install(ctx, "test-agent", "my-test", map[string]string{}, "")
 	if err == nil {
 		t.Fatal("expected error for missing env var, got nil")
 	}
@@ -154,13 +154,13 @@ func TestInstallAgentDuplicateName(t *testing.T) {
 	ctx := context.Background()
 
 	// First install
-	_, err := installer.Install(ctx, "test-agent", "my-test", map[string]string{"API_KEY": "secret"})
+	_, err := installer.Install(ctx, "test-agent", "my-test", map[string]string{"API_KEY": "secret"}, "")
 	if err != nil {
 		t.Fatalf("first install: %v", err)
 	}
 
 	// Second install with same name
-	_, err = installer.Install(ctx, "test-agent", "my-test", map[string]string{"API_KEY": "secret"})
+	_, err = installer.Install(ctx, "test-agent", "my-test", map[string]string{"API_KEY": "secret"}, "")
 	if err == nil {
 		t.Fatal("expected error for duplicate name, got nil")
 	}
@@ -179,7 +179,7 @@ func TestInstallAgentUnknownType(t *testing.T) {
 	installer := NewInstaller(bm, nil, nil, map[string]*AgentManifest{})
 	ctx := context.Background()
 
-	_, err := installer.Install(ctx, "unknown-agent", "my-test", map[string]string{})
+	_, err := installer.Install(ctx, "unknown-agent", "my-test", map[string]string{}, "")
 	if err == nil {
 		t.Fatal("expected error for unknown type, got nil")
 	}

@@ -14,19 +14,19 @@ import (
 )
 
 type mockInstaller struct {
-	installFunc func(ctx context.Context, agentType, name string, env map[string]string) (*agent.InstallResult, error)
+	installFunc func(ctx context.Context, agentType, name string, env map[string]string, manifest string) (*agent.InstallResult, error)
 }
 
-func (m *mockInstaller) Install(ctx context.Context, agentType, name string, env map[string]string) (*agent.InstallResult, error) {
+func (m *mockInstaller) Install(ctx context.Context, agentType, name string, env map[string]string, manifest string) (*agent.InstallResult, error) {
 	if m.installFunc != nil {
-		return m.installFunc(ctx, agentType, name, env)
+		return m.installFunc(ctx, agentType, name, env, manifest)
 	}
 	return &agent.InstallResult{BodyID: "test-id", Name: name}, nil
 }
 
 func TestHandleInstallAgent(t *testing.T) {
 	installer := &mockInstaller{
-		installFunc: func(ctx context.Context, agentType, name string, env map[string]string) (*agent.InstallResult, error) {
+		installFunc: func(ctx context.Context, agentType, name string, env map[string]string, manifest string) (*agent.InstallResult, error) {
 			return &agent.InstallResult{
 				BodyID:         "body-123",
 				Name:           name,
@@ -115,7 +115,7 @@ func TestHandleInstallAgentMissingName(t *testing.T) {
 
 func TestHandleInstallAgentNotFound(t *testing.T) {
 	installer := &mockInstaller{
-		installFunc: func(ctx context.Context, agentType, name string, env map[string]string) (*agent.InstallResult, error) {
+		installFunc: func(ctx context.Context, agentType, name string, env map[string]string, manifest string) (*agent.InstallResult, error) {
 			return nil, &service.NotFoundError{ID: agentType}
 		},
 	}
@@ -137,7 +137,7 @@ func TestHandleInstallAgentNotFound(t *testing.T) {
 
 func TestHandleInstallAgentConflict(t *testing.T) {
 	installer := &mockInstaller{
-		installFunc: func(ctx context.Context, agentType, name string, env map[string]string) (*agent.InstallResult, error) {
+		installFunc: func(ctx context.Context, agentType, name string, env map[string]string, manifest string) (*agent.InstallResult, error) {
 			return nil, &service.ConflictError{State: "exists", Required: "unique name"}
 		},
 	}
@@ -159,7 +159,7 @@ func TestHandleInstallAgentConflict(t *testing.T) {
 
 func TestHandleInstallAgentValidationError(t *testing.T) {
 	installer := &mockInstaller{
-		installFunc: func(ctx context.Context, agentType, name string, env map[string]string) (*agent.InstallResult, error) {
+		installFunc: func(ctx context.Context, agentType, name string, env map[string]string, manifest string) (*agent.InstallResult, error) {
 			return nil, &service.ValidationError{Field: "env", Message: "required env var missing"}
 		},
 	}
@@ -202,6 +202,44 @@ func TestMapAgentInstallError(t *testing.T) {
 				t.Errorf("status = %d, want %d", status, tt.wantStatus)
 			}
 		})
+	}
+}
+
+func TestInstallAgentRequestManifestDeserialization(t *testing.T) {
+	// RED phase test: manifest field should deserialize from JSON
+	input := `{"agent_type":"test","name":"body1","manifest":"name: agent\nimage: test:latest"}`
+	var req InstallAgentRequest
+	if err := json.Unmarshal([]byte(input), &req); err != nil {
+		t.Fatalf("unmarshal with manifest: %v", err)
+	}
+	if req.Manifest != "name: agent\nimage: test:latest" {
+		t.Errorf("Manifest = %q, want %q", req.Manifest, "name: agent\nimage: test:latest")
+	}
+	if req.AgentType != "test" {
+		t.Errorf("AgentType = %q, want test", req.AgentType)
+	}
+	if req.Name != "body1" {
+		t.Errorf("Name = %q, want body1", req.Name)
+	}
+}
+
+func TestInstallAgentRequestNoManifest(t *testing.T) {
+	// Manifest should be empty string when not in JSON
+	input := `{"agent_type":"test","name":"body1"}`
+	var req InstallAgentRequest
+	if err := json.Unmarshal([]byte(input), &req); err != nil {
+		t.Fatalf("unmarshal without manifest: %v", err)
+	}
+	if req.Manifest != "" {
+		t.Errorf("Manifest = %q, want empty string", req.Manifest)
+	}
+	// omitempty should suppress manifest in output when empty
+	out, err := json.Marshal(req)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	if bytes.Contains(out, []byte("manifest")) {
+		t.Errorf("output %q should not contain manifest when empty (omitempty)", string(out))
 	}
 }
 

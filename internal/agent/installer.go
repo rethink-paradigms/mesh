@@ -43,15 +43,15 @@ func NewInstaller(bodyMgr *body.BodyManager, ing ingress.IngressAdapter, orchReg
 
 // Install installs an agent from a manifest.
 // Flow: resolve manifest → validate env → create body → allocate ports → start → health check → create routes.
-func (i *Installer) Install(ctx context.Context, agentType, name string, env map[string]string) (*InstallResult, error) {
+func (i *Installer) Install(ctx context.Context, agentType, name string, env map[string]string, manifest string) (*InstallResult, error) {
 	// 1. Resolve manifest
-	manifest, ok := i.manifests[agentType]
+	agentManifest, ok := i.manifests[agentType]
 	if !ok {
 		return nil, &service.NotFoundError{ID: agentType}
 	}
 
 	// 2. Validate required env vars
-	if err := ValidateEnv(manifest, env); err != nil {
+	if err := ValidateEnv(agentManifest, env); err != nil {
 		return nil, &service.ValidationError{Field: "env", Message: err.Error()}
 	}
 
@@ -68,7 +68,7 @@ func (i *Installer) Install(ctx context.Context, agentType, name string, env map
 
 	// 4. Merge env defaults (optional vars from manifest)
 	mergedEnv := make(map[string]string)
-	for _, key := range manifest.Env.Optional {
+	for _, key := range agentManifest.Env.Optional {
 		if val, ok := env[key]; ok {
 			mergedEnv[key] = val
 		}
@@ -78,8 +78,8 @@ func (i *Installer) Install(ctx context.Context, agentType, name string, env map
 	}
 
 	// 5. Build BodySpec from manifest
-	ports := make([]orchestrator.BodyPort, len(manifest.Ports))
-	for i, p := range manifest.Ports {
+	ports := make([]orchestrator.BodyPort, len(agentManifest.Ports))
+	for i, p := range agentManifest.Ports {
 		ports[i] = orchestrator.BodyPort{
 			Name:          p.Name,
 			ContainerPort: p.ContainerPort,
@@ -89,12 +89,12 @@ func (i *Installer) Install(ctx context.Context, agentType, name string, env map
 	}
 
 	spec := orchestrator.BodySpec{
-		Image:     manifest.Image,
+		Image:     agentManifest.Image,
 		Workdir:   "/workspace",
 		Env:       mergedEnv,
-		Cmd:       manifest.Command,
-		MemoryMB:  manifest.Resources.MemoryMB,
-		CPUShares: manifest.Resources.CPUShares,
+		Cmd:       agentManifest.Command,
+		MemoryMB:  agentManifest.Resources.MemoryMB,
+		CPUShares: agentManifest.Resources.CPUShares,
 		Ports:     ports,
 	}
 
@@ -109,7 +109,7 @@ func (i *Installer) Install(ctx context.Context, agentType, name string, env map
 	var accessURLs []string
 
 	if i.ingress != nil {
-		for _, p := range manifest.Ports {
+		for _, p := range agentManifest.Ports {
 			if !p.Expose {
 				continue
 			}
@@ -128,8 +128,8 @@ func (i *Installer) Install(ctx context.Context, agentType, name string, env map
 		}
 	}
 
-	if manifest.HealthCheck != nil && i.healthPoll != nil {
-		i.healthPoll(ctx, manifest, name)
+	if agentManifest.HealthCheck != nil && i.healthPoll != nil {
+		i.healthPoll(ctx, agentManifest, name)
 	}
 
 	return &InstallResult{
