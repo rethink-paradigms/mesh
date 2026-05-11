@@ -107,6 +107,14 @@ build_urls() {
   CHECKSUM_URL="${BASE_URL}/${CHECKSUM_NAME}"
 }
 
+# --- Build daemon download URLs ---
+build_daemon_urls() {
+  DAEMON_ARCHIVE_NAME="mesh-daemon_${VERSION}_${OS}_${ARCH}.tar.gz"
+  DAEMON_CHECKSUM_NAME="mesh_${VERSION}_checksums.txt"
+  DAEMON_ARCHIVE_URL="${BASE_URL}/${DAEMON_ARCHIVE_NAME}"
+  DAEMON_CHECKSUM_URL="${BASE_URL}/${DAEMON_CHECKSUM_NAME}"
+}
+
 # --- Download and verify ---
 download_and_verify() {
   TMPDIR=$(mktemp -d 2>/dev/null || mktemp -d -t mesh-install)
@@ -163,6 +171,60 @@ download_and_verify() {
   ok "Extracted"
 }
 
+# --- Download and verify daemon ---
+download_daemon() {
+  info "Downloading $DAEMON_ARCHIVE_URL ..."
+  if [ "$MESH_DRY_RUN" = "1" ]; then
+    ok "DRY-RUN: would download $DAEMON_ARCHIVE_URL"
+    mkdir -p "${TMPDIR}/daemon_extracted"
+    mkdir -p "${TMPDIR}/daemon_extracted/${DAEMON_ARCHIVE_NAME%.tar.gz}"
+    touch "${TMPDIR}/daemon_extracted/${DAEMON_ARCHIVE_NAME%.tar.gz}/mesh-daemon"
+    ok "DRY-RUN: created fake daemon archive at $TMPDIR"
+    DAEMON_ARCHIVE_DIR="${TMPDIR}/daemon_extracted"
+    return
+  fi
+
+  # Download daemon archive
+  if echo "$FETCH_CMD" | grep -q curl; then
+    curl -fsSL "$DAEMON_ARCHIVE_URL" -o "${TMPDIR}/${DAEMON_ARCHIVE_NAME}"
+  else
+    wget -q "$DAEMON_ARCHIVE_URL" -O "${TMPDIR}/${DAEMON_ARCHIVE_NAME}"
+  fi
+
+  # Download checksums (same file as mesh, may already exist from first download)
+  if [ ! -f "${TMPDIR}/${DAEMON_CHECKSUM_NAME}" ]; then
+    if echo "$FETCH_CMD" | grep -q curl; then
+      curl -fsSL "$DAEMON_CHECKSUM_URL" -o "${TMPDIR}/${DAEMON_CHECKSUM_NAME}" 2>/dev/null || \
+        warn "Checksum file not found, skipping verification"
+    else
+      wget -q "$DAEMON_CHECKSUM_URL" -O "${TMPDIR}/${DAEMON_CHECKSUM_NAME}" 2>/dev/null || \
+        warn "Checksum file not found, skipping verification"
+    fi
+  fi
+
+  # Verify checksum
+  if [ -f "${TMPDIR}/${DAEMON_CHECKSUM_NAME}" ]; then
+    info "Verifying SHA-256 checksum for daemon..."
+    if command -v sha256sum >/dev/null 2>&1; then
+      (cd "${TMPDIR}" && sha256sum -c "${DAEMON_CHECKSUM_NAME}" --ignore-missing 2>/dev/null) || \
+        die "Checksum verification failed for $DAEMON_ARCHIVE_NAME"
+    elif command -v shasum >/dev/null 2>&1; then
+      (cd "${TMPDIR}" && shasum -a 256 -c "${DAEMON_CHECKSUM_NAME}" --ignore-missing 2>/dev/null) || \
+        die "Checksum verification failed for $DAEMON_ARCHIVE_NAME"
+    else
+      warn "No sha256sum or shasum found, skipping checksum verification"
+    fi
+    ok "Checksum verified"
+  fi
+
+  # Extract archive
+  info "Extracting daemon..."
+  mkdir -p "${TMPDIR}/daemon_extracted"
+  tar -xzf "${TMPDIR}/${DAEMON_ARCHIVE_NAME}" -C "${TMPDIR}/daemon_extracted"
+  DAEMON_ARCHIVE_DIR="${TMPDIR}/daemon_extracted"
+  ok "Extracted daemon"
+}
+
 # --- Find the mesh binary in extracted files ---
 find_binary() {
   BINARY_PATH=$(find "$ARCHIVE_DIR" -type f -name "mesh" | head -1)
@@ -170,6 +232,15 @@ find_binary() {
     die "mesh binary not found in the archive"
   fi
   info "Found mesh binary at: $BINARY_PATH"
+}
+
+# --- Find the daemon binary in extracted files ---
+find_daemon_binary() {
+  DAEMON_BINARY_PATH=$(find "$DAEMON_ARCHIVE_DIR" -type f -name "mesh-daemon" | head -1)
+  if [ -z "$DAEMON_BINARY_PATH" ]; then
+    die "mesh-daemon binary not found in the archive"
+  fi
+  info "Found mesh-daemon binary at: $DAEMON_BINARY_PATH"
 }
 
 # --- Install the binary ---
@@ -194,6 +265,28 @@ install_binary() {
   fi
 }
 
+# --- Install the daemon binary ---
+install_daemon_binary() {
+  BINDIR="${MESH_BINDIR:-$DEFAULT_BINDIR}"
+
+  if [ "$MESH_DRY_RUN" = "1" ]; then
+    ok "DRY-RUN: would install mesh-daemon to $BINDIR/mesh-daemon"
+    return
+  fi
+
+  # Check if target is writable, use sudo if not
+  if [ -d "$BINDIR" ] && [ ! -w "$BINDIR" ]; then
+    info "Need sudo to install to $BINDIR"
+    sudo install -d "$BINDIR"
+    sudo install -m 755 "$DAEMON_BINARY_PATH" "$BINDIR/mesh-daemon"
+    ok "Installed mesh-daemon to $BINDIR/mesh-daemon (with sudo)"
+  else
+    mkdir -p "$BINDIR"
+    install -m 755 "$DAEMON_BINARY_PATH" "$BINDIR/mesh-daemon"
+    ok "Installed mesh-daemon to $BINDIR/mesh-daemon"
+  fi
+}
+
 # --- Check PATH ---
 check_path() {
   BINDIR="${MESH_BINDIR:-$DEFAULT_BINDIR}"
@@ -214,10 +307,8 @@ post_install() {
       ok "DRY-RUN: would run: mesh init"
     fi
     ok "DRY-RUN: would run: mesh --version"
-    # Check if systemd service would be installed
-    SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-    if [ -d "/etc/systemd/system" ] && [ -f "${SCRIPT_DIR}/mesh-daemon.service" ]; then
-      ok "DRY-RUN: would install systemd service from ${SCRIPT_DIR}/mesh-daemon.service"
+    if [ -d "/etc/systemd/system" ]; then
+      ok "DRY-RUN: would install systemd service from inline template"
     fi
     return
   fi
@@ -241,11 +332,26 @@ post_install() {
   "$MESH_CMD" --version
   ok "Mesh $(mesh --version) installed successfully"
 
-  # Install systemd service if available
-  SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-  if [ -d "/etc/systemd/system" ] && [ -f "${SCRIPT_DIR}/mesh-daemon.service" ]; then
+  # Install systemd service via inline template
+  if [ -d "/etc/systemd/system" ]; then
     info "Installing systemd service..."
-    cp "${SCRIPT_DIR}/mesh-daemon.service" /etc/systemd/system/mesh-daemon.service
+    cat > /etc/systemd/system/mesh-daemon.service << 'SERVICE'
+[Unit]
+Description=Mesh Daemon - Portable agent-body runtime
+After=network-online.target docker.service
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/mesh-daemon serve --config /etc/mesh/config.yaml
+Restart=on-failure
+RestartSec=5
+User=root
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
+SERVICE
     systemctl daemon-reload
     ok "Installed systemd service"
   fi
@@ -280,6 +386,10 @@ EOF
   download_and_verify
   find_binary
   install_binary
+  build_daemon_urls
+  download_daemon
+  find_daemon_binary
+  install_daemon_binary
   check_path
   post_install
   if [ "$MESH_SKIP_INIT" = "1" ]; then
