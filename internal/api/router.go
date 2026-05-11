@@ -27,26 +27,26 @@ func createJWTValidator(cfg RouterConfig) *JWTValidator {
 }
 
 type RouterConfig struct {
-	BodyManager  *body.BodyManager
-	BodyService  bodyServiceAdapter
-	Store        *store.Store
-	Orchestrator orchestrator.OrchestratorAdapter
-	Ingress      ingress.IngressAdapter
-	AuthToken     string
-	AuthMode      string
-	Auth0Domain   string
-	Auth0Audience string
-	ClusterOwnerID string
-	ClusterID     string
-	Version       string
-	Tier         string
-	OrchRegistry *orchestrator.Registry
-	Features     map[string]bool
-	Limits       CapabilityLimits
-	Uptime       time.Time // daemon start time, used for uptime calculation
-	Installer              Installer
-	JWTValidator           *JWTValidator
-	GatewayURL             string
+	BodyManager              *body.BodyManager
+	BodyService              bodyServiceAdapter
+	Store                    *store.Store
+	Orchestrator             orchestrator.OrchestratorAdapter
+	Ingress                  ingress.IngressAdapter
+	AuthToken                string
+	AuthMode                 string
+	Auth0Domain              string
+	Auth0Audience            string
+	ClusterOwnerID           string
+	ClusterID                string
+	Version                  string
+	Tier                     string
+	OrchRegistry             *orchestrator.Registry
+	Features                 map[string]bool
+	Limits                   CapabilityLimits
+	Uptime                   time.Time // daemon start time, used for uptime calculation
+	Installer                Installer
+	JWTValidator             *JWTValidator
+	GatewayURL               string
 	HeartbeatIntervalSeconds int
 }
 
@@ -82,6 +82,7 @@ func NewRouter(cfg RouterConfig) http.Handler {
 	apiMux.HandleFunc("GET /api/v1/capabilities", h.Capabilities)
 	apiMux.HandleFunc("GET /api/v1/status", h.Status)
 	apiMux.HandleFunc("POST /api/v1/agents/install", h.InstallAgent)
+	apiMux.HandleFunc("DELETE /api/v1/agents/{name}", h.UninstallAgent)
 
 	var validator *JWTValidator
 	if cfg.AuthMode == "jwt" || cfg.AuthMode == "both" {

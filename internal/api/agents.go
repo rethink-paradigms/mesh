@@ -13,6 +13,7 @@ import (
 
 type Installer interface {
 	Install(ctx context.Context, agentType, name string, env map[string]string, manifest string) (*agent.InstallResult, error)
+	Uninstall(ctx context.Context, agentName string) error
 }
 
 // InstallAgentRequest is the request payload for POST /api/v1/agents/install.
@@ -64,6 +65,35 @@ func (h *Handler) InstallAgent(w http.ResponseWriter, r *http.Request) {
 	}
 
 	WriteJSON(w, http.StatusCreated, result)
+}
+
+// @Summary Uninstall an agent
+// @Description Uninstalls an agent by name, destroying its body.
+// @Tags agents
+// @Security BearerAuth
+// @Param name path string true "Agent name"
+// @Success 200 {object} ActionResponse
+// @Failure 401 {object} ErrorResponse
+// @Failure 404 {object} ErrorResponse
+// @Failure 500 {object} ErrorResponse
+// @Router /api/v1/agents/{name} [delete]
+func (h *Handler) UninstallAgent(w http.ResponseWriter, r *http.Request) {
+	name := r.PathValue("name")
+	if name == "" {
+		WriteError(w, ErrCodeBadRequest, "agent name is required", http.StatusBadRequest)
+		return
+	}
+	if h.cfg.Installer == nil {
+		WriteError(w, ErrCodeInternal, "installer not configured", http.StatusInternalServerError)
+		return
+	}
+	err := h.cfg.Installer.Uninstall(r.Context(), name)
+	if err != nil {
+		code, status := mapAgentInstallError(err)
+		WriteError(w, code, fmt.Sprintf("uninstall agent: %v", err), status)
+		return
+	}
+	WriteJSON(w, http.StatusOK, ActionResponse{ID: name, State: "destroyed"})
 }
 
 func mapAgentInstallError(err error) (code string, status int) {

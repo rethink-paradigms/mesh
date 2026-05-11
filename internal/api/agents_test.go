@@ -14,7 +14,8 @@ import (
 )
 
 type mockInstaller struct {
-	installFunc func(ctx context.Context, agentType, name string, env map[string]string, manifest string) (*agent.InstallResult, error)
+	installFunc   func(ctx context.Context, agentType, name string, env map[string]string, manifest string) (*agent.InstallResult, error)
+	uninstallFunc func(ctx context.Context, agentName string) error
 }
 
 func (m *mockInstaller) Install(ctx context.Context, agentType, name string, env map[string]string, manifest string) (*agent.InstallResult, error) {
@@ -22,6 +23,13 @@ func (m *mockInstaller) Install(ctx context.Context, agentType, name string, env
 		return m.installFunc(ctx, agentType, name, env, manifest)
 	}
 	return &agent.InstallResult{BodyID: "test-id", Name: name}, nil
+}
+
+func (m *mockInstaller) Uninstall(ctx context.Context, agentName string) error {
+	if m.uninstallFunc != nil {
+		return m.uninstallFunc(ctx, agentName)
+	}
+	return nil
 }
 
 func TestHandleInstallAgent(t *testing.T) {
@@ -205,6 +213,91 @@ func TestMapAgentInstallError(t *testing.T) {
 	}
 }
 
+func TestHandleUninstallAgent(t *testing.T) {
+	installer := &mockInstaller{
+		uninstallFunc: func(ctx context.Context, agentName string) error {
+			return nil
+		},
+	}
+
+	cfg := RouterConfig{AuthToken: "test-token", Installer: installer}
+	h := NewHandler(cfg)
+
+	req := httptest.NewRequest("DELETE", "/api/v1/agents/my-hermes", nil)
+	req.SetPathValue("name", "my-hermes")
+	req.Header.Set("Authorization", "Bearer test-token")
+	rr := httptest.NewRecorder()
+
+	h.UninstallAgent(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Errorf("status = %d, want %d", rr.Code, http.StatusOK)
+	}
+
+	var resp ActionResponse
+	if err := json.NewDecoder(rr.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if resp.ID != "my-hermes" {
+		t.Errorf("ID = %q, want my-hermes", resp.ID)
+	}
+	if resp.State != "destroyed" {
+		t.Errorf("State = %q, want destroyed", resp.State)
+	}
+}
+
+func TestHandleUninstallAgentNotFound(t *testing.T) {
+	installer := &mockInstaller{
+		uninstallFunc: func(ctx context.Context, agentName string) error {
+			return &service.NotFoundError{ID: agentName}
+		},
+	}
+
+	cfg := RouterConfig{AuthToken: "test-token", Installer: installer}
+	h := NewHandler(cfg)
+
+	req := httptest.NewRequest("DELETE", "/api/v1/agents/nonexistent", nil)
+	req.SetPathValue("name", "nonexistent")
+	req.Header.Set("Authorization", "Bearer test-token")
+	rr := httptest.NewRecorder()
+
+	h.UninstallAgent(rr, req)
+
+	if rr.Code != http.StatusNotFound {
+		t.Errorf("status = %d, want %d", rr.Code, http.StatusNotFound)
+	}
+}
+
+func TestHandleUninstallAgentNoInstaller(t *testing.T) {
+	cfg := RouterConfig{AuthToken: "test-token", Installer: nil}
+	h := NewHandler(cfg)
+
+	req := httptest.NewRequest("DELETE", "/api/v1/agents/my-hermes", nil)
+	req.SetPathValue("name", "my-hermes")
+	req.Header.Set("Authorization", "Bearer test-token")
+	rr := httptest.NewRecorder()
+
+	h.UninstallAgent(rr, req)
+
+	if rr.Code != http.StatusInternalServerError {
+		t.Errorf("status = %d, want %d", rr.Code, http.StatusInternalServerError)
+	}
+}
+
+func TestHandleUninstallAgentNoAuth(t *testing.T) {
+	cfg := RouterConfig{AuthToken: "test-token", Installer: &mockInstaller{}}
+	router := NewRouter(cfg)
+
+	req := httptest.NewRequest("DELETE", "/api/v1/agents/my-hermes", nil)
+	rr := httptest.NewRecorder()
+
+	router.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusUnauthorized {
+		t.Errorf("status = %d, want %d", rr.Code, http.StatusUnauthorized)
+	}
+}
+
 func TestInstallAgentRequestManifestDeserialization(t *testing.T) {
 	// RED phase test: manifest field should deserialize from JSON
 	input := `{"agent_type":"test","name":"body1","manifest":"name: agent\nimage: test:latest"}`
@@ -302,5 +395,3 @@ func TestHandleInstallAgentRealInstaller(t *testing.T) {
 		t.Error("BodyID is empty")
 	}
 }
-
-

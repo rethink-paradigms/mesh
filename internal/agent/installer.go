@@ -150,6 +150,23 @@ func (i *Installer) Install(ctx context.Context, agentType, name string, env map
 	}, nil
 }
 
+// Uninstall uninstalls an agent by name, destroying its body.
+func (i *Installer) Uninstall(ctx context.Context, agentName string) error {
+	if i.bodyMgr == nil {
+		return fmt.Errorf("body manager not configured")
+	}
+	bodies, err := i.bodyMgr.List(ctx)
+	if err != nil {
+		return fmt.Errorf("list bodies: %w", err)
+	}
+	for _, b := range bodies {
+		if b.Name == agentName {
+			return i.bodyMgr.Destroy(ctx, b.ID)
+		}
+	}
+	return &service.NotFoundError{ID: agentName}
+}
+
 func (i *Installer) defaultPollHealth(ctx context.Context, manifest *AgentManifest, name string) {
 	if manifest.HealthCheck.Type != "http" {
 		return
