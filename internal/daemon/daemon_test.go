@@ -1216,3 +1216,72 @@ func TestDaemonHeartbeatDisabledJWTNoToken(t *testing.T) {
 		t.Fatal("heartbeat client should be nil before Start()")
 	}
 }
+
+// TestHealthzWiresGatewayURLAndHeartbeatInterval verifies that the daemon
+// passes GatewayURL and HeartbeatIntervalSeconds from config to the healthz handler.
+func TestHealthzWiresGatewayURLAndHeartbeatInterval(t *testing.T) {
+	cfg := testConfig(t)
+	cfg.Daemon.GatewayURL = "https://gateway.example.com"
+	cfg.Daemon.HeartbeatIntervalSeconds = 60
+
+	d, err := New(cfg)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	done := make(chan error)
+	go func() {
+		done <- d.Start(ctx)
+	}()
+
+	// Wait for daemon to be ready
+	var addr string
+	for i := 0; i < 50; i++ {
+		addr = d.HTTPAddr()
+		if addr != "" {
+			break
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	if addr == "" {
+		cancel()
+		t.Fatal("health server never started")
+	}
+
+	// Hit healthz endpoint
+	resp, err := http.Get("http://" + addr + "/healthz")
+	if err != nil {
+		cancel()
+		t.Fatalf("GET /healthz: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		cancel()
+		t.Fatalf("status = %d, want %d", resp.StatusCode, http.StatusOK)
+	}
+
+	var body map[string]interface{}
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		cancel()
+		t.Fatalf("decode response: %v", err)
+	}
+
+	// Verify heartbeat_enabled is true when both fields are set
+	if enabled, ok := body["heartbeat_enabled"].(bool); !ok || !enabled {
+		cancel()
+		t.Fatalf("heartbeat_enabled = %v, want true", body["heartbeat_enabled"])
+	}
+
+	// Verify gateway_url matches config
+	if gw, ok := body["gateway_url"].(string); !ok || gw != "https://gateway.example.com" {
+		cancel()
+		t.Fatalf("gateway_url = %v, want https://gateway.example.com", body["gateway_url"])
+	}
+
+	cancel()
+	<-done
+}

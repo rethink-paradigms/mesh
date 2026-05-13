@@ -449,6 +449,8 @@ func (d *Daemon) startAPIServer() error {
 		Features:       d.cfg.Features,
 		Uptime:         d.startedAt,
 		Installer:      d.installer,
+		GatewayURL:               d.cfg.Daemon.GatewayURL,
+		HeartbeatIntervalSeconds: d.cfg.Daemon.HeartbeatIntervalSeconds,
 	})
 
 	listenAddr := d.cfg.Daemon.ListenAddr
