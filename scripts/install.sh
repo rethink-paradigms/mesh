@@ -100,8 +100,10 @@ build_urls() {
   fi
 
   BASE_URL="https://github.com/${MESH_REPO}/releases/download/${RELEASE_TAG}"
-  ARCHIVE_NAME="mesh_${VERSION}_${OS}_${ARCH}.tar.gz"
-  CHECKSUM_NAME="mesh_${VERSION}_checksums.txt"
+  # Strip leading 'v' from VERSION for archive names — goreleaser's {{ .Version }} strips the 'v' prefix
+  ARCHIVE_VERSION="${VERSION#v}"
+  ARCHIVE_NAME="mesh_${ARCHIVE_VERSION}_${OS}_${ARCH}.tar.gz"
+  CHECKSUM_NAME="mesh_${ARCHIVE_VERSION}_checksums.txt"
 
   ARCHIVE_URL="${BASE_URL}/${ARCHIVE_NAME}"
   CHECKSUM_URL="${BASE_URL}/${CHECKSUM_NAME}"
@@ -109,8 +111,8 @@ build_urls() {
 
 # --- Build daemon download URLs ---
 build_daemon_urls() {
-  DAEMON_ARCHIVE_NAME="mesh-daemon_${VERSION}_${OS}_${ARCH}.tar.gz"
-  DAEMON_CHECKSUM_NAME="mesh_${VERSION}_checksums.txt"
+  DAEMON_ARCHIVE_NAME="mesh-daemon_${ARCHIVE_VERSION}_${OS}_${ARCH}.tar.gz"
+  DAEMON_CHECKSUM_NAME="mesh_${ARCHIVE_VERSION}_checksums.txt"
   DAEMON_ARCHIVE_URL="${BASE_URL}/${DAEMON_ARCHIVE_NAME}"
   DAEMON_CHECKSUM_URL="${BASE_URL}/${DAEMON_CHECKSUM_NAME}"
 }
