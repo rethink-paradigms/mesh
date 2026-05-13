@@ -1,0 +1,57 @@
+name: mesh-daemon
+role: on-vm-body-manager
+description: >
+  Go daemon that runs ON provisioned VMs. Manages agent body lifecycle,
+  8-state FSM, MCP tools, REST API on port 8080.
+  NOT deployed or managed from this workspace directly.
+
+direct_use: false
+runs_on: provisioned-vm
+accessed_via:
+  ssh: "ssh to VM for debugging and inspection only — read-only"
+  proxy: "agent-bodies daemon-proxy for production API calls"
+  mcp: "MCP tools on port 8080 when tunneled"
+
+capabilities:
+  healthz:
+    description: "Health check"
+    how: "GET http://<vm-ip>:8080/healthz"
+    note: "'degraded' expected in standalone/lite mode (no gateway configured)"
+  list_bodies:
+    description: "List agent bodies"
+    how: "GET /api/v1/bodies"
+    auth: JWT or daemon token
+  create_body:
+    description: "Create an agent body"
+    how: "POST /api/v1/bodies"
+    auth: JWT or daemon token
+  get_body:
+    description: "Get body details"
+    how: "GET /api/v1/bodies/{id}"
+    auth: JWT or daemon token
+  stop_body:
+    description: "Stop a body"
+    how: "POST /api/v1/bodies/{id}/stop"
+    auth: JWT or daemon token
+  start_body:
+    description: "Start a body"
+    how: "POST /api/v1/bodies/{id}/start"
+    auth: JWT or daemon token
+  destroy_body:
+    description: "Destroy a body"
+    how: "DELETE /api/v1/bodies/{id}"
+    auth: JWT or daemon token
+  list_nodes:   { description: "List cluster nodes", how: "GET /api/v1/nodes", auth: JWT or daemon token }
+  capabilities: { description: "List daemon capabilities", how: "GET /api/v1/capabilities", auth: JWT or daemon token }
+  status:       { description: "Daemon status", how: "GET /api/v1/status", auth: JWT or daemon token }
+  install_agent:   { description: "Install an agent manifest", how: "POST /api/v1/agents/install", auth: JWT or daemon token }
+  uninstall_agent: { description: "Uninstall an agent", how: "DELETE /api/v1/agents/{name}", auth: JWT or daemon token }
+  heartbeat:
+    description: "Sends heartbeats to agent-bodies (outbound from daemon)"
+    direction: outbound
+    target: "agent-bodies POST /api/internal/heartbeat"
+
+deployed_by: "mesh-provision via cloud-init"
+binary: "mesh/dist/ (built from this repo, uploaded to VM)"
+config_on_vm: "/etc/mesh/config.yaml"
+known_issues: "see KNOWN-ISSUES.md — ME-* issues"
