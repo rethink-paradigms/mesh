@@ -120,7 +120,6 @@ type HealthzResponse struct {
 	Status                string `json:"status"`
 	Version               string `json:"version"`
 	NomadConnected        bool   `json:"nomad_connected"`
-	ConsulConnected       bool   `json:"consul_connected"`
 	BodiesCount           int    `json:"bodies_count"`
 	NodesCount            int    `json:"nodes_count"`
 	OrchestratorConnected bool   `json:"orchestrator_connected"`

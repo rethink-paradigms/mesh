@@ -92,3 +92,31 @@ func TestHealthzWithHeartbeatDisabledZeroInterval(t *testing.T) {
 	assert.Equal(t, "https://gateway.example.com", resp.GatewayURL)
 	assert.False(t, resp.HeartbeatEnabled)
 }
+
+func TestHealthzNoConsulConnectedField(t *testing.T) {
+	reg := orchestrator.NewRegistry()
+	reg.Register("docker", &mockOrchAdapter{name: "docker", healthy: true})
+
+	cfg := RouterConfig{
+		Version:                  "0.1.0",
+		OrchRegistry:             reg,
+		Orchestrator:             &mockOrchAdapter{name: "docker", healthy: true},
+		GatewayURL:               "https://gateway.example.com",
+		HeartbeatIntervalSeconds: 30,
+	}
+	h := NewHandler(cfg)
+
+	req := httptest.NewRequest("GET", "/healthz", nil)
+	rr := httptest.NewRecorder()
+	h.Healthz(rr, req)
+
+	require.Equal(t, http.StatusOK, rr.Code)
+
+	// Verify the JSON response does NOT contain consul_connected key
+	var rawResp map[string]interface{}
+	err := json.NewDecoder(rr.Body).Decode(&rawResp)
+	require.NoError(t, err)
+
+	_, exists := rawResp["consul_connected"]
+	assert.False(t, exists, "consul_connected field should not exist in healthz response")
+}

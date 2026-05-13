@@ -43,7 +43,6 @@ func (h *Handler) Healthz(w http.ResponseWriter, r *http.Request) {
 		Status:                status,
 		Version:               h.cfg.Version,
 		NomadConnected:        nomadConnected,
-		ConsulConnected:       false,
 		BodiesCount:           bodiesCount,
 		NodesCount:            nodesCount,
 		OrchestratorConnected: nomadConnected,
