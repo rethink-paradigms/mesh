@@ -423,8 +423,8 @@ func (d *Daemon) createIngressAdapter() ingress.IngressAdapter {
 
 func (d *Daemon) startAPIServer() error {
 	var primaryOrch orchestrator.OrchestratorAdapter
-	if names := d.orchRegistry.List(); len(names) > 0 {
-		primaryOrch, _ = d.orchRegistry.Open(names[0])
+	if adp, err := d.orchRegistry.Default(); err == nil {
+		primaryOrch = adp
 	}
 
 	if d.ingress == nil {

@@ -120,3 +120,83 @@ func TestHealthzNoConsulConnectedField(t *testing.T) {
 	_, exists := rawResp["consul_connected"]
 	assert.False(t, exists, "consul_connected field should not exist in healthz response")
 }
+
+func TestHealthzStandardNomadHealthy(t *testing.T) {
+	reg := orchestrator.NewRegistry()
+	reg.Register("docker", &mockOrchAdapter{name: "docker", healthy: false})
+	reg.Register("nomad", &mockOrchAdapter{name: "nomad", healthy: true})
+	_ = reg.SetDefault("nomad")
+
+	cfg := RouterConfig{
+		Version:      "0.1.0",
+		Tier:         "STANDARD",
+		OrchRegistry: reg,
+		Orchestrator: &mockOrchAdapter{name: "nomad", healthy: true},
+	}
+	h := NewHandler(cfg)
+
+	req := httptest.NewRequest("GET", "/healthz", nil)
+	rr := httptest.NewRecorder()
+	h.Healthz(rr, req)
+
+	require.Equal(t, http.StatusOK, rr.Code)
+
+	var resp HealthzResponse
+	err := json.NewDecoder(rr.Body).Decode(&resp)
+	require.NoError(t, err)
+
+	assert.Equal(t, "healthy", resp.Status)
+	assert.True(t, resp.NomadConnected)
+}
+
+func TestHealthzLiteDockerHealthy(t *testing.T) {
+	reg := orchestrator.NewRegistry()
+	reg.Register("docker", &mockOrchAdapter{name: "docker", healthy: true})
+	_ = reg.SetDefault("docker")
+
+	cfg := RouterConfig{
+		Version:      "0.1.0",
+		Tier:         "LITE",
+		OrchRegistry: reg,
+		Orchestrator: &mockOrchAdapter{name: "docker", healthy: true},
+	}
+	h := NewHandler(cfg)
+
+	req := httptest.NewRequest("GET", "/healthz", nil)
+	rr := httptest.NewRecorder()
+	h.Healthz(rr, req)
+
+	require.Equal(t, http.StatusOK, rr.Code)
+
+	var resp HealthzResponse
+	err := json.NewDecoder(rr.Body).Decode(&resp)
+	require.NoError(t, err)
+
+	assert.Equal(t, "healthy", resp.Status)
+}
+
+func TestHealthzLiteNeverDegraded(t *testing.T) {
+	reg := orchestrator.NewRegistry()
+	reg.Register("docker", &mockOrchAdapter{name: "docker", healthy: false})
+	_ = reg.SetDefault("docker")
+
+	cfg := RouterConfig{
+		Version:      "0.1.0",
+		Tier:         "LITE",
+		OrchRegistry: reg,
+		Orchestrator: &mockOrchAdapter{name: "docker", healthy: false},
+	}
+	h := NewHandler(cfg)
+
+	req := httptest.NewRequest("GET", "/healthz", nil)
+	rr := httptest.NewRecorder()
+	h.Healthz(rr, req)
+
+	require.Equal(t, http.StatusOK, rr.Code)
+
+	var resp HealthzResponse
+	err := json.NewDecoder(rr.Body).Decode(&resp)
+	require.NoError(t, err)
+
+	assert.Equal(t, "healthy", resp.Status)
+}

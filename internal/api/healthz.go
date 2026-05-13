@@ -33,7 +33,7 @@ func (h *Handler) Healthz(w http.ResponseWriter, r *http.Request) {
 	}
 
 	status := "healthy"
-	if !nomadConnected {
+	if h.cfg.Tier != "LITE" && !nomadConnected {
 		status = "degraded"
 	}
 

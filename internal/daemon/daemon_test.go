@@ -1285,3 +1285,70 @@ func TestHealthzWiresGatewayURLAndHeartbeatInterval(t *testing.T) {
 	cancel()
 	<-done
 }
+
+func TestStartAPIServerSTANDARDUsesNomad(t *testing.T) {
+	cfg := testConfig(t)
+	d, err := New(cfg)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	s, err := store.Open(cfg.Store.Path)
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	d.store = s
+	defer s.Close()
+
+	reg := orchestrator.NewRegistry()
+	if err := reg.Register("docker", &mockOrchestratorUnhealthy{}); err != nil {
+		t.Fatalf("register docker: %v", err)
+	}
+	if err := reg.Register("nomad", &mockOrchestrator{}); err != nil {
+		t.Fatalf("register nomad: %v", err)
+	}
+	if err := reg.SetDefault("nomad"); err != nil {
+		t.Fatalf("SetDefault nomad: %v", err)
+	}
+	d.orchRegistry = reg
+	d.tier = "STANDARD"
+
+	if err := d.startAPIServer(); err != nil {
+		t.Fatalf("startAPIServer: %v", err)
+	}
+	defer d.stopAPIServer()
+
+	var addr string
+	for i := 0; i < 50; i++ {
+		addr = d.HTTPAddr()
+		if addr != "" {
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	if addr == "" {
+		t.Fatal("API server never started")
+	}
+
+	resp, err := http.Get("http://" + addr + "/healthz")
+	if err != nil {
+		t.Fatalf("GET /healthz: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want %d", resp.StatusCode, http.StatusOK)
+	}
+
+	var body map[string]interface{}
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+
+	if body["status"] != "healthy" {
+		t.Fatalf("status = %v, want healthy", body["status"])
+	}
+	if body["nomad_connected"] != true {
+		t.Fatalf("nomad_connected = %v, want true", body["nomad_connected"])
+	}
+}
