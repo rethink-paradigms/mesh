@@ -100,7 +100,7 @@ build_urls() {
   fi
 
   BASE_URL="https://github.com/${MESH_REPO}/releases/download/${RELEASE_TAG}"
-  # Strip leading 'v' from VERSION for archive names — goreleaser's {{ .Version }} strips the 'v' prefix
+  # Strip leading 'v' from VERSION for archive names -- goreleaser's {{ .Version }} strips the 'v' prefix
   ARCHIVE_VERSION="${VERSION#v}"
   ARCHIVE_NAME="mesh_${ARCHIVE_VERSION}_${OS}_${ARCH}.tar.gz"
   CHECKSUM_NAME="mesh_${ARCHIVE_VERSION}_checksums.txt"
@@ -110,6 +110,9 @@ build_urls() {
 }
 
 # --- Build daemon download URLs ---
+# PREREQUISITE: mesh-daemon binary must be published to GitHub Releases before
+# this script can successfully download and install it. See ME-03 (deferred).
+# Archive naming: mesh-daemon_{version}_{os}_{arch}.tar.gz (no 'v' prefix in version).
 build_daemon_urls() {
   DAEMON_ARCHIVE_NAME="mesh-daemon_${ARCHIVE_VERSION}_${OS}_${ARCH}.tar.gz"
   DAEMON_CHECKSUM_NAME="mesh_${ARCHIVE_VERSION}_checksums.txt"
