@@ -26,6 +26,7 @@ type DaemonConfig struct {
 
 	GatewayURL              string `yaml:"gateway_url"`
 	HeartbeatIntervalSeconds int    `yaml:"heartbeat_interval_seconds"`
+	HeartbeatEnabled        bool   `yaml:"-"`
 }
 
 // AuthConfig holds authentication configuration for API consumption.
@@ -176,6 +177,7 @@ func applyDefaults(cfg *Config) {
 	if cfg.Daemon.HeartbeatIntervalSeconds == 0 {
 		cfg.Daemon.HeartbeatIntervalSeconds = 30
 	}
+	cfg.Daemon.HeartbeatEnabled = cfg.Daemon.HeartbeatIntervalSeconds > 0 && cfg.Daemon.GatewayURL != ""
 	if cfg.Store.Path == "" {
 		home, err := os.UserHomeDir()
 		if err == nil {
@@ -271,11 +273,8 @@ func validate(cfg *Config) error {
 		}
 	}
 	if cfg.Plugin.Dir != "" {
-		if _, err := os.Stat(cfg.Plugin.Dir); err != nil {
-			if os.Getenv("MESH_TESTING") == "" {
-				return fmt.Errorf("config: plugin dir %q does not exist", cfg.Plugin.Dir)
-			}
-			_ = os.MkdirAll(cfg.Plugin.Dir, 0755)
+		if err := os.MkdirAll(cfg.Plugin.Dir, 0755); err != nil {
+			return fmt.Errorf("config: create plugin dir %q: %w", cfg.Plugin.Dir, err)
 		}
 	}
 	if addr := cfg.Orchestrators["nomad"]["address"]; addr != "" {
