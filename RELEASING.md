@@ -1,22 +1,47 @@
 # Releasing Mesh
 
-Mesh uses [GoReleaser](https://goreleaser.com) and GitHub Actions for automated releases.
+Mesh releases are **fully automated**. Every merge to `main` cuts a new release — no human steps required.
+
+## How it works
+
+```
+merge to main
+    │
+    ▼
+┌─────────────────┐
+│  CI: vet + test │  ← gate: must pass before any release
+└────────┬────────┘
+         │
+         ▼
+┌─────────────────────────────┐
+│  Auto-bump patch version    │  ← internal/version/version.go
+│  Commit with [skip ci]      │  ← avoids infinite loop
+│  Tag (semver, no v prefix)  │  ← e.g. 1.0.1
+│  Push commit + tag          │
+└────────┬────────────────────┘
+         │
+         ▼
+┌─────────────────────────────┐
+│  GoReleaser builds + publishes │
+│  • mesh binary (Linux/macOS) │
+│  • mesh-daemon binary        │
+│  • archives + checksums      │
+│  • GitHub Release            │
+└─────────────────────────────┘
+```
 
 ## Version source of truth
 
 The version lives in one place:
 
-```
-internal/version/version.go
-```
-
 ```go
+// internal/version/version.go
 const Version = "1.0.0"
 ```
 
-Every binary, API response, and MCP capability report reads from this constant.
+Every binary, API response, and MCP capability report reads from this constant. The release workflow auto-increments the patch component on every merge.
 
-## Release tags
+## Tag format
 
 Tags are **semver without a `v` prefix**:
 
@@ -27,56 +52,47 @@ Tags are **semver without a `v` prefix**:
 
 This keeps archive names, checksums, and install URLs clean and consistent.
 
-## Release checklist
+## What triggers a release
 
-1. **Bump the version constant**
-   ```bash
-   # Edit internal/version/version.go
-   const Version = "1.0.1"  # or whatever the next version is
-   ```
+Any push to `main` that passes vet + test triggers the pipeline. This includes:
 
-2. **Commit the bump**
-   ```bash
-   git add internal/version/version.go
-   git commit -m "chore(release): bump version to 1.0.1"
-   git push origin main
-   ```
+- Merged pull requests
+- Direct pushes (discouraged but handled)
 
-3. **Tag and push**
-   ```bash
-   git tag -a 1.0.1 -m "Release 1.0.1"
-   git push origin 1.0.1
-   ```
+The workflow uses `[skip ci]` in the version-bump commit to prevent infinite loops.
 
-4. **GitHub Actions does the rest**
-   - Builds `mesh` and `mesh-daemon` for Linux/macOS amd64/arm64
-   - Creates archives: `mesh_1.0.1_linux_amd64.tar.gz`, `mesh-daemon_1.0.1_linux_amd64.tar.gz`, etc.
-   - Generates checksums
-   - Publishes the GitHub Release with auto-generated changelog
+## What the VM gets
 
-5. **Verify**
-   ```bash
-   curl -fsSL https://github.com/rethink-paradigms/mesh/releases/download/1.0.1/install.sh | sh
-   mesh --version   # should print 1.0.1
-   ```
-
-## Install script
-
-The install script auto-detects the latest release from the GitHub API:
+The install script queries GitHub for the latest release:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/rethink-paradigms/mesh/main/scripts/install.sh | sh
 ```
 
-To pin a version:
+Because releases are cut on every merge, `releases/latest` always points to the code at `main` HEAD. There is no drift between working tree and deployed binary.
+
+## Manual override (emergency only)
+
+If you need to cut a release outside the normal merge flow (e.g. hotfix on a release branch):
 
 ```bash
-MESH_VERSION=1.0.1 curl -fsSL ... | sh
+# 1. Bump the version constant manually
+vim internal/version/version.go   # edit const Version
+
+# 2. Commit and push
+git add internal/version/version.go
+git commit -m "chore(release): bump version to 1.0.1"
+git push origin main
+
+# 3. Tag and push (the workflow is already triggered by the push,
+#    but if you need to tag a specific commit without pushing to main)
+git tag -a 1.0.1 -m "Release 1.0.1"
+git push origin 1.0.1
 ```
 
 ## For downstream provisioning tools
 
-Provisioning systems that need to know the latest stable version can query the GitHub API:
+Provisioning systems that need the latest stable version query the GitHub API:
 
 ```bash
 curl -fsSL https://api.github.com/repos/rethink-paradigms/mesh/releases/latest | jq -r '.tag_name'
