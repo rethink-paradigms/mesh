@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -434,6 +435,26 @@ func (d *Daemon) Start(ctx context.Context) error {
 						})
 					}
 					return result
+				},
+				func() string {
+					addr := d.HTTPAddr()
+					if addr == "" {
+						return ""
+					}
+					// addr is host:port from net.Listen
+					_, port, err := net.SplitHostPort(addr)
+					if err != nil {
+						// Try parsing as URL (127.0.0.1:8080 without brackets case)
+						if u, uErr := url.Parse("//" + addr); uErr == nil && u.Port() != "" {
+							return u.Port()
+						}
+						// If MESH_PORT is set, use that
+						if p := os.Getenv("MESH_PORT"); p != "" {
+							return p
+						}
+						return ""
+					}
+					return port
 				},
 			)
 			interval := time.Duration(d.cfg.Daemon.HeartbeatIntervalSeconds) * time.Second

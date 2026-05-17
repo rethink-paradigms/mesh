@@ -46,6 +46,7 @@ type Client struct {
 	bodiesCount  func() int
 	healthStatus func(context.Context) string
 	listBodies   func() []HeartbeatBodyInfo
+	portSource   func() string
 
 	mu                  sync.RWMutex
 	lastSuccess         time.Time
@@ -57,7 +58,8 @@ type Client struct {
 // NewClient creates a new heartbeat client with the given configuration.
 // healthStatus is optional; if nil, status defaults to "healthy".
 // listBodies is optional; if nil, bodies are omitted from the payload.
-func NewClient(gatewayURL, authToken, authMode, clusterID, version, tier, orchestrator string, bodiesCount func() int, healthStatus func(context.Context) string, listBodies func() []HeartbeatBodyInfo) *Client {
+// portSource is optional; if nil, no port is sent in the heartbeat payload.
+func NewClient(gatewayURL, authToken, authMode, clusterID, version, tier, orchestrator string, bodiesCount func() int, healthStatus func(context.Context) string, listBodies func() []HeartbeatBodyInfo, portSource func() string) *Client {
 	return &Client{
 		gatewayURL:   gatewayURL,
 		authToken:    authToken,
@@ -69,6 +71,7 @@ func NewClient(gatewayURL, authToken, authMode, clusterID, version, tier, orches
 		bodiesCount:  bodiesCount,
 		healthStatus: healthStatus,
 		listBodies:   listBodies,
+		portSource:   portSource,
 	}
 }
 
@@ -81,6 +84,7 @@ type heartbeatPayload struct {
 	Tier         string              `json:"tier"`
 	Orchestrator string              `json:"orchestrator"`
 	Bodies       []HeartbeatBodyInfo `json:"bodies,omitempty"`
+	Port         string              `json:"port,omitempty"`
 }
 
 // Status returns the current gateway connectivity status.
@@ -147,6 +151,10 @@ func (c *Client) sendHeartbeat(ctx context.Context) error {
 		Version:      c.version,
 		Tier:         c.tier,
 		Orchestrator: c.orchestrator,
+	}
+
+	if c.portSource != nil {
+		payload.Port = c.portSource()
 	}
 
 	if c.listBodies != nil {
