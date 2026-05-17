@@ -428,7 +428,7 @@ func (s *Store) DeleteBodyByCluster(ctx context.Context, id, clusterID string) e
 	if err != nil {
 		return fmt.Errorf("begin tx: %w", err)
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 
 	_, err = tx.ExecContext(ctx, `DELETE FROM snapshots WHERE body_id = ?`, id)
 	if err != nil {
@@ -529,7 +529,7 @@ func (s *Store) DeleteBody(ctx context.Context, id string) error {
 	if err != nil {
 		return fmt.Errorf("begin tx: %w", err)
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 
 	_, err = tx.ExecContext(ctx, `DELETE FROM snapshots WHERE body_id = ?`, id)
 	if err != nil {

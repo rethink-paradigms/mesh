@@ -34,7 +34,7 @@ type ErrorResponse struct {
 func WriteError(w http.ResponseWriter, code string, message string, status int) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(ErrorResponse{
+	_ = json.NewEncoder(w).Encode(ErrorResponse{
 		Error: APIError{
 			Code:    code,
 			Message: message,
@@ -47,5 +47,5 @@ func WriteError(w http.ResponseWriter, code string, message string, status int) 
 func WriteJSON(w http.ResponseWriter, status int, v interface{}) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(v)
+	_ = json.NewEncoder(w).Encode(v)
 }

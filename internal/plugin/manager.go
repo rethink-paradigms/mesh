@@ -120,7 +120,7 @@ func (pm *PluginManager) Scan() (map[string]string, error) {
 			continue
 		case <-time.After(800 * time.Millisecond):
 			if cmd.Process != nil {
-				cmd.Process.Kill()
+				_ = cmd.Process.Kill()
 			}
 			cancel()
 		}

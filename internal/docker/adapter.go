@@ -56,9 +56,7 @@ func (a *Adapter) getClient() (*http.Client, error) {
 	if socketPath == "" {
 		socketPath = "/var/run/docker.sock"
 	}
-	if strings.HasPrefix(socketPath, "unix://") {
-		socketPath = strings.TrimPrefix(socketPath, "unix://")
-	}
+	socketPath = strings.TrimPrefix(socketPath, "unix://")
 
 	transport := &http.Transport{
 		DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {

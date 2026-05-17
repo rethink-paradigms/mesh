@@ -213,7 +213,7 @@ func (c *CaddyAdapter) ListRoutes(ctx context.Context) ([]Route, error) {
 		if len(r.Handle) > 0 && len(r.Handle[0].Upstreams) > 0 {
 			dial := r.Handle[0].Upstreams[0].Dial
 			var host string
-			fmt.Sscanf(dial, "%[^:]:%d", &host, &port)
+			_, _ = fmt.Sscanf(dial, "%[^:]:%d", &host, &port)
 			upstream = host
 		}
 		routes = append(routes, Route{

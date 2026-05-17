@@ -48,6 +48,7 @@ type RouterConfig struct {
 	JWTValidator             *JWTValidator
 	GatewayURL               string
 	HeartbeatIntervalSeconds int
+	RegistryManager          RegistryManager // hot-swappable S3 registry (optional)
 }
 
 type bodyServiceAdapter interface {
@@ -83,6 +84,10 @@ func NewRouter(cfg RouterConfig) http.Handler {
 	apiMux.HandleFunc("GET /api/v1/status", h.Status)
 	apiMux.HandleFunc("POST /api/v1/agents/install", h.InstallAgent)
 	apiMux.HandleFunc("DELETE /api/v1/agents/{name}", h.UninstallAgent)
+
+	apiMux.HandleFunc("POST /api/v1/registry/s3", h.configureS3Registry)
+	apiMux.HandleFunc("DELETE /api/v1/registry/s3", h.disconnectS3Registry)
+	apiMux.HandleFunc("GET /api/v1/registry/status", h.registryStatus)
 
 	var validator *JWTValidator
 	if cfg.AuthMode == "jwt" || cfg.AuthMode == "both" {

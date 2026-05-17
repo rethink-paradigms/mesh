@@ -68,6 +68,15 @@ func NewMigrationCoordinator(s *store.Store, bm *BodyManager, orchRegistry *orch
 	}
 }
 
+// SetRegistry hot-swaps the registry on a running MigrationCoordinator.
+// Pass nil to clear it (falls back to same-machine migration).
+// Thread-safe: uses mc.mu to guard the registry field.
+func (mc *MigrationCoordinator) SetRegistry(r Registry) {
+	mc.mu.Lock()
+	defer mc.mu.Unlock()
+	mc.registry = r
+}
+
 func (mc *MigrationCoordinator) buildSteps() []struct {
 	name string
 	fn   stepFunc

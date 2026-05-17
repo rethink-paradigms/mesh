@@ -488,7 +488,7 @@ func newStopCmd() *cobra.Command {
 			}
 
 			fmt.Fprintln(cmd.ErrOrStderr(), "Warning: daemon did not stop within timeout, sending SIGKILL")
-			proc.Signal(syscall.SIGKILL)
+			_ = proc.Signal(syscall.SIGKILL)
 			return nil
 		},
 	}
@@ -543,15 +543,9 @@ func newStatusCmd() *cobra.Command {
 				return nil
 			}
 
-			// Process is alive — try to query health endpoint
-			healthAddr := cfg.Daemon.SocketPath
-			if healthAddr == "" {
-				healthAddr = "/tmp/mesh.sock"
-			}
-
-			// The daemon's health server listens on a TCP port, not the socket path.
-			// We need to discover it. Since we can't easily know the port, we'll just
-			// report the PID and basic status.
+			// Process is alive — report PID and basic status.
+			// Note: healthAddr discovery is not implemented because the daemon binds
+			// to a random TCP port. We report the PID only.
 			fmt.Fprintf(cmd.OutOrStdout(), "Mesh daemon: running (pid %d)\n", pid)
 
 			// Try to query health endpoint via HTTP on localhost with common ports

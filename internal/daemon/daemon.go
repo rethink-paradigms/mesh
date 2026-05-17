@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net"
 	"net/http"
@@ -23,6 +24,7 @@ import (
 	"github.com/rethink-paradigms/mesh/internal/orchestrator"
 	"github.com/rethink-paradigms/mesh/internal/plugin"
 	"github.com/rethink-paradigms/mesh/internal/provisioner"
+	"github.com/rethink-paradigms/mesh/internal/registry"
 	"github.com/rethink-paradigms/mesh/internal/service"
 	"github.com/rethink-paradigms/mesh/internal/store"
 	"github.com/rethink-paradigms/mesh/internal/version"
@@ -38,6 +40,10 @@ type Daemon struct {
 	bodySvc      *service.BodyService
 	pluginMgr    *plugin.PluginManager
 	installer    *agent.Installer
+	migrator     *body.MigrationCoordinator
+
+	registryMu sync.Mutex
+	registry   body.Registry // hot-swappable S3 registry plugin (nil = disabled)
 
 	mcpServer   interface{ Stop(context.Context) error }
 	mcpServerMu sync.Mutex
@@ -102,6 +108,146 @@ func (d *Daemon) SetMCP(srv interface{ Stop(context.Context) error }) {
 			}
 		}
 	}
+	// Wire up the migration coordinator so migrate_body MCP tool works
+	if d.migrator != nil {
+		if ms, ok := srv.(interface{ SetMigrator(*body.MigrationCoordinator) }); ok {
+			ms.SetMigrator(d.migrator)
+		}
+	}
+}
+
+// ─── Registry Management ──────────────────────────────────────────────────
+
+// ConfigureS3 validates S3 credentials and hot-swaps the registry plugin at runtime.
+// Implements api.RegistryManager.
+func (d *Daemon) ConfigureS3(ctx context.Context, cfg api.S3RegistryConfig) error {
+	d.registryMu.Lock()
+	defer d.registryMu.Unlock()
+
+	// Create the S3 plugin — validates config is syntactically correct
+	p, err := registry.NewS3RegistryPlugin(registry.RegistryConfig{
+		Bucket:          cfg.Bucket,
+		Region:          cfg.Region,
+		Endpoint:        cfg.Endpoint,
+		AccessKeyID:     cfg.AccessKeyID,
+		SecretAccessKey: cfg.SecretAccessKey,
+	})
+	if err != nil {
+		return fmt.Errorf("invalid S3 config: %w", err)
+	}
+
+	d.registry = p
+	if d.migrator != nil {
+		d.migrator.SetRegistry(p)
+	}
+
+	// Persist to store so it survives daemon restart
+	if err := d.persistRegistryConfig(ctx, &cfg); err != nil {
+		fmt.Fprintf(os.Stderr, "daemon: warn: failed to persist registry config: %v\n", err)
+	}
+
+	fmt.Fprintf(os.Stderr, "daemon: S3 registry configured: bucket=%s region=%s\n", cfg.Bucket, cfg.Region)
+	return nil
+}
+
+// DisconnectS3 clears the registry plugin. Falls back to same-machine migration.
+// Implements api.RegistryManager.
+func (d *Daemon) DisconnectS3(ctx context.Context) error {
+	d.registryMu.Lock()
+	defer d.registryMu.Unlock()
+
+	d.registry = nil
+	if d.migrator != nil {
+		d.migrator.SetRegistry(nil)
+	}
+
+	if err := d.clearRegistryConfig(ctx); err != nil {
+		fmt.Fprintf(os.Stderr, "daemon: warn: failed to clear persisted registry config: %v\n", err)
+	}
+
+	fmt.Fprintf(os.Stderr, "daemon: S3 registry disconnected, fallback to same-machine migration\n")
+	return nil
+}
+
+// RegistryStatus returns the current registry state.
+// Implements api.RegistryManager.
+func (d *Daemon) RegistryStatus(_ context.Context) map[string]interface{} {
+	d.registryMu.Lock()
+	defer d.registryMu.Unlock()
+
+	if d.registry == nil {
+		return map[string]interface{}{
+			"configured": false,
+			"type":       "none",
+		}
+	}
+
+	// Try to extract bucket/region from the plugin if possible
+	// S3RegistryPlugin doesn't expose its config, so we return basic info
+	return map[string]interface{}{
+		"configured": true,
+		"type":       "s3",
+		"healthy":    true,
+	}
+}
+
+// persistRegistryConfig stores the S3 config as JSON in the config table.
+func (d *Daemon) persistRegistryConfig(ctx context.Context, cfg *api.S3RegistryConfig) error {
+	if d.store == nil {
+		return nil
+	}
+	data, err := json.Marshal(cfg)
+	if err != nil {
+		return fmt.Errorf("marshal registry config: %w", err)
+	}
+	return d.store.SetConfig(ctx, "registry_s3", string(data))
+}
+
+// clearRegistryConfig removes persisted S3 config.
+func (d *Daemon) clearRegistryConfig(ctx context.Context) error {
+	if d.store == nil {
+		return nil
+	}
+	return d.store.SetConfig(ctx, "registry_s3", "")
+}
+
+// restoreRegistryConfig loads a previously persisted S3 config from the store
+// and initializes the registry plugin. Called at daemon startup.
+func (d *Daemon) restoreRegistryConfig(ctx context.Context) {
+	if d.store == nil {
+		return
+	}
+	val, err := d.store.GetConfig(ctx, "registry_s3")
+	if err != nil || val == "" {
+		return // no persisted config
+	}
+
+	var cfg api.S3RegistryConfig
+	if err := json.Unmarshal([]byte(val), &cfg); err != nil {
+		fmt.Fprintf(os.Stderr, "daemon: warn: invalid persisted registry config: %v\n", err)
+		return
+	}
+	if cfg.Bucket == "" || cfg.Region == "" {
+		return // incomplete config, skip
+	}
+
+	p, err := registry.NewS3RegistryPlugin(registry.RegistryConfig{
+		Bucket:          cfg.Bucket,
+		Region:          cfg.Region,
+		Endpoint:        cfg.Endpoint,
+		AccessKeyID:     cfg.AccessKeyID,
+		SecretAccessKey: cfg.SecretAccessKey,
+	})
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "daemon: warn: failed to restore S3 registry: %v\n", err)
+		return
+	}
+
+	d.registry = p
+	if d.migrator != nil {
+		d.migrator.SetRegistry(p)
+	}
+	fmt.Fprintf(os.Stderr, "daemon: restored S3 registry: bucket=%s region=%s\n", cfg.Bucket, cfg.Region)
 }
 
 func (d *Daemon) SetVersion(v string) {
@@ -178,6 +324,11 @@ func (d *Daemon) Start(ctx context.Context) error {
 
 	d.bodyMgr = body.NewBodyManager(d.store, primaryOrch)
 	d.bodySvc = service.NewBodyService(d.bodyMgr, d.store, d.orchRegistry)
+
+	// Create migration coordinator (registry starts nil — hot-swapped later)
+	d.migrator = body.NewMigrationCoordinator(d.store, d.bodyMgr, d.orchRegistry, d.provRegistry, nil)
+	// Restore any previously persisted S3 registry config
+	d.restoreRegistryConfig(ctx)
 
 	pm := plugin.NewPluginManager(d.cfg.Plugin.Dir, d.cfg.Plugin.Enabled)
 	if err := pm.StartScanAndLoad(); err != nil {
@@ -309,7 +460,7 @@ func (d *Daemon) Stop(ctx context.Context) error {
 	d.mcpServerMu.Unlock()
 
 	if d.pluginMgr != nil {
-		d.pluginMgr.Stop()
+		_ = d.pluginMgr.Stop()
 	}
 
 	if d.store != nil {
@@ -454,6 +605,7 @@ func (d *Daemon) startAPIServer() error {
 		Installer:                d.installer,
 		GatewayURL:               d.cfg.Daemon.GatewayURL,
 		HeartbeatIntervalSeconds: d.cfg.Daemon.HeartbeatIntervalSeconds,
+		RegistryManager:          d, // Daemon implements api.RegistryManager
 	})
 
 	listenAddr := d.cfg.Daemon.ListenAddr
@@ -477,7 +629,7 @@ func (d *Daemon) startAPIServer() error {
 	d.httpAddr = ln.Addr().String()
 	d.mu.Unlock()
 
-	go srv.Serve(ln)
+	go func() { _ = srv.Serve(ln) }()
 	return nil
 }
 

@@ -2,7 +2,10 @@
 // for the Mesh daemon REST API.
 package api
 
-import "encoding/json"
+import (
+	"context"
+	"encoding/json"
+)
 
 // CreateBodyRequest is the request payload for POST /api/v1/bodies.
 // @Description Request payload for creating a new body
@@ -207,4 +210,36 @@ type CapacityStatusInfo struct {
 	MemoryMBTotal int64   `json:"memory_mb_total"`
 	DiskGBUsed    float64 `json:"disk_gb_used"`
 	DiskGBTotal   float64 `json:"disk_gb_total"`
+}
+
+// ─── Registry ──────────────────────────────────────────────────────────────────
+
+// S3RegistryConfig is the JSON payload for configuring S3 on a running daemon.
+type S3RegistryConfig struct {
+	Bucket          string `json:"bucket"`
+	Region          string `json:"region"`
+	Endpoint        string `json:"endpoint,omitempty"`
+	AccessKeyID     string `json:"access_key_id,omitempty"`
+	SecretAccessKey string `json:"secret_access_key,omitempty"`
+}
+
+// RegistryManager is the interface for hot-swapping the S3 registry at runtime.
+// The Daemon implements this and passes it to the API handlers.
+type RegistryManager interface {
+	// ConfigureS3 validates S3 credentials and sets the registry plugin.
+	// Thread-safe — existing migrations are unaffected.
+	ConfigureS3(ctx context.Context, cfg S3RegistryConfig) error
+	// DisconnectS3 clears the registry plugin. Falls back to same-machine migration.
+	DisconnectS3(ctx context.Context) error
+	// RegistryStatus returns the current registry state.
+	RegistryStatus(ctx context.Context) map[string]interface{}
+}
+
+// RegistryStatusResponse is the response payload for GET /api/v1/registry/status.
+type RegistryStatusResponse struct {
+	Configured bool   `json:"configured"`
+	Type       string `json:"type"`
+	Bucket     string `json:"bucket,omitempty"`
+	Region     string `json:"region,omitempty"`
+	Healthy    bool   `json:"healthy"`
 }

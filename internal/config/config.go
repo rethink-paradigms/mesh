@@ -184,9 +184,10 @@ func applyDefaults(cfg *Config) {
 			cfg.Store.Path = filepath.Join(home, ".mesh", "state.db")
 		}
 	}
-	if cfg.Registry.Type == "" {
-		cfg.Registry.Type = "s3"
-	}
+	// Registry type is intentionally NOT defaulted to "s3".
+	// An empty or "none" type means no registry — migrations use same-machine transfer.
+	// Users can configure S3 at runtime via the API.
+	// See: api/registry.go, daemon.go SetRegistry()
 	if cfg.Plugin.Dir == "" {
 		home, err := os.UserHomeDir()
 		if err == nil {
@@ -283,8 +284,19 @@ func validate(cfg *Config) error {
 			return fmt.Errorf("config: nomad address %q is not a valid URL", addr)
 		}
 	}
-	if cfg.Registry.Type == "s3" && cfg.Registry.Bucket == "" {
-		return fmt.Errorf("config: registry bucket is required when type is s3")
+	// Validate registry type. Empty or "none" = no registry (valid).
+	// S3 requires a bucket. The S3 plugin is initialized at runtime via the API.
+	switch cfg.Registry.Type {
+	case "", "none":
+		// No registry configured — migrations use same-machine transfer.
+	case "s3":
+		if cfg.Registry.Bucket == "" {
+			return fmt.Errorf("config: registry bucket is required when type is s3")
+		}
+		// If provided in config file, it will also be initialized at daemon start
+		// (see daemon.go SetRegistry / restorePersistedRegistry).
+	default:
+		return fmt.Errorf("config: registry type %q is invalid — must be \"s3\", \"none\", or empty", cfg.Registry.Type)
 	}
 
 	// Validate auth_mode

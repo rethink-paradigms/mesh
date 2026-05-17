@@ -405,7 +405,7 @@ func (s *Server) writeResponse(resp Response) {
 	if err != nil {
 		return
 	}
-	s.writer.Write(append(data, '\n'))
+	_, _ = s.writer.Write(append(data, '\n'))
 }
 
 // marshalJSON converts a value to JSON string, returning "{}" on error.

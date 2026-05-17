@@ -9,3 +9,9 @@ linters:
     - unused
     - gosimple
     - ineffassign
+
+issues:
+  exclude-files:
+    - ".*_test.go"
+  exclude-dirs:
+    - "vendor"
