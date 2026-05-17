@@ -25,6 +25,7 @@ import (
 	"github.com/rethink-paradigms/mesh/internal/provisioner"
 	"github.com/rethink-paradigms/mesh/internal/service"
 	"github.com/rethink-paradigms/mesh/internal/store"
+	"github.com/rethink-paradigms/mesh/internal/version"
 )
 
 type Daemon struct {
@@ -66,7 +67,7 @@ func New(cfg *config.Config) (*Daemon, error) {
 		sigs:      make(chan os.Signal, 1),
 		done:      make(chan struct{}),
 		startedAt: time.Now(),
-		version:   "dev",
+		version:   version.Version,
 	}
 	return d, nil
 }
@@ -93,7 +94,9 @@ func (d *Daemon) SetMCP(srv interface{ Stop(context.Context) error }) {
 		}
 	}
 	if d.cfg != nil && d.cfg.Daemon.Auth0Domain != "" && d.cfg.Daemon.Auth0Audience != "" {
-		if ms, ok := srv.(interface{ SetAuth(string, string, string) error }); ok {
+		if ms, ok := srv.(interface {
+			SetAuth(string, string, string) error
+		}); ok {
 			if err := ms.SetAuth(d.cfg.Daemon.Auth0Domain, d.cfg.Daemon.Auth0Audience, d.cfg.Daemon.ClusterOwnerID); err != nil {
 				fmt.Fprintf(os.Stderr, "daemon: mcp set auth: %v\n", err)
 			}
@@ -432,23 +435,23 @@ func (d *Daemon) startAPIServer() error {
 	}
 
 	router := api.NewRouter(api.RouterConfig{
-		BodyManager:    d.bodyMgr,
-		BodyService:    d.bodySvc,
-		Store:          d.store,
-		Orchestrator:   primaryOrch,
-		Ingress:        d.ingress,
-		AuthToken:      d.cfg.Daemon.AuthToken,
-		AuthMode:       d.cfg.Daemon.AuthMode,
-		Auth0Domain:    d.cfg.Daemon.Auth0Domain,
-		Auth0Audience:  d.cfg.Daemon.Auth0Audience,
-		ClusterOwnerID: d.cfg.Daemon.ClusterOwnerID,
-		ClusterID:      d.cfg.Daemon.ClusterID,
-		Version:        d.version,
-		Tier:           d.tier,
-		OrchRegistry:   d.orchRegistry,
-		Features:       d.cfg.Features,
-		Uptime:         d.startedAt,
-		Installer:      d.installer,
+		BodyManager:              d.bodyMgr,
+		BodyService:              d.bodySvc,
+		Store:                    d.store,
+		Orchestrator:             primaryOrch,
+		Ingress:                  d.ingress,
+		AuthToken:                d.cfg.Daemon.AuthToken,
+		AuthMode:                 d.cfg.Daemon.AuthMode,
+		Auth0Domain:              d.cfg.Daemon.Auth0Domain,
+		Auth0Audience:            d.cfg.Daemon.Auth0Audience,
+		ClusterOwnerID:           d.cfg.Daemon.ClusterOwnerID,
+		ClusterID:                d.cfg.Daemon.ClusterID,
+		Version:                  d.version,
+		Tier:                     d.tier,
+		OrchRegistry:             d.orchRegistry,
+		Features:                 d.cfg.Features,
+		Uptime:                   d.startedAt,
+		Installer:                d.installer,
 		GatewayURL:               d.cfg.Daemon.GatewayURL,
 		HeartbeatIntervalSeconds: d.cfg.Daemon.HeartbeatIntervalSeconds,
 	})
@@ -543,5 +546,3 @@ func caddyDetected() bool {
 	defer resp.Body.Close()
 	return resp.StatusCode == http.StatusOK
 }
-
-

@@ -20,10 +20,8 @@ import (
 
 	"github.com/rethink-paradigms/mesh/internal/config"
 	"github.com/rethink-paradigms/mesh/internal/daemon"
+	"github.com/rethink-paradigms/mesh/internal/version"
 )
-
-// version is set via ldflags at build time (-X main.version=...).
-var version = "dev"
 
 func main() {
 	rootCmd := &cobra.Command{
@@ -45,7 +43,7 @@ func main() {
 			if err != nil {
 				return fmt.Errorf("failed to create daemon: %w", err)
 			}
-			d.SetVersion(version)
+			d.SetVersion(version.Version)
 
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
@@ -66,7 +64,7 @@ func main() {
 		Use:   "version",
 		Short: "Print the Mesh daemon version",
 		Run: func(cmd *cobra.Command, args []string) {
-			fmt.Println(version)
+			fmt.Println(version.Version)
 		},
 	}
 

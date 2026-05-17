@@ -5,7 +5,7 @@
 #
 # Usage:
 #   curl -fsSL https://raw.githubusercontent.com/rethink-paradigms/mesh/main/scripts/install.sh | sh
-#   MESH_VERSION=v0.1.0 curl -fsSL ... | sh    # pin a version
+#   MESH_VERSION=1.0.0 curl -fsSL ... | sh       # pin a version
 #   MESH_DRY_RUN=1 bash scripts/install.sh       # dry-run (for testing)
 #
 # Environment variables:
@@ -100,7 +100,6 @@ build_urls() {
   fi
 
   BASE_URL="https://github.com/${MESH_REPO}/releases/download/${RELEASE_TAG}"
-  # Strip leading 'v' from VERSION for archive names -- goreleaser's {{ .Version }} strips the 'v' prefix
   ARCHIVE_VERSION="${VERSION#v}"
   ARCHIVE_NAME="mesh_${ARCHIVE_VERSION}_${OS}_${ARCH}.tar.gz"
   CHECKSUM_NAME="mesh_${ARCHIVE_VERSION}_checksums.txt"

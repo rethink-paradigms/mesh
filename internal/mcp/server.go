@@ -19,6 +19,7 @@ import (
 	"github.com/rethink-paradigms/mesh/internal/plugin"
 	"github.com/rethink-paradigms/mesh/internal/service"
 	"github.com/rethink-paradigms/mesh/internal/store"
+	"github.com/rethink-paradigms/mesh/internal/version"
 )
 
 // ToolHandler is a function that handles a tool call with given params.
@@ -172,11 +173,12 @@ func (s *Server) SetClusterID(id string) {
 // It uses os.Stdin/os.Stdout for IO. Use NewWithIO for testing.
 func New(s *store.Store) *Server {
 	srv := &Server{
-		store:  s,
-		tools:  make(map[string]ToolHandler),
-		defs:   make(map[string]ToolDefinition),
-		reader: os.Stdin,
-		writer: os.Stdout,
+		store:   s,
+		tools:   make(map[string]ToolHandler),
+		defs:    make(map[string]ToolDefinition),
+		reader:  os.Stdin,
+		writer:  os.Stdout,
+		version: version.Version,
 	}
 	srv.registerTools()
 	return srv
@@ -185,11 +187,12 @@ func New(s *store.Store) *Server {
 // NewWithIO creates a new MCP server with custom reader/writer for testing.
 func NewWithIO(s *store.Store, r io.Reader, w io.Writer) *Server {
 	srv := &Server{
-		store:  s,
-		tools:  make(map[string]ToolHandler),
-		defs:   make(map[string]ToolDefinition),
-		reader: r,
-		writer: w,
+		store:   s,
+		tools:   make(map[string]ToolHandler),
+		defs:    make(map[string]ToolDefinition),
+		reader:  r,
+		writer:  w,
+		version: version.Version,
 	}
 	srv.registerTools()
 	return srv

@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"runtime/debug"
 	"sort"
 	"strconv"
 	"strings"
@@ -21,10 +20,8 @@ import (
 	"github.com/rethink-paradigms/mesh/internal/manifest"
 	"github.com/rethink-paradigms/mesh/internal/restore"
 	"github.com/rethink-paradigms/mesh/internal/snapshot"
+	"github.com/rethink-paradigms/mesh/internal/version"
 )
-
-// version is set via ldflags at build time (-X main.version=...).
-var version = "dev"
 
 func main() {
 	rootCmd := newRootCmd()
@@ -48,7 +45,7 @@ func newRootCmd() *cobra.Command {
 		Use:           "mesh",
 		Short:         "Portable agent-body runtime for AI agents",
 		Long:          "Mesh gives an agent a persistent compute identity that can live on any substrate and move between them without losing itself.",
-		Version:       buildVersion(),
+		Version:       version.Version,
 		SilenceUsage:  true,
 		SilenceErrors: true,
 	}
@@ -70,38 +67,6 @@ func newRootCmd() *cobra.Command {
 	)
 
 	return root
-}
-
-// buildVersion returns the build version from ldflags, Go build info, or a fallback.
-func buildVersion() string {
-	if version != "dev" {
-		return version
-	}
-	bi, ok := debug.ReadBuildInfo()
-	if !ok {
-		return "v0.0.0-dev"
-	}
-	// Use VCS info if available for a meaningful version.
-	var revision, modified string
-	for _, s := range bi.Settings {
-		switch s.Key {
-		case "vcs.revision":
-			revision = s.Value
-		case "vcs.modified":
-			modified = s.Value
-		}
-	}
-	if revision != "" {
-		v := revision[:8]
-		if modified == "true" {
-			v += "-dirty"
-		}
-		return v
-	}
-	if bi.Main.Version != "" && bi.Main.Version != "(devel)" {
-		return bi.Main.Version
-	}
-	return "v0.0.0-dev"
 }
 
 // loadConfig reads the --config flag or falls back to DefaultPath, then loads and validates.
@@ -452,7 +417,7 @@ func newServeCmd() *cobra.Command {
 			if err != nil {
 				return fmt.Errorf("create daemon: %w", err)
 			}
-			d.SetVersion(version)
+			d.SetVersion(version.Version)
 
 			if err := d.Start(cmd.Context()); err != nil {
 				if strings.Contains(err.Error(), "already running") {
