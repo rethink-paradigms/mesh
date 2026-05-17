@@ -110,7 +110,9 @@ func (d *Daemon) SetMCP(srv interface{ Stop(context.Context) error }) {
 	}
 	// Wire up the migration coordinator so migrate_body MCP tool works
 	if d.migrator != nil {
-		if ms, ok := srv.(interface{ SetMigrator(*body.MigrationCoordinator) }); ok {
+		if ms, ok := srv.(interface {
+			SetMigrator(*body.MigrationCoordinator)
+		}); ok {
 			ms.SetMigrator(d.migrator)
 		}
 	}
