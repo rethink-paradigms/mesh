@@ -15,7 +15,7 @@ This guide covers migrating from Mesh v0 to v1. v0 was a snapshot and clone tool
 
 ## What Was Removed
 
-- `mesh clone` -- replaced by `mesh serve` + Docker lifecycle and migration coordinator
+- `mesh clone` -- replaced by `mesh-daemon serve` + Docker lifecycle and migration coordinator
 - `mesh status <agent>` -- removed, replaced by `mesh status` (daemon status only)
 - Agent process management (pgrep-based lifecycle checks)
 - SSH transport for machine-to-machine cloning
@@ -36,8 +36,8 @@ This guide covers migrating from Mesh v0 to v1. v0 was a snapshot and clone tool
 ## What's New
 
 - `mesh init` -- initialize v1 YAML config
-- `mesh serve` -- start daemon (long-running process with MCP server)
-- `mesh stop` -- stop daemon (SIGTERM via PID file)
+- `mesh-daemon serve` -- start daemon (long-running process with MCP server)
+- `mesh stop` -- stop daemon (HTTP POST to daemon API)
 - `mesh status` -- check daemon status (no agent-level status)
 - MCP protocol over stdio for agent communication
 - SQLite store with WAL mode and per-body CRUD
@@ -116,7 +116,7 @@ mesh restore my-agent
 ### New Commands
 
 - `mesh init` -- initialize config
-- `mesh serve` -- start daemon
+- `mesh-daemon serve` -- start daemon
 - `mesh stop` -- stop daemon
 - `mesh status` -- show daemon status
 
@@ -152,7 +152,7 @@ mesh clone my-agent --target pi
 ```
 # Initialize config and start daemon
 mesh init
-mesh serve &
+mesh-daemon serve &
 
 # Create and manage bodies via MCP (or CLI for snapshots)
 mesh snapshot my-agent

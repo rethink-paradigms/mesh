@@ -78,7 +78,7 @@ func tempStore(t *testing.T) *store.Store {
 
 func testBodyManager(t *testing.T, s *store.Store) *body.BodyManager {
 	t.Helper()
-	return body.NewBodyManager(s, &mockOrchAdapter{})
+	return body.NewBodyManager(s, &mockOrchAdapter{}, "")
 }
 
 func TestStop_NotRunning_ReturnsConflictError(t *testing.T) {
@@ -256,7 +256,7 @@ func TestCreateBodyWithDefaultOrchestrator(t *testing.T) {
 	_ = reg.Register("nomad", mockNomad)
 	_ = reg.SetDefault("docker")
 
-	bm := body.NewBodyManager(s, mockDocker)
+	bm := body.NewBodyManager(s, mockDocker, "")
 	svc := NewBodyService(bm, s, reg)
 	ctx := context.Background()
 
@@ -274,7 +274,7 @@ func TestCreateBodyMultiOrchNoDefault(t *testing.T) {
 	_ = reg.Register("docker", mockDocker)
 	_ = reg.Register("nomad", mockNomad)
 
-	bm := body.NewBodyManager(s, mockDocker)
+	bm := body.NewBodyManager(s, mockDocker, "")
 	svc := NewBodyService(bm, s, reg)
 	ctx := context.Background()
 

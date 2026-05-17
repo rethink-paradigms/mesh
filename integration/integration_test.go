@@ -21,11 +21,10 @@ import (
 	"github.com/rethink-paradigms/mesh/internal/body"
 	"github.com/rethink-paradigms/mesh/internal/config"
 	"github.com/rethink-paradigms/mesh/internal/daemon"
-	"github.com/rethink-paradigms/mesh/internal/manifest"
+	"github.com/rethink-paradigms/mesh/internal/snapshotmeta"
 	"github.com/rethink-paradigms/mesh/internal/mcp"
 	"github.com/rethink-paradigms/mesh/internal/orchestrator"
 	"github.com/rethink-paradigms/mesh/internal/plugin"
-	"github.com/rethink-paradigms/mesh/internal/provisioner"
 	"github.com/rethink-paradigms/mesh/internal/service"
 	"github.com/rethink-paradigms/mesh/internal/store"
 	"gopkg.in/yaml.v3"
@@ -184,7 +183,7 @@ func TestDaemonFullPipeline(t *testing.T) {
 	defer s.Close()
 
 	mockAdapter := &mockOrchestratorAdapter{}
-	bm := body.NewBodyManager(s, mockAdapter)
+	bm := body.NewBodyManager(s, mockAdapter, "")
 
 	ctx := context.Background()
 	spec := orchestrator.BodySpec{Image: "alpine:latest", Cmd: []string{"sleep", "3600"}}
@@ -444,7 +443,7 @@ func TestManifestV2RoundTrip(t *testing.T) {
 	tmpDir := t.TempDir()
 
 	ts := time.Date(2026, 4, 27, 12, 30, 0, 0, time.UTC)
-	m := manifest.NewV2()
+	m := snapshotmeta.NewV2()
 	m.AgentName = "test-agent"
 	m.Timestamp = ts
 	m.SourceMachine = "workstation"
@@ -459,17 +458,17 @@ func TestManifestV2RoundTrip(t *testing.T) {
 	m.BodyID = "body-42"
 
 	manifestPath := filepath.Join(tmpDir, "snapshots", "test-agent.json")
-	if err := manifest.Write(manifestPath, m); err != nil {
+	if err := snapshotmeta.Write(manifestPath, m); err != nil {
 		t.Fatalf("write manifest: %v", err)
 	}
 
-	loaded, err := manifest.Read(manifestPath)
+	loaded, err := snapshotmeta.Read(manifestPath)
 	if err != nil {
 		t.Fatalf("read manifest: %v", err)
 	}
 
-	if manifest.ManifestVersion(loaded) != 2 {
-		t.Errorf("version = %d, want 2", manifest.ManifestVersion(loaded))
+	if snapshotmeta.Version(loaded) != 2 {
+		t.Errorf("version = %d, want 2", snapshotmeta.Version(loaded))
 	}
 	if loaded.AgentName != "test-agent" {
 		t.Errorf("agent_name = %q, want test-agent", loaded.AgentName)
@@ -562,7 +561,7 @@ func TestDaemonWithMCPEndToEnd(t *testing.T) {
 func TestBodyLifecycleViaManager(t *testing.T) {
 	s := tempStore(t)
 	mockAdapter := &mockOrchestratorAdapter{}
-	bm := body.NewBodyManager(s, mockAdapter)
+	bm := body.NewBodyManager(s, mockAdapter, "")
 	ctx := context.Background()
 
 	b, err := bm.Create(ctx, "lifecycle-body", orchestrator.BodySpec{Image: "alpine:latest"})
@@ -646,7 +645,7 @@ func TestSnapshotCRUDIntegration(t *testing.T) {
 func TestExportFilesystemIntegration(t *testing.T) {
 	s := tempStore(t)
 	mockAdapter := &mockOrchestratorAdapter{}
-	bm := body.NewBodyManager(s, mockAdapter)
+	bm := body.NewBodyManager(s, mockAdapter, "")
 	ctx := context.Background()
 
 	b, err := bm.Create(ctx, "export-body", orchestrator.BodySpec{Image: "alpine:latest"})
@@ -678,34 +677,23 @@ func TestExportFilesystemIntegration(t *testing.T) {
 	}
 }
 
-func TestCrossMachineMigrationViaRegistry(t *testing.T) {
+func TestSameSubstrateMigration(t *testing.T) {
 	s := tempStore(t)
 	mockAdapter := &mockOrchestratorAdapter{substrate: "docker"}
-	bm := body.NewBodyManager(s, mockAdapter)
+	bm := body.NewBodyManager(s, mockAdapter, "")
 	ctx := context.Background()
 
-	b, err := bm.Create(ctx, "cross-mig-body", orchestrator.BodySpec{Image: "alpine:latest"})
+	b, err := bm.Create(ctx, "mig-body", orchestrator.BodySpec{Image: "alpine:latest"})
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}
 
-	reg := &mockRegistry{}
 	orchReg := orchestrator.NewRegistry()
-	_ = orchReg.Register("local", mockAdapter)
-	_ = orchReg.Register("fleet", mockAdapter)
-	provReg := provisioner.NewRegistry()
-	_ = provReg.Register("fleet", &mockProvisionerAdapter{name: "fleet"})
-	mc := body.NewMigrationCoordinator(s, bm, orchReg, provReg, reg)
-	migID, err := mc.BeginMigration(ctx, b.ID, "fleet")
+	_ = orchReg.Register("docker", mockAdapter)
+	mc := body.NewMigrationCoordinator(s, bm, orchReg, nil)
+	migID, err := mc.BeginMigration(ctx, b.ID, "docker")
 	if err != nil {
 		t.Fatalf("BeginMigration: %v", err)
-	}
-
-	if len(reg.pushed) != 1 {
-		t.Errorf("pushed = %d, want 1", len(reg.pushed))
-	}
-	if len(reg.pulled) != 1 {
-		t.Errorf("pulled = %d, want 1", len(reg.pulled))
 	}
 
 	_, err = s.GetMigration(ctx, migID)
@@ -729,7 +717,7 @@ func TestCrossMachineMigrationViaRegistry(t *testing.T) {
 func TestSameMachineMigrationSkipsRegistry(t *testing.T) {
 	s := tempStore(t)
 	mockAdapter := &mockOrchestratorAdapter{substrate: "docker"}
-	bm := body.NewBodyManager(s, mockAdapter)
+	bm := body.NewBodyManager(s, mockAdapter, "")
 	ctx := context.Background()
 
 	b, err := bm.Create(ctx, "same-mig-body", orchestrator.BodySpec{Image: "alpine:latest"})
@@ -740,7 +728,7 @@ func TestSameMachineMigrationSkipsRegistry(t *testing.T) {
 	reg := &mockRegistry{}
 	orchReg := orchestrator.NewRegistry()
 	_ = orchReg.Register("local", mockAdapter)
-	mc := body.NewMigrationCoordinator(s, bm, orchReg, nil, reg)
+	mc := body.NewMigrationCoordinator(s, bm, orchReg, reg)
 	_, err = mc.BeginMigration(ctx, b.ID, "local")
 	if err != nil {
 		t.Fatalf("BeginMigration: %v", err)
@@ -990,7 +978,7 @@ func TestDaemonCrashRecovery(t *testing.T) {
 func TestConcurrentBodyOperations(t *testing.T) {
 	s := tempStore(t)
 	mockAdapter := &mockOrchestratorAdapter{}
-	bm := body.NewBodyManager(s, mockAdapter)
+	bm := body.NewBodyManager(s, mockAdapter, "")
 	ctx := context.Background()
 
 	var wg sync.WaitGroup
@@ -1061,7 +1049,7 @@ func TestConcurrentBodyOperations(t *testing.T) {
 func TestBodyLifecycleFull(t *testing.T) {
 	s := tempStore(t)
 	mockAdapter := &mockOrchestratorAdapter{}
-	bm := body.NewBodyManager(s, mockAdapter)
+	bm := body.NewBodyManager(s, mockAdapter, "")
 	ctx := context.Background()
 
 	b, err := bm.Create(ctx, "lifecycle-full", orchestrator.BodySpec{Image: "alpine:latest"})
@@ -1163,7 +1151,7 @@ func TestBodyLifecycleFull(t *testing.T) {
 func TestMCPToolsEndToEnd(t *testing.T) {
 	s := tempStore(t)
 	mockAdapter := &mockOrchestratorAdapter{}
-	bm := body.NewBodyManager(s, mockAdapter)
+	bm := body.NewBodyManager(s, mockAdapter, "")
 	ctx := context.Background()
 
 	b, err := bm.Create(ctx, "mcp-tools-body", orchestrator.BodySpec{Image: "alpine:latest"})

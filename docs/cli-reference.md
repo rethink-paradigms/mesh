@@ -2,6 +2,8 @@
 
 The Mesh CLI (`mesh`) provides commands for daemon management and snapshot operations. The CLI is a secondary interface; the primary interface is the MCP server over stdio (D5). Use the CLI for debugging, automation, and one-off operations.
 
+The `mesh-daemon` binary is the server — it binds a port and manages bodies. The `mesh` binary is the client — it talks to the daemon over HTTP.
+
 ## Global Flags
 
 | Flag | Type | Description |
@@ -18,14 +20,14 @@ Initialize Mesh configuration. Creates the `~/.mesh/` directory.
 
 ```
 mesh init
-Mesh initialized. Run 'mesh serve' to start.
+Mesh initialized. Run 'mesh-daemon serve' to start.
 ```
 
-Does not write a config file; run `mesh serve` afterward to generate one if needed.
+Does not write a config file; run `mesh-daemon serve` afterward to generate one if needed.
 
 ---
 
-### `mesh serve`
+### `mesh-daemon serve`
 
 Start the Mesh daemon. A long-running process that opens the SQLite store, initializes the Docker adapter, starts the MCP server on stdio, and registers signal handlers for graceful shutdown.
 
@@ -33,13 +35,13 @@ Start the Mesh daemon. A long-running process that opens the SQLite store, initi
 > See [`SERVICES.md`](../../SERVICES.md).
 
 ```
-mesh serve
+mesh-daemon serve
 ```
 
-The daemon writes a PID file to `~/.mesh/mesh.pid`. Run in the background:
+The daemon writes a PID file to `~/.mesh/mesh.pid` and an address file to `~/.mesh/daemon.addr`. Run in the background:
 
 ```
-mesh serve &
+mesh-daemon serve &
 ```
 
 Or use a process manager (systemd, supervisord). The daemon exits when it receives SIGTERM or SIGINT.
@@ -52,8 +54,8 @@ Daemon startup sequence:
 4. Create BodyManager
 5. Scan and load plugins
 6. Run startup reconciliation (verify body states against adapters)
-7. Write PID file
-8. Start HTTP health server on `127.0.0.1:0`
+7. Write PID file and daemon address file
+8. Start HTTP API server on `127.0.0.1:8080` (or `MESH_PORT`)
 9. Register signal handlers
 10. Block until signal or context cancellation
 11. Graceful shutdown
@@ -62,29 +64,26 @@ Daemon startup sequence:
 
 ### `mesh stop`
 
-Stop the Mesh daemon by sending SIGTERM to the process recorded in the PID file. Waits for the daemon to exit, then escalates to SIGKILL if the timeout expires.
+Stop the Mesh daemon by calling the `POST /api/v1/stop` endpoint. The daemon receives the request and shuts itself down gracefully.
 
 ```
 mesh stop
-Stopping mesh daemon (pid 12345)...
-Stopped mesh daemon
+Stopping mesh daemon...
 ```
-
-Flags:
-
-| Flag | Default | Description |
-|------|---------|-------------|
-| `--timeout` | `30s` | Timeout to wait for daemon to stop before sending SIGKILL |
 
 ---
 
 ### `mesh status`
 
-Show the daemon's running status by checking the PID file.
+Show the daemon's running status by querying `GET /api/v1/status`.
 
 ```
 mesh status
-Mesh daemon: running (pid 12345)
+Mesh daemon: running
+  Version: 1.2.3
+  Tier:    lite
+  Uptime:  1h23m45s
+  Bodies:  3 total (2 running, 1 stopped, 0 error)
 ```
 
 When the daemon is stopped:
@@ -211,7 +210,7 @@ The CLI loads configuration differently depending on the command:
 
 | Command Group | Config File | Priority |
 |---------------|-------------|----------|
-| v1 commands (`init`, `serve`, `stop`, `status`) | `~/.mesh/config.yaml` | `--config` flag > `$MESH_CONFIG` > default path |
+| v1 commands (`init`, `stop`, `status`) | `~/.mesh/config.yaml` | `--config` flag > `$MESH_CONFIG` > default path |
 | v0 commands (`snapshot`, `restore`, `list`, `inspect`, `prune`) | `~/.mesh/config.toml` | `--config` flag > `$MESH_CONFIG` > default path |
 
 v1 commands use YAML config. v0 commands use TOML config for backward compatibility. Both can coexist.

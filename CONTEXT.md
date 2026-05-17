@@ -66,7 +66,7 @@ Portable agent-body runtime. Gives an AI agent a persistent compute identity (fi
 - 16 MCP tools for body CRUD and migration
 - 7-step cold migration coordinator with S3 registry
 - Plugin system (go-plugin + gRPC + protobuf)
-- CLI (mesh serve/stop/status/init)
+- CLI (`mesh-daemon serve` for server; `mesh status`, `mesh stop`, `mesh init` for client)
 - Bootstrap (goreleaser, install.sh, Homebrew formula)
 - CI (GitHub Actions with integration tests)
 - 17 packages test-passing

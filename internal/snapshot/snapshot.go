@@ -21,7 +21,7 @@ import (
 
 	"github.com/klauspost/compress/zstd"
 	configtoml "github.com/rethink-paradigms/mesh/internal/config-toml"
-	"github.com/rethink-paradigms/mesh/internal/manifest"
+	"github.com/rethink-paradigms/mesh/internal/snapshotmeta"
 	"github.com/rethink-paradigms/mesh/internal/orchestrator"
 	"github.com/rethink-paradigms/mesh/internal/store"
 )
@@ -348,7 +348,7 @@ func Run(ctx context.Context, cfg *configtoml.Config, agentName string, cacheDir
 
 	hostname, _ := os.Hostname()
 
-	m := manifest.Manifest{
+	m := snapshotmeta.Metadata{
 		AgentName:     agent.Name,
 		Timestamp:     time.Now(),
 		SourceMachine: hostname,
@@ -359,8 +359,8 @@ func Run(ctx context.Context, cfg *configtoml.Config, agentName string, cacheDir
 		Size:          stat.Size(),
 	}
 
-	if err := manifest.Write(manifest.ManifestPath(outputPath), &m); err != nil {
-		return fmt.Errorf("snapshot: write manifest: %w", err)
+	if err := snapshotmeta.Write(snapshotmeta.SidecarPath(outputPath), &m); err != nil {
+		return fmt.Errorf("snapshot: write metadata: %w", err)
 	}
 
 	if agent.MaxSnapshots > 0 {
@@ -431,15 +431,15 @@ func RunWithOpts(ctx context.Context, cfg *configtoml.Config, agentName string, 
 		return fmt.Errorf("snapshot: stat output: %w", err)
 	}
 
-	manifestPath := manifest.ManifestPath(latest)
-	m, err := manifest.Read(manifestPath)
+	sidecarPath := snapshotmeta.SidecarPath(latest)
+	m, err := snapshotmeta.Read(sidecarPath)
 	if err != nil {
-		return fmt.Errorf("snapshot: read manifest for store: %w", err)
+		return fmt.Errorf("snapshot: read metadata for store: %w", err)
 	}
 
-	manifestJSON, err := json.Marshal(m)
+	metaJSON, err := json.Marshal(m)
 	if err != nil {
-		return fmt.Errorf("snapshot: marshal manifest: %w", err)
+		return fmt.Errorf("snapshot: marshal metadata: %w", err)
 	}
 
 	bodyID := options.bodyID
@@ -454,7 +454,7 @@ func RunWithOpts(ctx context.Context, cfg *configtoml.Config, agentName string, 
 	}
 
 	snapID := filepath.Base(latest)
-	if err := options.store.CreateSnapshot(ctx, snapID, bodyID, string(manifestJSON), latest, stat.Size()); err != nil {
+	if err := options.store.CreateSnapshot(ctx, snapID, bodyID, string(metaJSON), latest, stat.Size()); err != nil {
 		// Log but don't fail — snapshot was already created on disk.
 		_ = err
 	}
@@ -486,7 +486,7 @@ func pruneSnapshots(cacheDir string, max int) error {
 
 		tarPath := filepath.Join(cacheDir, oldest)
 		shaPath := tarPath + ".sha256"
-		jsonPath := manifest.ManifestPath(tarPath)
+		jsonPath := snapshotmeta.SidecarPath(tarPath)
 
 		os.Remove(tarPath)
 		os.Remove(shaPath)

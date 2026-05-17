@@ -140,7 +140,7 @@ func (s *Server) registerTools() {
 	})
 	s.RegisterTool("install_agent", s.handleInstallAgent, ToolDefinition{
 		Name:        "install_agent",
-		Description: "Install a built-in agent from a manifest.",
+		Description: "Install a built-in agent from a descriptor.",
 		InputSchema: json.RawMessage(`{"type":"object","properties":{"agent_type":{"type":"string"},"name":{"type":"string"},"env":{"type":"object","additionalProperties":{"type":"string"}}},"required":["agent_type","name"]}`),
 	})
 }
@@ -374,8 +374,8 @@ func (s *Server) handleCreateSnapshot(ctx context.Context, params json.RawMessag
 		return nil, &RPCError{Code: -32603, Message: fmt.Sprintf("stat output: %v", err)}
 	}
 
-	manifestJSON := fmt.Sprintf(`{"checksum":"%s","size":%d,"created_at":"%s"}`, digest, stat.Size(), time.Now().UTC().Format(time.RFC3339))
-	if err := s.store.CreateSnapshot(ctx, snapID, p.BodyID, manifestJSON, storagePath, stat.Size()); err != nil {
+	sidecarJSON := fmt.Sprintf(`{"checksum":"%s","size":%d,"created_at":"%s"}`, digest, stat.Size(), time.Now().UTC().Format(time.RFC3339))
+	if err := s.store.CreateSnapshot(ctx, snapID, p.BodyID, sidecarJSON, storagePath, stat.Size()); err != nil {
 		return nil, &RPCError{Code: -32603, Message: fmt.Sprintf("persist snapshot: %v", err)}
 	}
 
@@ -645,7 +645,7 @@ func (s *Server) handleListCapabilities(ctx context.Context, params json.RawMess
 
 	tier := s.tier
 	if tier == "" {
-		tier = "lite"
+		tier = "solo"
 	}
 
 	maxBodies := s.maxBodies
@@ -689,7 +689,7 @@ func (s *Server) handleDaemonStatus(ctx context.Context, params json.RawMessage)
 	// Tier
 	tier := s.tier
 	if tier == "" {
-		tier = "lite"
+		tier = "solo"
 	}
 	status["tier"] = tier
 
@@ -822,7 +822,7 @@ func (s *Server) handleInstallAgent(ctx context.Context, params json.RawMessage)
 		AgentType string            `json:"agent_type"`
 		Name      string            `json:"name"`
 		Env       map[string]string `json:"env,omitempty"`
-		Manifest  string            `json:"manifest,omitempty"`
+		DescriptorYAML string       `json:"descriptor,omitempty"`
 	}
 	if err := json.Unmarshal(params, &p); err != nil {
 		return nil, &RPCError{Code: -32602, Message: "invalid params: " + err.Error()}
@@ -831,7 +831,7 @@ func (s *Server) handleInstallAgent(ctx context.Context, params json.RawMessage)
 		return nil, &RPCError{Code: -32602, Message: "agent_type and name are required"}
 	}
 
-	result, err := s.installer.Install(ctx, p.AgentType, p.Name, p.Env, p.Manifest)
+	result, err := s.installer.Install(ctx, p.AgentType, p.Name, p.Env, p.DescriptorYAML)
 	if err != nil {
 		return nil, mapServiceError(err)
 	}

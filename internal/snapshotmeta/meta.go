@@ -1,5 +1,5 @@
-// Package manifest reads and writes JSON manifest sidecar files for snapshots.
-package manifest
+// Package snapshotmeta reads and writes JSON sidecar metadata files for snapshots.
+package snapshotmeta
 
 import (
 	"encoding/json"
@@ -10,12 +10,12 @@ import (
 	"time"
 )
 
-// Manifest describes a snapshot's metadata. Written as a .json sidecar next to
+// Metadata describes a snapshot's metadata. Written as a .json sidecar next to
 // the .tar.zst tarball after snapshot creation completes.
 //
-// v0/v1 manifests contain only filesystem snapshot metadata.
-// v2 manifests add body-aware metadata: image, platform, adapter, env, cmd.
-type Manifest struct {
+// v0/v1 metadata contain only filesystem snapshot metadata.
+// v2 metadata add body-aware metadata: image, platform, adapter, env, cmd.
+type Metadata struct {
 	// v0 fields
 	AgentName     string    `json:"agent_name"`
 	Timestamp     time.Time `json:"timestamp"`
@@ -36,57 +36,57 @@ type Manifest struct {
 	BodyID   string            `json:"body_id,omitempty"`
 }
 
-// ManifestVersion returns the version of a parsed manifest.
+// Version returns the version of parsed metadata.
 // Returns the explicit Version field if >= 2, otherwise 1 (v0/v1 compat).
-func ManifestVersion(m *Manifest) int {
+func Version(m *Metadata) int {
 	if m.Version >= 2 {
 		return m.Version
 	}
 	return 1
 }
 
-// NewV2 creates a v2 Manifest with the Version field set to 2.
-func NewV2() *Manifest {
-	return &Manifest{Version: 2}
+// NewV2 creates a v2 Metadata with the Version field set to 2.
+func NewV2() *Metadata {
+	return &Metadata{Version: 2}
 }
 
-// Write marshals the manifest to indented JSON and writes it to path.
+// Write marshals the metadata to indented JSON and writes it to path.
 // Parent directories are created if needed.
-func Write(path string, m *Manifest) error {
+func Write(path string, m *Metadata) error {
 	data, err := json.MarshalIndent(m, "", "  ")
 	if err != nil {
-		return fmt.Errorf("marshal manifest: %w", err)
+		return fmt.Errorf("marshal metadata: %w", err)
 	}
 
 	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
-		return fmt.Errorf("create manifest dir: %w", err)
+		return fmt.Errorf("create metadata dir: %w", err)
 	}
 
 	if err := os.WriteFile(path, data, 0644); err != nil {
-		return fmt.Errorf("write manifest: %w", err)
+		return fmt.Errorf("write metadata: %w", err)
 	}
 
 	return nil
 }
 
-// Read parses a JSON manifest file at path and returns the Manifest.
-func Read(path string) (*Manifest, error) {
+// Read parses a JSON metadata file at path and returns the Metadata.
+func Read(path string) (*Metadata, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return nil, fmt.Errorf("read manifest: %w", err)
+		return nil, fmt.Errorf("read metadata: %w", err)
 	}
 
-	var m Manifest
+	var m Metadata
 	if err := json.Unmarshal(data, &m); err != nil {
-		return nil, fmt.Errorf("parse manifest: %w", err)
+		return nil, fmt.Errorf("parse metadata: %w", err)
 	}
 
 	return &m, nil
 }
 
-// ManifestPath derives the manifest file path from a snapshot path.
+// SidecarPath derives the sidecar metadata file path from a snapshot path.
 // Replaces .tar.zst suffix with .json; appends .json otherwise.
-func ManifestPath(snapshotPath string) string {
+func SidecarPath(snapshotPath string) string {
 	if strings.HasSuffix(snapshotPath, ".tar.zst") {
 		return strings.TrimSuffix(snapshotPath, ".tar.zst") + ".json"
 	}

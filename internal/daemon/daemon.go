@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strconv"
 	"sync"
 	"syscall"
@@ -23,7 +24,6 @@ import (
 	"github.com/rethink-paradigms/mesh/internal/nomad"
 	"github.com/rethink-paradigms/mesh/internal/orchestrator"
 	"github.com/rethink-paradigms/mesh/internal/plugin"
-	"github.com/rethink-paradigms/mesh/internal/provisioner"
 	"github.com/rethink-paradigms/mesh/internal/registry"
 	"github.com/rethink-paradigms/mesh/internal/service"
 	"github.com/rethink-paradigms/mesh/internal/store"
@@ -35,7 +35,6 @@ type Daemon struct {
 	store *store.Store
 
 	orchRegistry *orchestrator.Registry
-	provRegistry *provisioner.Registry
 	bodyMgr      *body.BodyManager
 	bodySvc      *service.BodyService
 	pluginMgr    *plugin.PluginManager
@@ -80,10 +79,6 @@ func New(cfg *config.Config) (*Daemon, error) {
 
 func (d *Daemon) OrchRegistry() *orchestrator.Registry {
 	return d.orchRegistry
-}
-
-func (d *Daemon) ProvRegistry() *provisioner.Registry {
-	return d.provRegistry
 }
 
 func (d *Daemon) BodyManager() *body.BodyManager {
@@ -276,6 +271,9 @@ func (d *Daemon) Start(ctx context.Context) error {
 	if err := d.checkPIDConflict(); err != nil {
 		return fmt.Errorf("daemon: PID conflict: %w", err)
 	}
+	if err := config.EnsureDirs(d.cfg); err != nil {
+		return fmt.Errorf("daemon: ensure dirs: %w", err)
+	}
 
 	s, err := store.Open(d.cfg.Store.Path)
 	if err != nil {
@@ -308,27 +306,21 @@ func (d *Daemon) Start(ctx context.Context) error {
 
 	var primaryOrch orchestrator.OrchestratorAdapter
 	if nomadAdp, err := orchRegistry.Open("nomad"); err == nil && nomadAdp.IsHealthy(ctx) {
-		d.tier = "STANDARD"
 		_ = orchRegistry.SetDefault("nomad")
 		primaryOrch = nomadAdp
 	} else {
-		d.tier = "LITE"
 		_ = orchRegistry.SetDefault("docker")
 		primaryOrch = dockerAdp
 	}
 
-	provRegistry := provisioner.NewRegistry()
-	d.provRegistry = provRegistry
+	// Determine tier: explicit config wins, otherwise derive from Nomad node count
+	d.tier = d.detectTier(ctx, primaryOrch)
 
-	if len(d.cfg.Provisioners) == 0 {
-		fmt.Fprintf(os.Stderr, "daemon: info: no provisioners registered\n")
-	}
-
-	d.bodyMgr = body.NewBodyManager(d.store, primaryOrch)
+	d.bodyMgr = body.NewBodyManager(d.store, primaryOrch, d.cfg.Daemon.ClusterID)
 	d.bodySvc = service.NewBodyService(d.bodyMgr, d.store, d.orchRegistry)
 
 	// Create migration coordinator (registry starts nil — hot-swapped later)
-	d.migrator = body.NewMigrationCoordinator(d.store, d.bodyMgr, d.orchRegistry, d.provRegistry, nil)
+	d.migrator = body.NewMigrationCoordinator(d.store, d.bodyMgr, d.orchRegistry, nil)
 	// Restore any previously persisted S3 registry config
 	d.restoreRegistryConfig(ctx)
 
@@ -359,14 +351,14 @@ func (d *Daemon) Start(ctx context.Context) error {
 
 	// Wire agent installer from agents directory
 	if d.cfg.AgentsDir != "" {
-		manifests, err := agent.LoadManifestDir(d.cfg.AgentsDir)
+		descriptors, err := agent.LoadDescriptors(d.cfg.AgentsDir)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "daemon: load agent manifests from %s: %v\n", d.cfg.AgentsDir, err)
+			fmt.Fprintf(os.Stderr, "daemon: load agent descriptors from %s: %v\n", d.cfg.AgentsDir, err)
 			// Not fatal — daemon can operate without agent installer
-		} else if len(manifests) > 0 {
-			d.installer = agent.NewInstaller(d.bodyMgr, d.ingress, d.orchRegistry, manifests)
+		} else if len(descriptors) > 0 {
+			d.installer = agent.NewInstaller(d.bodyMgr, d.ingress, d.orchRegistry, descriptors)
 		} else {
-			fmt.Fprintf(os.Stderr, "daemon: info: no agent manifests found in %s\n", d.cfg.AgentsDir)
+			fmt.Fprintf(os.Stderr, "daemon: info: no agent descriptors found in %s\n", d.cfg.AgentsDir)
 		}
 	}
 
@@ -397,6 +389,11 @@ func (d *Daemon) Start(ctx context.Context) error {
 	}
 	defer d.stopAPIServer()
 
+	if err := d.writeAddrFile(); err != nil {
+		return fmt.Errorf("daemon: write addr file: %w", err)
+	}
+	defer d.removeAddrFile()
+
 	fmt.Fprintf(os.Stderr, "daemon: API server listening on %s\n", d.httpAddr)
 
 	// Start heartbeat goroutine if gateway URL is configured
@@ -417,6 +414,27 @@ func (d *Daemon) Start(ctx context.Context) error {
 				d.tier,
 				orchName,
 				func() int { return d.bodyMgr.Count() },
+				func(ctx context.Context) string {
+					if defOrch, err := d.orchRegistry.Default(); err == nil && defOrch.IsHealthy(ctx) {
+						return "healthy"
+					}
+					return "degraded"
+				},
+				func() []heartbeat.HeartbeatBodyInfo {
+					records, err := d.store.ListBodiesByCluster(ctx, d.cfg.Daemon.ClusterID)
+					if err != nil || len(records) == 0 {
+						return nil
+					}
+					result := make([]heartbeat.HeartbeatBodyInfo, 0, len(records))
+					for _, r := range records {
+						result = append(result, heartbeat.HeartbeatBodyInfo{
+							ID:    r.ID,
+							Name:  r.Name,
+							State: string(r.State),
+						})
+					}
+					return result
+				},
 			)
 			interval := time.Duration(d.cfg.Daemon.HeartbeatIntervalSeconds) * time.Second
 			d.heartbeat.Start(ctx, interval)
@@ -470,6 +488,7 @@ func (d *Daemon) Stop(ctx context.Context) error {
 	}
 
 	d.removePIDFile()
+	d.removeAddrFile()
 
 	d.doneOnce.Do(func() { close(d.done) })
 	return nil
@@ -608,6 +627,7 @@ func (d *Daemon) startAPIServer() error {
 		GatewayURL:               d.cfg.Daemon.GatewayURL,
 		HeartbeatIntervalSeconds: d.cfg.Daemon.HeartbeatIntervalSeconds,
 		RegistryManager:          d, // Daemon implements api.RegistryManager
+		StopDaemon:               d.Stop,
 	})
 
 	listenAddr := d.cfg.Daemon.ListenAddr
@@ -684,6 +704,54 @@ func (d *Daemon) removePIDFile() {
 	if d.cfg.Daemon.PIDFile != "" {
 		os.Remove(d.cfg.Daemon.PIDFile)
 	}
+}
+
+func (d *Daemon) addrFilePath() string {
+	if d.cfg.Daemon.PIDFile == "" {
+		return ""
+	}
+	return filepath.Join(filepath.Dir(d.cfg.Daemon.PIDFile), "daemon.addr")
+}
+
+func (d *Daemon) writeAddrFile() error {
+	path := d.addrFilePath()
+	if path == "" {
+		return nil
+	}
+	return os.WriteFile(path, []byte(d.httpAddr), 0o644)
+}
+
+func (d *Daemon) removeAddrFile() {
+	path := d.addrFilePath()
+	if path != "" {
+		os.Remove(path)
+	}
+}
+
+// detectTier determines the cluster tier for this daemon.
+// Priority: 1) explicit config, 2) Nomad node count, 3) default "solo".
+func (d *Daemon) detectTier(ctx context.Context, primaryOrch orchestrator.OrchestratorAdapter) string {
+	// Explicit config tier takes precedence
+	if d.cfg.Tier != "" {
+		fmt.Fprintf(os.Stderr, "daemon: tier from config: %s\n", d.cfg.Tier)
+		return d.cfg.Tier
+	}
+
+	// Derive from Nomad: count nodes; 1 node → solo, >1 → cluster
+	if lister, ok := primaryOrch.(orchestrator.NodeLister); ok {
+		nodes, err := lister.ListNodes(ctx)
+		if err == nil {
+			if len(nodes) > 1 {
+				fmt.Fprintf(os.Stderr, "daemon: tier auto-detected (%d nodes): cluster\n", len(nodes))
+				return "CLUSTER"
+			}
+			fmt.Fprintf(os.Stderr, "daemon: tier auto-detected (%d nodes): solo\n", len(nodes))
+			return "SOLO"
+		}
+		fmt.Fprintf(os.Stderr, "daemon: tier: failed to list nodes: %v, defaulting to solo\n", err)
+	}
+
+	return "SOLO"
 }
 
 // caddyDetected checks whether a Caddy instance is running on this host

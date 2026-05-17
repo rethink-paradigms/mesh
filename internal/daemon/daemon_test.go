@@ -19,7 +19,6 @@ import (
 	"github.com/rethink-paradigms/mesh/internal/body"
 	"github.com/rethink-paradigms/mesh/internal/config"
 	"github.com/rethink-paradigms/mesh/internal/orchestrator"
-	"github.com/rethink-paradigms/mesh/internal/provisioner"
 	"github.com/rethink-paradigms/mesh/internal/store"
 )
 
@@ -262,7 +261,7 @@ func TestReconcileMissingContainer(t *testing.T) {
 	reg := orchestrator.NewRegistry()
 	reg.Register("docker", mockOrch)
 	d.orchRegistry = reg
-	d.bodyMgr = body.NewBodyManager(d.store, mockOrch)
+	d.bodyMgr = body.NewBodyManager(d.store, mockOrch, "")
 
 	if err := d.reconcile(ctx); err != nil {
 		t.Fatalf("reconcile: %v", err)
@@ -303,7 +302,7 @@ func TestReconcileOrphanedStoreRecord(t *testing.T) {
 	reg := orchestrator.NewRegistry()
 	reg.Register("docker", mockOrch)
 	d.orchRegistry = reg
-	d.bodyMgr = body.NewBodyManager(d.store, mockOrch)
+	d.bodyMgr = body.NewBodyManager(d.store, mockOrch, "")
 
 	if err := d.reconcile(ctx); err != nil {
 		t.Fatalf("reconcile: %v", err)
@@ -343,7 +342,7 @@ func TestReconcileStateMismatch(t *testing.T) {
 	reg := orchestrator.NewRegistry()
 	reg.Register("docker", &mockOrchestrator{})
 	d.orchRegistry = reg
-	d.bodyMgr = body.NewBodyManager(d.store, &mockOrchestrator{})
+	d.bodyMgr = body.NewBodyManager(d.store, &mockOrchestrator{}, "")
 
 	if err := d.reconcile(ctx); err != nil {
 		t.Fatalf("reconcile: %v", err)
@@ -384,7 +383,7 @@ func TestReconcileMigrationRecovery(t *testing.T) {
 	reg := orchestrator.NewRegistry()
 	reg.Register("docker", mockOrch)
 	d.orchRegistry = reg
-	d.bodyMgr = body.NewBodyManager(d.store, mockOrch)
+	d.bodyMgr = body.NewBodyManager(d.store, mockOrch, "")
 
 	if err := d.reconcile(ctx); err != nil {
 		t.Fatalf("reconcile: %v", err)
@@ -425,7 +424,7 @@ func TestReconcileHealthSteps(t *testing.T) {
 	reg := orchestrator.NewRegistry()
 	reg.Register("docker", mockOrch)
 	d.orchRegistry = reg
-	d.bodyMgr = body.NewBodyManager(d.store, mockOrch)
+	d.bodyMgr = body.NewBodyManager(d.store, mockOrch, "")
 
 	if err := d.reconcile(ctx); err != nil {
 		t.Fatalf("reconcile: %v", err)
@@ -662,10 +661,6 @@ func TestDaemonWiresOrchRegistry(t *testing.T) {
 	if d.orchRegistry == nil {
 		t.Fatal("orchRegistry should be initialized")
 	}
-	if d.provRegistry == nil {
-		t.Fatal("provRegistry should be initialized")
-	}
-
 	cancel()
 	select {
 	case <-done:
@@ -845,8 +840,7 @@ func TestDaemonStartOrchOnly(t *testing.T) {
 		t.Fatalf("Register: %v", err)
 	}
 	d.orchRegistry = reg
-	d.provRegistry = provisioner.NewRegistry()
-	d.bodyMgr = body.NewBodyManager(d.store, mockOrch)
+	d.bodyMgr = body.NewBodyManager(d.store, mockOrch, "")
 
 	if len(reg.List()) != 1 {
 		t.Fatalf("expected 1 orchestrator, got %d", len(reg.List()))
@@ -1030,7 +1024,7 @@ func TestDaemonReconcileDockerOrphan(t *testing.T) {
 
 	reg := orchestrator.NewRegistry()
 	d.orchRegistry = reg
-	d.bodyMgr = body.NewBodyManager(d.store, &mockOrchestrator{})
+	d.bodyMgr = body.NewBodyManager(d.store, &mockOrchestrator{}, "")
 
 	if err := d.reconcile(ctx); err != nil {
 		t.Fatalf("reconcile: %v", err)

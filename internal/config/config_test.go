@@ -625,23 +625,66 @@ bodies:
 	}
 }
 
-// TestValidatePluginDirMissing verifies error for missing plugin dir.
+// TestValidatePluginDirMissing verifies that Load() succeeds even when plugin dir
+// does not exist — validation no longer creates directories; EnsureDirs does.
 func TestValidatePluginDirMissing(t *testing.T) {
-	content := `
+	tmpDir := t.TempDir()
+	pluginDir := filepath.Join(tmpDir, "plugins", "deep")
+	content := fmt.Sprintf(`
 plugin:
-  dir: /nonexistent/plugins/dir
+  dir: %s
 bodies:
   - name: agent1
     image: alpine:latest
-`
+`, pluginDir)
 	path := writeConfig(t, content)
 
-	_, err := Load(path)
-	if err == nil {
-		t.Fatal("Load() expected error for missing plugin dir, got nil")
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load() expected success, got error: %v", err)
 	}
-	if !strings.Contains(err.Error(), "plugin dir") {
-		t.Errorf("Load() error = %v, want error containing 'plugin dir'", err)
+	// EnsureDirs should create the missing directory
+	if err := EnsureDirs(cfg); err != nil {
+		t.Fatalf("EnsureDirs() error = %v", err)
+	}
+	if _, err := os.Stat(cfg.Plugin.Dir); err != nil {
+		t.Errorf("Plugin.Dir %q not created: %v", cfg.Plugin.Dir, err)
+	}
+}
+
+// TestEnsureDirsCreatesStoreParent verifies EnsureDirs creates the parent of the store path.
+func TestEnsureDirsCreatesStoreParent(t *testing.T) {
+	tmpDir := t.TempDir()
+	storePath := filepath.Join(tmpDir, "deep", "state.db")
+	cfg := &Config{
+		Daemon: DaemonConfig{PIDFile: filepath.Join(tmpDir, "mesh.pid")},
+		Store:  StoreConfig{Path: storePath},
+		Plugin: PluginConfig{Dir: filepath.Join(tmpDir, "plugins")},
+		Bodies: []BodyConfig{{Name: "a", Image: "i"}},
+	}
+	if err := EnsureDirs(cfg); err != nil {
+		t.Fatalf("EnsureDirs() error = %v", err)
+	}
+	if _, err := os.Stat(filepath.Dir(storePath)); err != nil {
+		t.Errorf("store parent %q not created: %v", filepath.Dir(storePath), err)
+	}
+}
+
+// TestEnsureDirsCreatesPIDFileParent verifies EnsureDirs creates the parent of the PID file.
+func TestEnsureDirsCreatesPIDFileParent(t *testing.T) {
+	tmpDir := t.TempDir()
+	pidFile := filepath.Join(tmpDir, "deep", "mesh.pid")
+	cfg := &Config{
+		Daemon: DaemonConfig{PIDFile: pidFile},
+		Store:  StoreConfig{Path: filepath.Join(tmpDir, "state.db")},
+		Plugin: PluginConfig{Dir: filepath.Join(tmpDir, "plugins")},
+		Bodies: []BodyConfig{{Name: "a", Image: "i"}},
+	}
+	if err := EnsureDirs(cfg); err != nil {
+		t.Fatalf("EnsureDirs() error = %v", err)
+	}
+	if _, err := os.Stat(filepath.Dir(pidFile)); err != nil {
+		t.Errorf("PIDFile parent %q not created: %v", filepath.Dir(pidFile), err)
 	}
 }
 
@@ -772,10 +815,6 @@ bodies:
 		t.Errorf("Orchestrators[nomad][region] = %q, want %q", cfg.Orchestrators["nomad"]["region"], "us-east-1")
 	}
 
-	// Provisioners should be initialized (not nil)
-	if cfg.Provisioners == nil {
-		t.Fatal("Provisioners is nil, want empty map")
-	}
 }
 
 // TestConfigBackwardCompat loads a legacy YAML with [nomad] section and maps it to orchestrators.
@@ -822,7 +861,7 @@ bodies:
 	}
 }
 
-// TestConfigDefaults verifies Orchestrators and Provisioners are initialized on minimal config.
+// TestConfigDefaults verifies Orchestrators are initialized on minimal config.
 func TestConfigDefaults(t *testing.T) {
 	content := `
 registry:
@@ -844,26 +883,25 @@ bodies:
 	if cfg.Orchestrators == nil {
 		t.Fatal("Orchestrators is nil, want initialized map")
 	}
-	if cfg.Provisioners == nil {
-		t.Fatal("Provisioners is nil, want initialized map")
-	}
 	// Nomad address default should be set
 	if cfg.Orchestrators["nomad"]["address"] != "http://127.0.0.1:4646" {
 		t.Errorf("Orchestrators[nomad][address] = %q, want %q", cfg.Orchestrators["nomad"]["address"], "http://127.0.0.1:4646")
 	}
 }
 
-// TestConfigProvisionersEmpty verifies Provisioners is an empty map by default.
-func TestConfigProvisionersEmpty(t *testing.T) {
+// TestConfigProvisionersRemoved verifies the removed Provisioners field is not in the config.
+func TestConfigProvisionersRemoved(t *testing.T) {
+	// Provisioners was removed as dead code. Verify a YAML with provisioners section
+	// does not cause a parse error and the field is silently ignored.
 	content := `
 registry:
   type: s3
   bucket: my-bucket
 plugin:
   dir: /tmp
-bodies:
-  - name: agent1
-    image: alpine:latest
+provisioners:
+  do:
+    token: dummy
 `
 	path := writeConfig(t, content)
 
@@ -872,11 +910,8 @@ bodies:
 		t.Fatalf("Load() error = %v", err)
 	}
 
-	if cfg.Provisioners == nil {
-		t.Fatal("Provisioners is nil, want empty map")
-	}
-	if len(cfg.Provisioners) != 0 {
-		t.Errorf("len(Provisioners) = %d, want 0", len(cfg.Provisioners))
+	if cfg.Orchestrators == nil {
+		t.Fatal("Orchestrators is nil, want initialized map")
 	}
 }
 

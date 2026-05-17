@@ -9,19 +9,19 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// AgentManifest describes a built-in agent that can be installed on Mesh.
-type AgentManifest struct {
+// Descriptor describes a built-in agent that can be installed on Mesh.
+type Descriptor struct {
 	Name        string         `yaml:"name"`
 	Image       string         `yaml:"image"`
 	Command     []string       `yaml:"command"`
-	Ports       []ManifestPort `yaml:"ports"`
+	Ports       []PortMapping  `yaml:"ports"`
 	Env         EnvConfig      `yaml:"env"`
 	HealthCheck *HealthCheck   `yaml:"health_check"`
 	Resources   ResourceLimits `yaml:"resources"`
 }
 
-// ManifestPort describes a single port mapping for an agent manifest.
-type ManifestPort struct {
+// PortMapping describes a single port mapping for an agent descriptor.
+type PortMapping struct {
 	Name          string `yaml:"name"`
 	ContainerPort int    `yaml:"container_port"`
 	Protocol      string `yaml:"protocol"`
@@ -48,35 +48,35 @@ type ResourceLimits struct {
 	CPUShares int `yaml:"cpu_shares"`
 }
 
-// ParseManifest parses a YAML manifest from raw bytes.
-func ParseManifest(data []byte) (*AgentManifest, error) {
-	var m AgentManifest
+// ParseDescriptor parses a YAML descriptor from raw bytes.
+func ParseDescriptor(data []byte) (*Descriptor, error) {
+	var m Descriptor
 	if err := yaml.Unmarshal(data, &m); err != nil {
-		return nil, fmt.Errorf("parse manifest: %w", err)
+		return nil, fmt.Errorf("parse descriptor: %w", err)
 	}
-	if err := validateManifest(&m); err != nil {
-		return nil, fmt.Errorf("validate manifest: %w", err)
+	if err := validateDescriptor(&m); err != nil {
+		return nil, fmt.Errorf("validate descriptor: %w", err)
 	}
 	return &m, nil
 }
 
-// LoadManifest reads and parses a single YAML manifest file.
-func LoadManifest(path string) (*AgentManifest, error) {
+// LoadDescriptor reads and parses a single YAML descriptor file.
+func LoadDescriptor(path string) (*Descriptor, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return nil, fmt.Errorf("read manifest %s: %w", path, err)
+		return nil, fmt.Errorf("read descriptor %s: %w", path, err)
 	}
-	return ParseManifest(data)
+	return ParseDescriptor(data)
 }
 
-// LoadManifestDir loads all .yaml files from a directory, keyed by manifest name.
-func LoadManifestDir(dir string) (map[string]*AgentManifest, error) {
+// LoadDescriptors loads all .yaml files from a directory, keyed by descriptor name.
+func LoadDescriptors(dir string) (map[string]*Descriptor, error) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
-		return nil, fmt.Errorf("read manifest dir %s: %w", dir, err)
+		return nil, fmt.Errorf("read descriptor dir %s: %w", dir, err)
 	}
 
-	manifests := make(map[string]*AgentManifest)
+	descriptors := make(map[string]*Descriptor)
 	for _, entry := range entries {
 		if entry.IsDir() {
 			continue
@@ -87,19 +87,19 @@ func LoadManifestDir(dir string) (map[string]*AgentManifest, error) {
 		}
 
 		path := filepath.Join(dir, name)
-		m, err := LoadManifest(path)
+		m, err := LoadDescriptor(path)
 		if err != nil {
 			return nil, err
 		}
-		manifests[m.Name] = m
+		descriptors[m.Name] = m
 	}
 
-	return manifests, nil
+	return descriptors, nil
 }
 
 // ValidateEnv checks that all required environment variables are present.
-func ValidateEnv(manifest *AgentManifest, provided map[string]string) error {
-	for _, key := range manifest.Env.Required {
+func ValidateEnv(descriptor *Descriptor, provided map[string]string) error {
+	for _, key := range descriptor.Env.Required {
 		if _, ok := provided[key]; !ok {
 			return fmt.Errorf("required env var %q not provided", key)
 		}
@@ -107,7 +107,7 @@ func ValidateEnv(manifest *AgentManifest, provided map[string]string) error {
 	return nil
 }
 
-func validateManifest(m *AgentManifest) error {
+func validateDescriptor(m *Descriptor) error {
 	if m.Name == "" {
 		return fmt.Errorf("name is required")
 	}

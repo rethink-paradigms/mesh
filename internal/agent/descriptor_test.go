@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-func TestLoadManifest(t *testing.T) {
+func TestLoadDescriptor(t *testing.T) {
 	tmpDir := t.TempDir()
 	path := filepath.Join(tmpDir, "test-agent.yaml")
 	content := `
@@ -34,12 +34,12 @@ resources:
   cpu_shares: 128
 `
 	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
-		t.Fatalf("write test manifest: %v", err)
+		t.Fatalf("write test descriptor: %v", err)
 	}
 
-	m, err := LoadManifest(path)
+	m, err := LoadDescriptor(path)
 	if err != nil {
-		t.Fatalf("LoadManifest: %v", err)
+		t.Fatalf("LoadDescriptor: %v", err)
 	}
 
 	if m.Name != "test-agent" {
@@ -95,70 +95,70 @@ resources:
 	}
 }
 
-func TestLoadManifestMissingRequired(t *testing.T) {
+func TestLoadDescriptorMissingRequired(t *testing.T) {
 	tmpDir := t.TempDir()
 
 	// Missing name
 	path1 := filepath.Join(tmpDir, "missing-name.yaml")
 	if err := os.WriteFile(path1, []byte("image: test\n"), 0644); err != nil {
-		t.Fatalf("write manifest: %v", err)
+		t.Fatalf("write descriptor: %v", err)
 	}
-	if _, err := LoadManifest(path1); err == nil {
+	if _, err := LoadDescriptor(path1); err == nil {
 		t.Error("expected error for missing name, got nil")
 	}
 
 	// Missing image
 	path2 := filepath.Join(tmpDir, "missing-image.yaml")
 	if err := os.WriteFile(path2, []byte("name: test\n"), 0644); err != nil {
-		t.Fatalf("write manifest: %v", err)
+		t.Fatalf("write descriptor: %v", err)
 	}
-	if _, err := LoadManifest(path2); err == nil {
+	if _, err := LoadDescriptor(path2); err == nil {
 		t.Error("expected error for missing image, got nil")
 	}
 }
 
-func TestLoadManifestDir(t *testing.T) {
+func TestLoadDescriptors(t *testing.T) {
 	tmpDir := t.TempDir()
 
 	content1 := "name: agent-a\nimage: img-a\n"
 	content2 := "name: agent-b\nimage: img-b\n"
-	content3 := "not a yaml manifest"
+	content3 := "not a yaml descriptor"
 
 	if err := os.WriteFile(filepath.Join(tmpDir, "agent-a.yaml"), []byte(content1), 0644); err != nil {
-		t.Fatalf("write manifest: %v", err)
+		t.Fatalf("write descriptor: %v", err)
 	}
 	if err := os.WriteFile(filepath.Join(tmpDir, "agent-b.yaml"), []byte(content2), 0644); err != nil {
-		t.Fatalf("write manifest: %v", err)
+		t.Fatalf("write descriptor: %v", err)
 	}
 	if err := os.WriteFile(filepath.Join(tmpDir, "readme.txt"), []byte(content3), 0644); err != nil {
 		t.Fatalf("write readme: %v", err)
 	}
 
-	manifests, err := LoadManifestDir(tmpDir)
+	descriptors, err := LoadDescriptors(tmpDir)
 	if err != nil {
-		t.Fatalf("LoadManifestDir: %v", err)
+		t.Fatalf("LoadDescriptors: %v", err)
 	}
 
-	if len(manifests) != 2 {
-		t.Fatalf("len(manifests) = %d, want 2", len(manifests))
+	if len(descriptors) != 2 {
+		t.Fatalf("len(descriptors) = %d, want 2", len(descriptors))
 	}
-	if manifests["agent-a"] == nil {
+	if descriptors["agent-a"] == nil {
 		t.Error("missing agent-a")
 	}
-	if manifests["agent-b"] == nil {
+	if descriptors["agent-b"] == nil {
 		t.Error("missing agent-b")
 	}
-	if manifests["agent-a"].Image != "img-a" {
-		t.Errorf("agent-a.Image = %q, want img-a", manifests["agent-a"].Image)
+	if descriptors["agent-a"].Image != "img-a" {
+		t.Errorf("agent-a.Image = %q, want img-a", descriptors["agent-a"].Image)
 	}
 }
 
-func TestParseManifest(t *testing.T) {
+func TestParseDescriptor(t *testing.T) {
 	t.Run("valid yaml", func(t *testing.T) {
 		data := []byte("name: test-agent\nimage: test:latest\n")
-		m, err := ParseManifest(data)
+		m, err := ParseDescriptor(data)
 		if err != nil {
-			t.Fatalf("ParseManifest: %v", err)
+			t.Fatalf("ParseDescriptor: %v", err)
 		}
 		if m.Name != "test-agent" {
 			t.Errorf("Name = %q, want test-agent", m.Name)
@@ -170,18 +170,18 @@ func TestParseManifest(t *testing.T) {
 
 	t.Run("invalid yaml", func(t *testing.T) {
 		data := []byte("{{invalid:::yaml")
-		_, err := ParseManifest(data)
+		_, err := ParseDescriptor(data)
 		if err == nil {
 			t.Fatal("expected error for invalid YAML, got nil")
 		}
-		if !strings.Contains(err.Error(), "parse manifest") {
-			t.Errorf("error = %q, want it to contain 'parse manifest'", err.Error())
+		if !strings.Contains(err.Error(), "parse descriptor") {
+			t.Errorf("error = %q, want it to contain 'parse descriptor'", err.Error())
 		}
 	})
 
 	t.Run("missing name", func(t *testing.T) {
 		data := []byte("image: test:latest\n")
-		_, err := ParseManifest(data)
+		_, err := ParseDescriptor(data)
 		if err == nil {
 			t.Fatal("expected error for missing name, got nil")
 		}
@@ -192,7 +192,7 @@ func TestParseManifest(t *testing.T) {
 
 	t.Run("missing image", func(t *testing.T) {
 		data := []byte("name: test-agent\n")
-		_, err := ParseManifest(data)
+		_, err := ParseDescriptor(data)
 		if err == nil {
 			t.Fatal("expected error for missing image, got nil")
 		}
@@ -203,7 +203,7 @@ func TestParseManifest(t *testing.T) {
 }
 
 func TestValidateEnv(t *testing.T) {
-	m := &AgentManifest{
+	m := &Descriptor{
 		Name:  "test",
 		Image: "test",
 		Env: EnvConfig{

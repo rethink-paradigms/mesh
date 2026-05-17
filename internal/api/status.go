@@ -39,7 +39,7 @@ func (h *Handler) Status(w http.ResponseWriter, r *http.Request) {
 	// Tier
 	resp.Tier = h.cfg.Tier
 	if resp.Tier == "" {
-		resp.Tier = "lite"
+		resp.Tier = "solo"
 	}
 
 	// Bodies

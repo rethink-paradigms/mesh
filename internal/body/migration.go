@@ -7,13 +7,11 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"strings"
 	"sync"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/rethink-paradigms/mesh/internal/orchestrator"
-	"github.com/rethink-paradigms/mesh/internal/provisioner"
 	"github.com/rethink-paradigms/mesh/internal/store"
 )
 
@@ -50,7 +48,6 @@ type migrationContext struct {
 type MigrationCoordinator struct {
 	store        *store.Store
 	orchRegistry *orchestrator.Registry
-	provRegistry *provisioner.Registry
 	bm           *BodyManager
 	registry     Registry
 	mu           sync.Mutex
@@ -58,11 +55,10 @@ type MigrationCoordinator struct {
 
 // NewMigrationCoordinator creates a migration coordinator.
 // If registry is non-nil, cross-machine migrations will push/pull snapshots via S3.
-func NewMigrationCoordinator(s *store.Store, bm *BodyManager, orchRegistry *orchestrator.Registry, provRegistry *provisioner.Registry, registry Registry) *MigrationCoordinator {
+func NewMigrationCoordinator(s *store.Store, bm *BodyManager, orchRegistry *orchestrator.Registry, registry Registry) *MigrationCoordinator {
 	return &MigrationCoordinator{
 		store:        s,
 		orchRegistry: orchRegistry,
-		provRegistry: provRegistry,
 		bm:           bm,
 		registry:     registry,
 	}
@@ -315,67 +311,7 @@ func (mc *MigrationCoordinator) stepProvision(ctx context.Context, mig *migratio
 		return nil
 	}
 
-	// Cross-substrate: look up provisioner for target
-	prov, err := mc.provRegistry.Open(mig.target)
-	if err != nil {
-		available := mc.provRegistry.List()
-		return fmt.Errorf("no provisioner for substrate %q (available: %s)", mig.target, strings.Join(available, ", "))
-	}
-
-	// Provision a machine on the target substrate
-	machineSpec := provisioner.MachineSpec{
-		Image:     "mesh-agent",
-		MemoryMB:  512,
-		CPUShares: 256,
-		Region:    "default",
-	}
-	_, err = prov.CreateMachine(ctx, machineSpec, "")
-	if err != nil {
-		return fmt.Errorf("provision target machine on %q: %w", mig.target, err)
-	}
-
-	// After provisioning, schedule body on target orchestrator
-	targetOrch, err := mc.orchRegistry.Open(mig.target)
-	if err != nil {
-		return fmt.Errorf("open target orchestrator for %q: %w", mig.target, err)
-	}
-
-	srcOrch, err := mc.orchRegistry.Open(b.Substrate)
-	if err != nil {
-		return fmt.Errorf("open source orchestrator for %q: %w", b.Substrate, err)
-	}
-
-	inspector, ok := srcOrch.(orchestrator.Inspector)
-	if !ok {
-		return fmt.Errorf("source orchestrator %q does not support Inspect", b.Substrate)
-	}
-
-	srcMeta, err := inspector.Inspect(ctx, orchestrator.Handle(b.InstanceID))
-	if err != nil {
-		return fmt.Errorf("inspect source container: %w", err)
-	}
-
-	spec := orchestrator.BodySpec{
-		Image:   srcMeta.Image,
-		Workdir: srcMeta.Workdir,
-		Env:     srcMeta.Env,
-		Cmd:     srcMeta.Cmd,
-	}
-
-	targetHandle, err := targetOrch.ScheduleBody(ctx, spec)
-	if err != nil {
-		return fmt.Errorf("schedule body on target orchestrator %q: %w", mig.target, err)
-	}
-
-	mig.newHandle = orchestrator.Handle(targetHandle)
-
-	if err := mc.store.UpdateBodyState(ctx, mig.bodyID, orchestrator.StateMigrating); err != nil {
-		_ = targetOrch.DestroyBody(ctx, targetHandle)
-		mig.newHandle = ""
-		return fmt.Errorf("persist target handle: %w", err)
-	}
-
-	return nil
+	return fmt.Errorf("cross-substrate migration not supported (target=%q, source=%q)", mig.target, b.Substrate)
 }
 
 func (mc *MigrationCoordinator) stepTransfer(ctx context.Context, mig *migrationContext) error {

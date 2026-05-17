@@ -130,6 +130,6 @@ func TestHandleCapabilitiesDefaultFeatures(t *testing.T) {
 	err := json.NewDecoder(rr.Body).Decode(&resp)
 	require.NoError(t, err)
 
-	assert.Equal(t, "lite", resp.Tier)
+	assert.Equal(t, "solo", resp.Tier)
 	assert.Empty(t, resp.Features)
 }

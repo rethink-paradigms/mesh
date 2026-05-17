@@ -19,7 +19,6 @@ import (
 	"github.com/rethink-paradigms/mesh/internal/body"
 	"github.com/rethink-paradigms/mesh/internal/orchestrator"
 	"github.com/rethink-paradigms/mesh/internal/plugin"
-	"github.com/rethink-paradigms/mesh/internal/provisioner"
 	"github.com/rethink-paradigms/mesh/internal/service"
 	"github.com/rethink-paradigms/mesh/internal/store"
 )
@@ -75,23 +74,6 @@ func (m *mockOrchAdapter) Exec(ctx context.Context, _ orchestrator.Handle, cmd [
 	return orchestrator.ExecResult{Stdout: "ok", ExitCode: 0}, nil
 }
 
-type mockProvAdapter struct{}
-
-func (m *mockProvAdapter) CreateMachine(_ context.Context, _ provisioner.MachineSpec, _ string) (provisioner.MachineID, error) {
-	return "mock-machine-1", nil
-}
-func (m *mockProvAdapter) DestroyMachine(_ context.Context, _ provisioner.MachineID) error {
-	return nil
-}
-func (m *mockProvAdapter) GetMachineStatus(_ context.Context, _ provisioner.MachineID) (provisioner.MachineStatus, error) {
-	return provisioner.MachineStatus{State: "running", ID: "mock-machine-1"}, nil
-}
-func (m *mockProvAdapter) ListMachines(_ context.Context) ([]provisioner.MachineInfo, error) {
-	return nil, nil
-}
-func (m *mockProvAdapter) Name() string                     { return "mock-prov" }
-func (m *mockProvAdapter) IsHealthy(_ context.Context) bool { return true }
-
 func tempStore(t *testing.T) *store.Store {
 	t.Helper()
 	f, err := os.CreateTemp("", "mcp-test-*.db")
@@ -114,17 +96,15 @@ func tempStore(t *testing.T) *store.Store {
 
 func testBodyManager(t *testing.T, s *store.Store) *body.BodyManager {
 	t.Helper()
-	return body.NewBodyManager(s, &mockOrchAdapter{})
+	return body.NewBodyManager(s, &mockOrchAdapter{}, "")
 }
 
 func testMigrator(t *testing.T, s *store.Store, bm *body.BodyManager) *body.MigrationCoordinator {
 	t.Helper()
 	orchReg := orchestrator.NewRegistry()
 	_ = orchReg.Register("local", &mockOrchAdapter{})
-	_ = orchReg.Register("fleet", &mockOrchAdapter{})
-	provReg := provisioner.NewRegistry()
-	_ = provReg.Register("fleet", &mockProvAdapter{})
-	return body.NewMigrationCoordinator(s, bm, orchReg, provReg, nil)
+	_ = orchReg.Register("mock", &mockOrchAdapter{})
+	return body.NewMigrationCoordinator(s, bm, orchReg, nil)
 }
 
 type testHarness struct {
@@ -845,7 +825,7 @@ func TestMigrateBody(t *testing.T) {
 		JSONRPC: "2.0",
 		ID:      25,
 		Method:  "tools/call",
-		Params:  rawMessage(t, map[string]interface{}{"name": "migrate_body", "arguments": map[string]interface{}{"body_id": created.ID, "target_substrate": "fleet"}}),
+		Params:  rawMessage(t, map[string]interface{}{"name": "migrate_body", "arguments": map[string]interface{}{"body_id": created.ID, "target_substrate": "local"}}),
 	})
 
 	resp := h.readResponse(t)

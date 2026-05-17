@@ -2,17 +2,17 @@ package main
 
 import (
 	"bytes"
-	"context"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"os"
-	"os/exec"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"testing"
 	"time"
 
-	"github.com/rethink-paradigms/mesh/internal/manifest"
+	"github.com/rethink-paradigms/mesh/internal/config"
+	"github.com/rethink-paradigms/mesh/internal/snapshotmeta"
 )
 
 func TestParseTimestampFromFilename(t *testing.T) {
@@ -119,7 +119,7 @@ func TestListCommand(t *testing.T) {
 	mustCreateFile(t, snap2, 2048)
 
 	ts := time.Date(2026, 4, 24, 10, 0, 0, 0, time.UTC)
-	m1 := &manifest.Manifest{
+	m1 := &snapshotmeta.Metadata{
 		AgentName:     agentName,
 		Timestamp:     ts,
 		SourceMachine: "myserver",
@@ -129,10 +129,10 @@ func TestListCommand(t *testing.T) {
 		Checksum:      "abc123",
 		Size:          1024,
 	}
-	mustWriteManifest(t, manifest.ManifestPath(snap1), m1)
+	mustWriteMeta(t, snapshotmeta.SidecarPath(snap1), m1)
 
 	ts2 := time.Date(2026, 4, 24, 15, 0, 0, 0, time.UTC)
-	m2 := &manifest.Manifest{
+	m2 := &snapshotmeta.Metadata{
 		AgentName:     agentName,
 		Timestamp:     ts2,
 		SourceMachine: "",
@@ -142,7 +142,7 @@ func TestListCommand(t *testing.T) {
 		Checksum:      "def456",
 		Size:          2048,
 	}
-	mustWriteManifest(t, manifest.ManifestPath(snap2), m2)
+	mustWriteMeta(t, snapshotmeta.SidecarPath(snap2), m2)
 
 	t.Run("list specific agent", func(t *testing.T) {
 		cmd := newListCmd()
@@ -205,7 +205,7 @@ func TestInspectCommand(t *testing.T) {
 	mustCreateFile(t, snapPath, 2048)
 
 	ts := time.Date(2026, 4, 24, 15, 30, 0, 0, time.UTC)
-	m := &manifest.Manifest{
+	m := &snapshotmeta.Metadata{
 		AgentName:     "testagent",
 		Timestamp:     ts,
 		SourceMachine: "prod-server",
@@ -215,7 +215,7 @@ func TestInspectCommand(t *testing.T) {
 		Checksum:      "sha256abc123",
 		Size:          2048,
 	}
-	mustWriteManifest(t, manifest.ManifestPath(snapPath), m)
+	mustWriteMeta(t, snapshotmeta.SidecarPath(snapPath), m)
 
 	cmd := newInspectCmd()
 	var stdout bytes.Buffer
@@ -253,7 +253,7 @@ func TestInspectCommandWithAgentName(t *testing.T) {
 	mustCreateFile(t, snapPath, 1024)
 
 	ts := time.Date(2026, 4, 24, 15, 30, 0, 0, time.UTC)
-	m := &manifest.Manifest{
+	m := &snapshotmeta.Metadata{
 		AgentName:     agentName,
 		Timestamp:     ts,
 		SourceMachine: "local",
@@ -263,7 +263,7 @@ func TestInspectCommandWithAgentName(t *testing.T) {
 		Checksum:      "deadbeef",
 		Size:          1024,
 	}
-	mustWriteManifest(t, manifest.ManifestPath(snapPath), m)
+	mustWriteMeta(t, snapshotmeta.SidecarPath(snapPath), m)
 
 	cmd := newInspectCmd()
 	var stdout bytes.Buffer
@@ -291,7 +291,7 @@ func TestPruneCommand(t *testing.T) {
 		snapPath := filepath.Join(snapDir, fmt.Sprintf("%s-20260424-%s.tar.zst", agentName, ts))
 		mustCreateFile(t, snapPath, int64(100*(i+1)))
 		os.WriteFile(snapPath+".sha256", []byte(fmt.Sprintf("hash%d\n", i)), 0o644)
-		mustWriteManifest(t, manifest.ManifestPath(snapPath), &manifest.Manifest{
+		mustWriteMeta(t, snapshotmeta.SidecarPath(snapPath), &snapshotmeta.Metadata{
 			AgentName: agentName,
 			Checksum:  fmt.Sprintf("hash%d", i),
 		})
@@ -402,9 +402,9 @@ func mustMkdirAll(t *testing.T, path string) {
 	}
 }
 
-func mustWriteManifest(t *testing.T, path string, m *manifest.Manifest) {
+func mustWriteMeta(t *testing.T, path string, m *snapshotmeta.Metadata) {
 	t.Helper()
-	if err := manifest.Write(path, m); err != nil {
+	if err := snapshotmeta.Write(path, m); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -457,142 +457,58 @@ func mustContain(t *testing.T, output, substr string) {
 	}
 }
 
-func TestServeCommandStartsDaemon(t *testing.T) {
+func TestDaemonAddrFromFile(t *testing.T) {
 	tmpHome := t.TempDir()
-	t.Setenv("HOME", tmpHome)
+	cfg := &config.Config{Daemon: config.DaemonConfig{PIDFile: filepath.Join(tmpHome, ".mesh", "mesh.pid")}}
 
-	cfgPath := mustWriteYAMLConfig(t, tmpHome, []string{"test-agent"})
-
-	root := newRootCmd()
-	var stdout, stderr bytes.Buffer
-	root.SetOut(&stdout)
-	root.SetErr(&stderr)
-	root.SetArgs([]string{"serve", "--config", cfgPath})
-
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	root.SetContext(ctx)
-
-	done := make(chan error, 1)
-	go func() {
-		done <- root.Execute()
-	}()
-
-	pidFile := filepath.Join(tmpHome, ".mesh", "mesh.pid")
-	var pid int
-	for i := 0; i < 50; i++ {
-		data, err := os.ReadFile(pidFile)
-		if err == nil {
-			pid, _ = strconv.Atoi(strings.TrimSpace(string(data)))
-			if pid > 0 {
-				break
-			}
-		}
-		time.Sleep(50 * time.Millisecond)
+	// No addr file — falls back to default
+	addr, err := daemonAddr(cfg)
+	if err != nil {
+		t.Fatalf("daemonAddr: %v", err)
 	}
-	if pid == 0 {
-		t.Fatal("daemon did not write PID file")
+	if addr != "127.0.0.1:8080" {
+		t.Fatalf("addr = %q, want 127.0.0.1:8080", addr)
 	}
 
-	cancel()
-
-	select {
-	case err := <-done:
-		if pid == 0 {
-			t.Fatalf("daemon did not write PID file (serve returned: %v)", err)
-		}
-		if err != nil {
-			t.Fatalf("serve command failed: %v", err)
-		}
-	case <-time.After(5 * time.Second):
-		if pid == 0 {
-			t.Fatal("daemon did not write PID file within timeout")
-		}
-		t.Fatal("serve command did not return within timeout")
+	// With addr file
+	mustMkdirAll(t, filepath.Dir(cfg.Daemon.PIDFile))
+	addrFile := filepath.Join(filepath.Dir(cfg.Daemon.PIDFile), "daemon.addr")
+	if err := os.WriteFile(addrFile, []byte("127.0.0.1:9999"), 0o644); err != nil {
+		t.Fatal(err)
 	}
 
-	if _, err := os.Stat(pidFile); !os.IsNotExist(err) {
-		t.Fatal("PID file should be removed after stop")
+	addr, err = daemonAddr(cfg)
+	if err != nil {
+		t.Fatalf("daemonAddr: %v", err)
+	}
+	if addr != "127.0.0.1:9999" {
+		t.Fatalf("addr = %q, want 127.0.0.1:9999", addr)
 	}
 }
 
-func TestStopCommandKillsDaemon(t *testing.T) {
+func TestStatusCommandHTTP(t *testing.T) {
 	tmpHome := t.TempDir()
 	t.Setenv("HOME", tmpHome)
 
 	cfgPath := mustWriteYAMLConfig(t, tmpHome, []string{})
 
-	fakeDaemon := exec.Command("sleep", "30")
-	if err := fakeDaemon.Start(); err != nil {
-		t.Fatalf("start fake daemon: %v", err)
-	}
-	defer fakeDaemon.Process.Kill()
+	// Start a fake daemon HTTP server
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v1/status", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"daemon":{"version":"test","uptime_seconds":42,"start_time":"2026-05-17T00:00:00Z"},"tier":"lite","bodies":{"total":1,"running":1,"stopped":0,"error":0}}`))
+	})
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
 
+	// Write the addr file so status finds it
 	pidFile := filepath.Join(tmpHome, ".mesh", "mesh.pid")
-	if err := os.WriteFile(pidFile, []byte(fmt.Sprintf("%d", fakeDaemon.Process.Pid)), 0o644); err != nil {
-		t.Fatalf("write PID file: %v", err)
+	addrFile := filepath.Join(tmpHome, ".mesh", "daemon.addr")
+	if err := os.WriteFile(addrFile, []byte(srv.Listener.Addr().String()), 0o644); err != nil {
+		t.Fatal(err)
 	}
-
-	root := newRootCmd()
-	var stdout, stderr bytes.Buffer
-	root.SetOut(&stdout)
-	root.SetErr(&stderr)
-	root.SetArgs([]string{"stop", "--config", cfgPath, "--timeout", "500ms"})
-
-	if err := root.Execute(); err != nil {
-		t.Fatalf("stop command failed: %v", err)
-	}
-
-	output := stdout.String()
-	mustContain(t, output, "Stopping mesh daemon")
-
-	done := make(chan error, 1)
-	go func() {
-		done <- fakeDaemon.Wait()
-	}()
-	select {
-	case <-done:
-	case <-time.After(2 * time.Second):
-		fakeDaemon.Process.Kill()
-		t.Fatal("daemon process should have exited after stop")
-	}
-}
-
-func TestStopCommandNotRunning(t *testing.T) {
-	tmpHome := t.TempDir()
-	t.Setenv("HOME", tmpHome)
-
-	cfgPath := mustWriteYAMLConfig(t, tmpHome, []string{})
-
-	root := newRootCmd()
-	var stderr bytes.Buffer
-	root.SetErr(&stderr)
-	root.SetArgs([]string{"stop", "--config", cfgPath})
-
-	err := root.Execute()
-	if err == nil {
-		t.Fatal("expected error when daemon is not running")
-	}
-	if !strings.Contains(err.Error(), "not running") {
-		t.Fatalf("error = %q, want 'not running'", err.Error())
-	}
-}
-
-func TestStatusCommandRunning(t *testing.T) {
-	tmpHome := t.TempDir()
-	t.Setenv("HOME", tmpHome)
-
-	cfgPath := mustWriteYAMLConfig(t, tmpHome, []string{})
-
-	fakeDaemon := exec.Command("sleep", "30")
-	if err := fakeDaemon.Start(); err != nil {
-		t.Fatalf("start fake daemon: %v", err)
-	}
-	defer fakeDaemon.Process.Kill()
-
-	pidFile := filepath.Join(tmpHome, ".mesh", "mesh.pid")
-	if err := os.WriteFile(pidFile, []byte(fmt.Sprintf("%d", fakeDaemon.Process.Pid)), 0o644); err != nil {
-		t.Fatalf("write PID file: %v", err)
+	if err := os.WriteFile(pidFile, []byte("12345"), 0o644); err != nil {
+		t.Fatal(err)
 	}
 
 	root := newRootCmd()
@@ -606,7 +522,7 @@ func TestStatusCommandRunning(t *testing.T) {
 
 	output := stdout.String()
 	mustContain(t, output, "Mesh daemon: running")
-	mustContain(t, output, fmt.Sprintf("(pid %d)", fakeDaemon.Process.Pid))
+	mustContain(t, output, "Version: test")
 }
 
 func TestStatusCommandStopped(t *testing.T) {
@@ -626,4 +542,45 @@ func TestStatusCommandStopped(t *testing.T) {
 
 	output := stdout.String()
 	mustContain(t, output, "Mesh daemon: stopped")
+}
+
+func TestStopCommandHTTP(t *testing.T) {
+	tmpHome := t.TempDir()
+	t.Setenv("HOME", tmpHome)
+
+	cfgPath := mustWriteYAMLConfig(t, tmpHome, []string{})
+
+	stopped := false
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v1/stop", func(w http.ResponseWriter, r *http.Request) {
+		stopped = true
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusAccepted)
+		w.Write([]byte(`{"status":"stopping"}`))
+	})
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	pidFile := filepath.Join(tmpHome, ".mesh", "mesh.pid")
+	addrFile := filepath.Join(tmpHome, ".mesh", "daemon.addr")
+	if err := os.WriteFile(addrFile, []byte(srv.Listener.Addr().String()), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(pidFile, []byte("12345"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	root := newRootCmd()
+	var stdout bytes.Buffer
+	root.SetOut(&stdout)
+	root.SetArgs([]string{"stop", "--config", cfgPath})
+
+	if err := root.Execute(); err != nil {
+		t.Fatalf("stop command failed: %v", err)
+	}
+
+	if !stopped {
+		t.Fatal("stop endpoint was not called")
+	}
+	mustContain(t, stdout.String(), "Stopping mesh daemon")
 }

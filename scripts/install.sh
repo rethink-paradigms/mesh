@@ -336,12 +336,22 @@ post_install() {
   "$MESH_CMD" --version
   ok "Mesh $(mesh --version) installed successfully"
 
-  # Install systemd service via inline template
+  # Install systemd service
+  # Canonical source: scripts/mesh-daemon.service (file).
+  # Inline heredoc fallback for standalone curl|sh when the canonical file
+  # is not available. These MUST stay in sync.
   if [ -d "/etc/systemd/system" ]; then
     info "Installing systemd service..."
-    cat > /etc/systemd/system/mesh-daemon.service << 'SERVICE'
+    SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+    CANONICAL="$SCRIPT_DIR/mesh-daemon.service"
+    if [ -f "$CANONICAL" ]; then
+      cp "$CANONICAL" /etc/systemd/system/mesh-daemon.service
+      ok "Installed systemd service from $CANONICAL"
+    else
+      # Fallback for standalone curl|sh -- must match mesh-daemon.service
+      cat > /etc/systemd/system/mesh-daemon.service << 'SERVICE'
 [Unit]
-Description=Mesh Daemon - Portable agent-body runtime
+Description=Mesh Daemon -- Portable agent-body runtime
 After=network-online.target docker.service
 
 [Service]
@@ -356,8 +366,10 @@ StandardError=journal
 [Install]
 WantedBy=multi-user.target
 SERVICE
+      ok "Installed systemd service from inline template"
+    fi
     systemctl daemon-reload
-    ok "Installed systemd service"
+    ok "Systemd service installed and daemon reloaded"
   fi
 }
 
@@ -397,9 +409,9 @@ EOF
   check_path
   post_install
   if [ "$MESH_SKIP_INIT" = "1" ]; then
-    ok "Mesh installed (init skipped). Run 'mesh serve' to start the daemon."
+    ok "Mesh installed (init skipped). Run 'mesh-daemon serve' to start the daemon."
   else
-    ok "Mesh is ready. Run 'mesh serve' to start the daemon."
+    ok "Mesh is ready. Run 'mesh-daemon serve' to start the daemon."
   fi
 }
 

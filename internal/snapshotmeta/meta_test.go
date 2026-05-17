@@ -1,4 +1,4 @@
-package manifest
+package snapshotmeta
 
 import (
 	"encoding/json"
@@ -13,7 +13,7 @@ func TestRoundTrip(t *testing.T) {
 	dir := t.TempDir()
 	ts := time.Date(2026, 4, 23, 12, 30, 0, 0, time.UTC)
 
-	original := &Manifest{
+	original := &Metadata{
 		AgentName:     "test-agent",
 		Timestamp:     ts,
 		SourceMachine: "host-01",
@@ -64,7 +64,7 @@ func TestAllFields(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "test.json")
 
-	m := &Manifest{
+	m := &Metadata{
 		AgentName:     "agent",
 		Timestamp:     time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
 		SourceMachine: "machine",
@@ -111,7 +111,7 @@ func TestMalformedJSON(t *testing.T) {
 	}
 }
 
-func TestManifestPath(t *testing.T) {
+func TestSidecarPath(t *testing.T) {
 	tests := []struct {
 		input string
 		want  string
@@ -131,18 +131,18 @@ func TestManifestPath(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		got := ManifestPath(tt.input)
+		got := SidecarPath(tt.input)
 		if got != tt.want {
-			t.Errorf("ManifestPath(%q) = %q, want %q", tt.input, got, tt.want)
+			t.Errorf("SidecarPath(%q) = %q, want %q", tt.input, got, tt.want)
 		}
 	}
 }
 
-func TestManifestPathNoExt(t *testing.T) {
-	got := ManifestPath("some-file")
+func TestSidecarPathNoExt(t *testing.T) {
+	got := SidecarPath("some-file")
 	want := "some-file.json"
 	if got != want {
-		t.Errorf("ManifestPath(%q) = %q, want %q", "some-file", got, want)
+		t.Errorf("SidecarPath(%q) = %q, want %q", "some-file", got, want)
 	}
 }
 
@@ -151,7 +151,7 @@ func TestTimestampFormat(t *testing.T) {
 	path := filepath.Join(dir, "ts-test.json")
 
 	ts := time.Date(2026, 4, 23, 15, 30, 45, 0, time.UTC)
-	m := &Manifest{Timestamp: ts}
+	m := &Metadata{Timestamp: ts}
 
 	if err := Write(path, m); err != nil {
 		t.Fatalf("Write: %v", err)
@@ -182,11 +182,11 @@ func TestTimestampFormat(t *testing.T) {
 	}
 }
 
-func TestEmptyManifest(t *testing.T) {
+func TestEmptyMetadata(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "empty.json")
 
-	original := &Manifest{}
+	original := &Metadata{}
 
 	if err := Write(path, original); err != nil {
 		t.Fatalf("Write: %v", err)
@@ -208,7 +208,7 @@ func TestEmptyManifest(t *testing.T) {
 	}
 }
 
-func TestManifestV2BackwardCompat(t *testing.T) {
+func TestMetadataV2BackwardCompat(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "v1compat.json")
 
@@ -238,8 +238,8 @@ func TestManifestV2BackwardCompat(t *testing.T) {
 	if got.Size != 4096 {
 		t.Errorf("Size: got %d, want 4096", got.Size)
 	}
-	if v := ManifestVersion(got); v != 1 {
-		t.Errorf("ManifestVersion: got %d, want 1", v)
+	if v := Version(got); v != 1 {
+		t.Errorf("Version: got %d, want 1", v)
 	}
 	if got.Image != "" {
 		t.Errorf("Image should be empty for v1, got %q", got.Image)
@@ -249,11 +249,11 @@ func TestManifestV2BackwardCompat(t *testing.T) {
 	}
 }
 
-func TestManifestV2RoundTrip(t *testing.T) {
+func TestMetadataV2RoundTrip(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "v2.json")
 
-	original := &Manifest{
+	original := &Metadata{
 		Version:       2,
 		AgentName:     "body-agent",
 		Timestamp:     time.Date(2026, 5, 1, 10, 0, 0, 0, time.UTC),
@@ -313,11 +313,11 @@ func TestManifestV2RoundTrip(t *testing.T) {
 	}
 }
 
-func TestManifestV2DefaultVersion(t *testing.T) {
+func TestMetadataV2DefaultVersion(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "noversion.json")
 
-	m := &Manifest{AgentName: "no-version"}
+	m := &Metadata{AgentName: "no-version"}
 	if err := Write(path, m); err != nil {
 		t.Fatalf("Write: %v", err)
 	}
@@ -327,12 +327,12 @@ func TestManifestV2DefaultVersion(t *testing.T) {
 		t.Fatalf("Read: %v", err)
 	}
 
-	if v := ManifestVersion(got); v != 1 {
-		t.Errorf("ManifestVersion with Version=0: got %d, want 1", v)
+	if v := Version(got); v != 1 {
+		t.Errorf("Version with Version=0: got %d, want 1", v)
 	}
 }
 
-func TestManifestV2ExplicitVersion(t *testing.T) {
+func TestMetadataV2ExplicitVersion(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "v2explicit.json")
 
@@ -347,12 +347,12 @@ func TestManifestV2ExplicitVersion(t *testing.T) {
 		t.Fatalf("Read: %v", err)
 	}
 
-	if v := ManifestVersion(got); v != 2 {
-		t.Errorf("ManifestVersion: got %d, want 2", v)
+	if v := Version(got); v != 2 {
+		t.Errorf("Version: got %d, want 2", v)
 	}
 }
 
-func TestManifestV2FileSize(t *testing.T) {
+func TestMetadataV2FileSize(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "size.json")
 
@@ -380,7 +380,7 @@ func TestManifestV2FileSize(t *testing.T) {
 	}
 }
 
-func TestManifestV2EmptyOptional(t *testing.T) {
+func TestMetadataV2EmptyOptional(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "empty-opt.json")
 
@@ -417,11 +417,11 @@ func TestManifestV2EmptyOptional(t *testing.T) {
 	}
 }
 
-func TestManifestV2AdapterField(t *testing.T) {
+func TestMetadataV2AdapterField(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "adapter.json")
 
-	original := &Manifest{
+	original := &Metadata{
 		Version:   2,
 		Adapter:   "docker",
 		Platform:  "linux/amd64",
@@ -443,8 +443,8 @@ func TestManifestV2AdapterField(t *testing.T) {
 	if got.Platform != "linux/amd64" {
 		t.Errorf("Platform: got %q, want %q", got.Platform, "linux/amd64")
 	}
-	if v := ManifestVersion(got); v != 2 {
-		t.Errorf("ManifestVersion: got %d, want 2", v)
+	if v := Version(got); v != 2 {
+		t.Errorf("Version: got %d, want 2", v)
 	}
 }
 
@@ -452,7 +452,7 @@ func TestWriteCreatesParentDirs(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "nested", "deep", "manifest.json")
 
-	if err := Write(path, &Manifest{AgentName: "test"}); err != nil {
+	if err := Write(path, &Metadata{AgentName: "test"}); err != nil {
 		t.Fatalf("Write with nested dirs: %v", err)
 	}
 

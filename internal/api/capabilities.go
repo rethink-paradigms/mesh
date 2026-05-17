@@ -40,7 +40,7 @@ func (h *Handler) Capabilities(w http.ResponseWriter, r *http.Request) {
 
 	tier := h.cfg.Tier
 	if tier == "" {
-		tier = "lite"
+		tier = "solo"
 	}
 
 	limits := h.cfg.Limits

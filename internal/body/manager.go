@@ -15,18 +15,20 @@ import (
 )
 
 type BodyManager struct {
-	store   *store.Store
-	orch    orchestrator.OrchestratorAdapter
-	ingress ingress.IngressAdapter
-	mu      sync.Mutex
-	bodies  map[string]*Body
+	store     *store.Store
+	orch      orchestrator.OrchestratorAdapter
+	ingress   ingress.IngressAdapter
+	clusterID string
+	mu        sync.Mutex
+	bodies    map[string]*Body
 }
 
-func NewBodyManager(s *store.Store, orchAdapter orchestrator.OrchestratorAdapter) *BodyManager {
+func NewBodyManager(s *store.Store, orchAdapter orchestrator.OrchestratorAdapter, clusterID string) *BodyManager {
 	return &BodyManager{
-		store:  s,
-		orch:   orchAdapter,
-		bodies: make(map[string]*Body),
+		store:     s,
+		orch:      orchAdapter,
+		clusterID: clusterID,
+		bodies:    make(map[string]*Body),
 	}
 }
 
@@ -80,7 +82,7 @@ func (bm *BodyManager) Create(ctx context.Context, name string, spec orchestrato
 	}
 
 	specJSON := specToJSON(spec)
-	if err := bm.store.CreateBody(ctx, id, name, orchestrator.StateCreated, specJSON, "local", string(handle)); err != nil {
+	if err := bm.store.CreateBodyWithCluster(ctx, id, name, orchestrator.StateCreated, specJSON, "local", string(handle), bm.clusterID); err != nil {
 		return nil, fmt.Errorf("store create body: %w", err)
 	}
 

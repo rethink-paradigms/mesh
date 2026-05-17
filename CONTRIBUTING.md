@@ -37,7 +37,7 @@ go test ./...
 mesh init
 
 # Start the daemon
-mesh serve &
+mesh-daemon serve &
 
 # Check status
 ./mesh status
@@ -48,7 +48,7 @@ mesh serve &
 
 > **Secrets (workspace):** This workspace uses [Infisical](https://app.infisical.com)
 > for secret management. `make up-mesh` handles injection automatically.
-> For manual runs from workspace root: `infisical run -- ./code/mesh/mesh serve`.
+> For manual runs from workspace root: `infisical run -- ./code/mesh/mesh-daemon serve`.
 
 ## Package Organization
 
@@ -204,7 +204,7 @@ make up-mesh
 make log-mesh
 
 # Or run in foreground manually (from workspace root)
-infisical run -- ./code/mesh/mesh serve --config ~/.mesh/config.yaml --verbose
+infisical run -- ./code/mesh/mesh-daemon serve --config ~/.mesh/config.yaml --verbose
 
 # In another terminal, test MCP
 echo '{"jsonrpc":"2.0","id":1,"method":"ping"}' | ./mesh mcp

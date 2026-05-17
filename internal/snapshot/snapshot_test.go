@@ -18,7 +18,7 @@ import (
 
 	"github.com/klauspost/compress/zstd"
 	configtoml "github.com/rethink-paradigms/mesh/internal/config-toml"
-	"github.com/rethink-paradigms/mesh/internal/manifest"
+	"github.com/rethink-paradigms/mesh/internal/snapshotmeta"
 	"github.com/rethink-paradigms/mesh/internal/store"
 )
 
@@ -367,9 +367,9 @@ func mustReadTrimmedFile(t *testing.T, path string) string {
 	return string(bytes.TrimSpace(b))
 }
 
-func mustWriteManifest(t *testing.T, path string, m *manifest.Manifest) {
+func mustWriteMeta(t *testing.T, path string, m *snapshotmeta.Metadata) {
 	t.Helper()
-	if err := manifest.Write(path, m); err != nil {
+	if err := snapshotmeta.Write(path, m); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -453,9 +453,9 @@ func TestRunCreatesSnapshot(t *testing.T) {
 		t.Errorf("sha256 sidecar missing: %v", err)
 	}
 
-	jsonPath := manifest.ManifestPath(tarPath)
+	jsonPath := snapshotmeta.SidecarPath(tarPath)
 	if _, err := os.Stat(jsonPath); err != nil {
-		t.Errorf("json manifest sidecar missing: %v", err)
+		t.Errorf("json sidecar missing: %v", err)
 	}
 
 	restoreDir := t.TempDir()
@@ -545,7 +545,7 @@ func TestRunMaxSnapshots(t *testing.T) {
 		if err := os.WriteFile(tarPath+".sha256", []byte("abcd\n"), 0o644); err != nil {
 			t.Fatalf("write sha256: %v", err)
 		}
-		mustWriteManifest(t, manifest.ManifestPath(tarPath), &manifest.Manifest{
+		mustWriteMeta(t, snapshotmeta.SidecarPath(tarPath), &snapshotmeta.Metadata{
 			AgentName: "agent",
 			Checksum:  "abcd",
 		})
@@ -762,7 +762,7 @@ func TestNoHookConfigured(t *testing.T) {
 	}
 }
 
-func TestRunCreatesManifest(t *testing.T) {
+func TestRunCreatesMetadata(t *testing.T) {
 	workdir := t.TempDir()
 	mustWriteFile(t, filepath.Join(workdir, "data.txt"), []byte("hello manifest\n"), 0o644)
 
@@ -802,10 +802,10 @@ func TestRunCreatesManifest(t *testing.T) {
 	}
 
 	tarPath := filepath.Join(cacheDir, tarFiles[0])
-	jsonPath := manifest.ManifestPath(tarPath)
-	m, err := manifest.Read(jsonPath)
+	jsonPath := snapshotmeta.SidecarPath(tarPath)
+	m, err := snapshotmeta.Read(jsonPath)
 	if err != nil {
-		t.Fatalf("read manifest: %v", err)
+		t.Fatalf("read metadata: %v", err)
 	}
 
 	if m.AgentName != "manifest-agent" {
@@ -927,12 +927,12 @@ func TestRunWithOptsPersistsToStore(t *testing.T) {
 		t.Errorf("SizeBytes = %d, want > 0", record.SizeBytes)
 	}
 
-	var m manifest.Manifest
+	var m snapshotmeta.Metadata
 	if err := json.Unmarshal([]byte(record.ManifestJSON), &m); err != nil {
-		t.Fatalf("unmarshal manifest JSON: %v", err)
+		t.Fatalf("unmarshal metadata JSON: %v", err)
 	}
 	if m.AgentName != "store-agent" {
-		t.Errorf("Manifest AgentName = %q, want %q", m.AgentName, "store-agent")
+		t.Errorf("Metadata AgentName = %q, want %q", m.AgentName, "store-agent")
 	}
 
 	body, err := s.GetBody(ctx, "store-agent")

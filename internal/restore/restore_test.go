@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rethink-paradigms/mesh/internal/manifest"
+	"github.com/rethink-paradigms/mesh/internal/snapshotmeta"
 	"github.com/rethink-paradigms/mesh/internal/orchestrator"
 	"github.com/rethink-paradigms/mesh/internal/snapshot"
 	"github.com/rethink-paradigms/mesh/internal/store"
@@ -372,9 +372,9 @@ func TestRestoreFromStore(t *testing.T) {
 		t.Fatalf("stat snapshot: %v", err)
 	}
 
-	m, err := manifest.Read(manifest.ManifestPath(snapPath))
+	m, err := snapshotmeta.Read(snapshotmeta.SidecarPath(snapPath))
 	if err != nil {
-		m = &manifest.Manifest{AgentName: "test"}
+		m = &snapshotmeta.Metadata{AgentName: "test"}
 	}
 	manifestJSON, _ := json.Marshal(m)
 

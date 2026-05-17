@@ -20,7 +20,7 @@ The diagram shows the three-layer architecture: the daemon process in the center
 
 ## Component Overview
 
-The daemon (`mesh serve`) is a long-running process that orchestrates all operations. It is the only process users interact with directly (via CLI) or indirectly (via MCP).
+The daemon (`mesh-daemon serve`) is a long-running process that orchestrates all operations. It is the only process users interact with directly (via CLI) or indirectly (via MCP).
 
 ### Store
 
@@ -189,7 +189,7 @@ The config defines daemon settings, store path, Docker host, registry credential
 
 ## Startup Sequence
 
-When `mesh serve` runs, the daemon:
+When `mesh-daemon serve` runs, the daemon:
 
 1. Checks for PID file conflicts (prevents double-start)
 2. Opens the SQLite store with WAL mode

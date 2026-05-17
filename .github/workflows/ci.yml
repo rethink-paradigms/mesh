@@ -19,6 +19,8 @@ jobs:
         run: test -z "$(gofmt -l .)"
       - name: Vet
         run: go vet ./...
+      - name: Systemd unit — heredoc matches canonical file
+        run: bash scripts/validate-systemd-unit.sh
       - name: golangci-lint
         uses: golangci/golangci-lint-action@v6
         with:

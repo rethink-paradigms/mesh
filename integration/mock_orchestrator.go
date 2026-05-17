@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"github.com/rethink-paradigms/mesh/internal/orchestrator"
-	"github.com/rethink-paradigms/mesh/internal/provisioner"
 )
 
 type mockOrchestratorAdapter struct {
@@ -112,35 +111,4 @@ func (m *mockOrchestratorAdapter) IsHealthy(_ context.Context) bool {
 	return true
 }
 
-type mockProvisionerAdapter struct {
-	name string
-}
 
-var _ provisioner.ProvisionerAdapter = (*mockProvisionerAdapter)(nil)
-
-func (m *mockProvisionerAdapter) CreateMachine(_ context.Context, _ provisioner.MachineSpec, _ string) (provisioner.MachineID, error) {
-	return provisioner.MachineID("mock-machine-1"), nil
-}
-
-func (m *mockProvisionerAdapter) DestroyMachine(_ context.Context, _ provisioner.MachineID) error {
-	return nil
-}
-
-func (m *mockProvisionerAdapter) GetMachineStatus(_ context.Context, _ provisioner.MachineID) (provisioner.MachineStatus, error) {
-	return provisioner.MachineStatus{State: "running", ID: "mock-machine-1"}, nil
-}
-
-func (m *mockProvisionerAdapter) ListMachines(_ context.Context) ([]provisioner.MachineInfo, error) {
-	return nil, nil
-}
-
-func (m *mockProvisionerAdapter) Name() string {
-	if m.name != "" {
-		return m.name
-	}
-	return "mock-provisioner"
-}
-
-func (m *mockProvisionerAdapter) IsHealthy(_ context.Context) bool {
-	return true
-}

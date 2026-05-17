@@ -3,21 +3,21 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
 	"os"
 	"path/filepath"
 	"sort"
-	"strconv"
 	"strings"
-	"syscall"
 	"time"
 
 	"github.com/spf13/cobra"
 
 	"github.com/rethink-paradigms/mesh/internal/config"
 	configtoml "github.com/rethink-paradigms/mesh/internal/config-toml"
-	"github.com/rethink-paradigms/mesh/internal/daemon"
-	"github.com/rethink-paradigms/mesh/internal/manifest"
+	"github.com/rethink-paradigms/mesh/internal/snapshotmeta"
 	"github.com/rethink-paradigms/mesh/internal/restore"
 	"github.com/rethink-paradigms/mesh/internal/snapshot"
 	"github.com/rethink-paradigms/mesh/internal/version"
@@ -61,7 +61,6 @@ func newRootCmd() *cobra.Command {
 		newInspectCmd(),
 		newPruneCmd(),
 		newInitCmd(),
-		newServeCmd(),
 		newStopCmd(),
 		newStatusCmd(),
 	)
@@ -80,6 +79,50 @@ func loadConfig(cmd *cobra.Command) (*configtoml.Config, error) {
 		return nil, fmt.Errorf("load config: %w", err)
 	}
 	return cfg, nil
+}
+
+// loadYAMLConfig loads the YAML config (used by status/stop to get auth token and pid_file).
+func loadYAMLConfig(cmd *cobra.Command) (*config.Config, error) {
+	configPath, _ := cmd.Flags().GetString("config")
+	if configPath == "" {
+		configPath = config.DefaultPath()
+	}
+	cfg, err := config.Load(configPath)
+	if err != nil {
+		return nil, fmt.Errorf("load config: %w", err)
+	}
+	return cfg, nil
+}
+
+// daemonAddr returns the daemon's HTTP address from the addr file, or falls back to config/listen_addr.
+func daemonAddr(cfg *config.Config) (string, error) {
+	if cfg.Daemon.PIDFile == "" {
+		return "", fmt.Errorf("no pid_file configured")
+	}
+	addrPath := filepath.Join(filepath.Dir(cfg.Daemon.PIDFile), "daemon.addr")
+	data, err := os.ReadFile(addrPath)
+	if err == nil {
+		return strings.TrimSpace(string(data)), nil
+	}
+	if cfg.Daemon.ListenAddr != "" {
+		return cfg.Daemon.ListenAddr, nil
+	}
+	port := os.Getenv("MESH_PORT")
+	if port == "" {
+		port = "8080"
+	}
+	return "127.0.0.1:" + port, nil
+}
+
+// doRequest makes an authenticated HTTP request to the daemon API.
+func doRequest(method, url, token string) (*http.Response, error) {
+	req, err := http.NewRequest(method, url, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+	client := &http.Client{Timeout: 10 * time.Second}
+	return client.Do(req)
 }
 
 // findLatestSnapshot returns the path to the most recent snapshot for the agent.
@@ -258,9 +301,9 @@ func newListCmd() *cobra.Command {
 						sizeStr = humanSize(info.Size())
 					}
 
-					manifestPath := manifest.ManifestPath(snapPath)
+					sidecarPath := snapshotmeta.SidecarPath(snapPath)
 					machineStr := ""
-					m, readErr := manifest.Read(manifestPath)
+					m, readErr := snapshotmeta.Read(sidecarPath)
 					if readErr == nil && m.SourceMachine != "" {
 						machineStr = " from " + m.SourceMachine
 					}
@@ -281,7 +324,7 @@ func newListCmd() *cobra.Command {
 func newInspectCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "inspect <snapshot>",
-		Short: "Show snapshot manifest details",
+		Short: "Show snapshot metadata details",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			snapPath := args[0]
@@ -303,8 +346,8 @@ func newInspectCmd() *cobra.Command {
 				}
 			}
 
-			manifestPath := manifest.ManifestPath(snapPath)
-			m, err := manifest.Read(manifestPath)
+			sidecarPath := snapshotmeta.SidecarPath(snapPath)
+			m, err := snapshotmeta.Read(sidecarPath)
 			if err != nil {
 				return err
 			}
@@ -364,10 +407,10 @@ func newPruneCmd() *cobra.Command {
 			for _, name := range toDelete {
 				tarPath := filepath.Join(cacheDir, name)
 				shaPath := tarPath + ".sha256"
-				jsonPath := manifest.ManifestPath(tarPath)
+				sidecarPath := snapshotmeta.SidecarPath(tarPath)
 				os.Remove(tarPath)
 				os.Remove(shaPath)
-				os.Remove(jsonPath)
+				os.Remove(sidecarPath)
 			}
 
 			fmt.Fprintf(cmd.OutOrStdout(), "Pruned %d snapshot(s) for %s (kept %d)\n", len(toDelete), agentName, keep)
@@ -393,109 +436,45 @@ func newInitCmd() *cobra.Command {
 			if err := os.MkdirAll(meshDir, 0755); err != nil {
 				return fmt.Errorf("create mesh dir: %w", err)
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "Mesh initialized. Run 'mesh serve' to start.\n")
-			return nil
-		},
-	}
-}
-
-func newServeCmd() *cobra.Command {
-	return &cobra.Command{
-		Use:   "serve",
-		Short: "Start the Mesh daemon",
-		RunE: func(cmd *cobra.Command, args []string) error {
-			configPath, _ := cmd.Flags().GetString("config")
-			if configPath == "" {
-				configPath = config.DefaultPath()
-			}
-			cfg, err := config.Load(configPath)
-			if err != nil {
-				return fmt.Errorf("load config: %w", err)
-			}
-
-			d, err := daemon.New(cfg)
-			if err != nil {
-				return fmt.Errorf("create daemon: %w", err)
-			}
-			d.SetVersion(version.Version)
-
-			if err := d.Start(cmd.Context()); err != nil {
-				if strings.Contains(err.Error(), "already running") {
-					fmt.Fprintln(cmd.ErrOrStderr(), "Error: daemon is already running")
-					return fmt.Errorf("daemon already running")
-				}
-				return err
-			}
+			fmt.Fprintf(cmd.OutOrStdout(), "Mesh initialized. Run 'mesh-daemon serve' to start.\n")
 			return nil
 		},
 	}
 }
 
 func newStopCmd() *cobra.Command {
-	var timeout time.Duration
-
-	cmd := &cobra.Command{
+	return &cobra.Command{
 		Use:   "stop",
 		Short: "Stop the Mesh daemon",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			configPath, _ := cmd.Flags().GetString("config")
-			if configPath == "" {
-				configPath = config.DefaultPath()
-			}
-			cfg, err := config.Load(configPath)
+			cfg, err := loadYAMLConfig(cmd)
 			if err != nil {
-				return fmt.Errorf("load config: %w", err)
+				return err
 			}
 
-			if cfg.Daemon.PIDFile == "" {
-				return fmt.Errorf("no pid_file configured")
-			}
-
-			data, err := os.ReadFile(cfg.Daemon.PIDFile)
+			addr, err := daemonAddr(cfg)
 			if err != nil {
-				if os.IsNotExist(err) {
-					fmt.Fprintln(cmd.ErrOrStderr(), "Error: daemon is not running (no PID file)")
-					return fmt.Errorf("daemon not running")
-				}
-				return fmt.Errorf("read PID file: %w", err)
+				return err
 			}
 
-			pid, err := strconv.Atoi(strings.TrimSpace(string(data)))
+			resp, err := doRequest("POST", "http://"+addr+"/api/v1/stop", cfg.Daemon.AuthToken)
 			if err != nil {
-				return fmt.Errorf("invalid PID file: %w", err)
+				return fmt.Errorf("daemon not running (%v)", err)
+			}
+			defer resp.Body.Close()
+
+			if resp.StatusCode == http.StatusUnauthorized {
+				return fmt.Errorf("unauthorized — check auth_token in config")
+			}
+			if resp.StatusCode != http.StatusAccepted {
+				body, _ := io.ReadAll(resp.Body)
+				return fmt.Errorf("daemon stop failed: %s — %s", resp.Status, string(body))
 			}
 
-			proc, err := os.FindProcess(pid)
-			if err != nil {
-				fmt.Fprintln(cmd.ErrOrStderr(), "Error: daemon is not running (process not found)")
-				return fmt.Errorf("daemon not running")
-			}
-
-			if err := proc.Signal(syscall.SIGTERM); err != nil {
-				fmt.Fprintln(cmd.ErrOrStderr(), "Error: daemon is not running (cannot signal)")
-				return fmt.Errorf("daemon not running")
-			}
-
-			fmt.Fprintf(cmd.OutOrStdout(), "Stopping mesh daemon (pid %d)...\n", pid)
-
-			deadline := time.Now().Add(timeout)
-			for time.Now().Before(deadline) {
-				if err := proc.Signal(syscall.Signal(0)); err != nil {
-					fmt.Fprintln(cmd.OutOrStdout(), "Stopped mesh daemon")
-					return nil
-				}
-				time.Sleep(100 * time.Millisecond)
-			}
-
-			fmt.Fprintln(cmd.ErrOrStderr(), "Warning: daemon did not stop within timeout, sending SIGKILL")
-			_ = proc.Signal(syscall.SIGKILL)
+			fmt.Fprintln(cmd.OutOrStdout(), "Stopping mesh daemon...")
 			return nil
 		},
 	}
-
-	cmd.Flags().DurationVar(&timeout, "timeout", 30*time.Second, "timeout to wait for daemon to stop")
-
-	return cmd
 }
 
 func newStatusCmd() *cobra.Command {
@@ -503,56 +482,58 @@ func newStatusCmd() *cobra.Command {
 		Use:   "status",
 		Short: "Show Mesh daemon status",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			configPath, _ := cmd.Flags().GetString("config")
-			if configPath == "" {
-				configPath = config.DefaultPath()
-			}
-			cfg, err := config.Load(configPath)
+			cfg, err := loadYAMLConfig(cmd)
 			if err != nil {
-				return fmt.Errorf("load config: %w", err)
+				return err
 			}
 
-			if cfg.Daemon.PIDFile == "" {
-				fmt.Fprintln(cmd.OutOrStdout(), "Mesh daemon: stopped (no pid_file configured)")
+			addr, err := daemonAddr(cfg)
+			if err != nil {
+				fmt.Fprintln(cmd.OutOrStdout(), "Mesh daemon: stopped (", err, ")")
 				return nil
 			}
 
-			data, err := os.ReadFile(cfg.Daemon.PIDFile)
-			if err != nil {
-				if os.IsNotExist(err) {
-					fmt.Fprintln(cmd.OutOrStdout(), "Mesh daemon: stopped")
-					return nil
-				}
-				return fmt.Errorf("read PID file: %w", err)
-			}
-
-			pid, err := strconv.Atoi(strings.TrimSpace(string(data)))
-			if err != nil {
-				fmt.Fprintln(cmd.OutOrStdout(), "Mesh daemon: stopped (invalid PID file)")
-				return nil
-			}
-
-			proc, err := os.FindProcess(pid)
+			resp, err := doRequest("GET", "http://"+addr+"/api/v1/status", cfg.Daemon.AuthToken)
 			if err != nil {
 				fmt.Fprintln(cmd.OutOrStdout(), "Mesh daemon: stopped")
 				return nil
 			}
+			defer resp.Body.Close()
 
-			if err := proc.Signal(syscall.Signal(0)); err != nil {
-				fmt.Fprintln(cmd.OutOrStdout(), "Mesh daemon: stopped")
+			if resp.StatusCode == http.StatusUnauthorized {
+				fmt.Fprintln(cmd.OutOrStdout(), "Mesh daemon: running (unauthorized — check auth_token)")
+				return nil
+			}
+			if resp.StatusCode != http.StatusOK {
+				fmt.Fprintf(cmd.OutOrStdout(), "Mesh daemon: running (status query failed: %s)\n", resp.Status)
 				return nil
 			}
 
-			// Process is alive — report PID and basic status.
-			// Note: healthAddr discovery is not implemented because the daemon binds
-			// to a random TCP port. We report the PID only.
-			fmt.Fprintf(cmd.OutOrStdout(), "Mesh daemon: running (pid %d)\n", pid)
+			var statusResp struct {
+				Daemon struct {
+					Version   string `json:"version"`
+					UptimeSec int64  `json:"uptime_seconds"`
+					StartTime string `json:"start_time"`
+				} `json:"daemon"`
+				Bodies struct {
+					Total   int `json:"total"`
+					Running int `json:"running"`
+					Stopped int `json:"stopped"`
+					Error   int `json:"error"`
+				} `json:"bodies"`
+				Tier string `json:"tier"`
+			}
+			if err := json.NewDecoder(resp.Body).Decode(&statusResp); err != nil {
+				fmt.Fprintf(cmd.OutOrStdout(), "Mesh daemon: running (cannot decode status: %v)\n", err)
+				return nil
+			}
 
-			// Try to query health endpoint via HTTP on localhost with common ports
-			// The daemon binds to 127.0.0.1:0 (random port), so we can't know it from
-			// config alone. We skip the health query for now and just show PID.
-			// In a real implementation, the daemon could write its HTTP addr to a file.
-
+			fmt.Fprintf(cmd.OutOrStdout(), "Mesh daemon: running\n")
+			fmt.Fprintf(cmd.OutOrStdout(), "  Version: %s\n", statusResp.Daemon.Version)
+			fmt.Fprintf(cmd.OutOrStdout(), "  Tier:    %s\n", statusResp.Tier)
+			fmt.Fprintf(cmd.OutOrStdout(), "  Uptime:  %s\n", time.Duration(statusResp.Daemon.UptimeSec)*time.Second)
+			fmt.Fprintf(cmd.OutOrStdout(), "  Bodies:  %d total (%d running, %d stopped, %d error)\n",
+				statusResp.Bodies.Total, statusResp.Bodies.Running, statusResp.Bodies.Stopped, statusResp.Bodies.Error)
 			return nil
 		},
 	}

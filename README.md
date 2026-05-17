@@ -111,7 +111,7 @@ go install github.com/rethink-paradigms/mesh/cmd/mesh@latest
 mesh init
 
 # Start the daemon
-mesh serve
+mesh-daemon serve
 ```
 
 The daemon starts an MCP server on stdio. In another terminal, check its status:
@@ -157,7 +157,7 @@ docker pull ghcr.io/rethink-paradigms/mesh:latest
 
 ![Mesh System Architecture](docs/assets/mesh-architecture.svg)
 
-Mesh is a daemon-based system. The `mesh serve` process orchestrates a SQLite store (WAL mode), a Docker adapter (built-in), a body manager (8-state machine), a migration coordinator (7-step cold migration), and a plugin manager (go-plugin + gRPC).
+Mesh is a daemon-based system. The `mesh-daemon serve` process orchestrates a SQLite store (WAL mode), a Docker adapter (built-in), a body manager (8-state machine), a migration coordinator (7-step cold migration), and a plugin manager (go-plugin + gRPC).
 
 For the full breakdown, see the [Architecture Documentation](docs/architecture.md), which covers the component design, state machine transitions, snapshot pipeline, migration coordinator, and config resolution.
 

@@ -6,7 +6,7 @@ The Mesh daemon reads a YAML configuration file on startup. By default it
 looks for `~/.mesh/config.yaml`. You can override the path with the
 `MESH_CONFIG` environment variable. There is no `.env` file support in the
 daemon itself — secrets are injected at runtime via Infisical in the workspace
-(`infisical run -- ./mesh serve`). See workspace [`SERVICES.md`](../../SERVICES.md).
+(`infisical run -- ./mesh-daemon serve`). See workspace [`SERVICES.md`](../../SERVICES.md).
 
 The file defines daemon runtime settings, state store location, orchestrator
 connections, provisioners, body definitions, artifact registry access, and

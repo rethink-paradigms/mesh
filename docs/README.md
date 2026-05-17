@@ -17,7 +17,7 @@ The snapshot primitive is `docker export | zstd` — a flat filesystem tarball. 
 - **16 MCP tools** for body CRUD and migration
 - **7-step cold migration coordinator** with S3 registry
 - **Plugin system** (go-plugin + gRPC + protobuf)
-- **CLI** (`mesh serve`, `mesh stop`, `mesh status`, `mesh init`)
+- **CLI** (`mesh-daemon serve` for server; `mesh status`, `mesh stop`, `mesh init` for client)
 - **Bootstrap** (goreleaser, install.sh, Homebrew formula coming soon)
 - **CI** (GitHub Actions with integration tests)
 - **17 packages** test-passing
@@ -54,7 +54,7 @@ Prebuilt binaries for Linux and macOS (amd64 and arm64) are available on the [Gi
 mesh init
 
 # Start the daemon
-mesh serve
+mesh-daemon serve
 
 # Check daemon status
 mesh status

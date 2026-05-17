@@ -12,7 +12,7 @@ func TestDaemonInstallerWithManifests(t *testing.T) {
 	cfg := testConfig(t)
 
 	agentsDir := t.TempDir()
-	manifestContent := `
+	descriptorContent := `
 name: "test-agent"
 image: "test-image:latest"
 command: ["sleep", "infinity"]
@@ -30,8 +30,8 @@ resources:
   memory_mb: 256
   cpu_shares: 512
 `
-	if err := os.WriteFile(filepath.Join(agentsDir, "test-agent.yaml"), []byte(manifestContent), 0644); err != nil {
-		t.Fatalf("write manifest: %v", err)
+	if err := os.WriteFile(filepath.Join(agentsDir, "test-agent.yaml"), []byte(descriptorContent), 0644); err != nil {
+		t.Fatalf("write descriptor: %v", err)
 	}
 	cfg.AgentsDir = agentsDir
 
@@ -59,7 +59,7 @@ resources:
 
 	if d.installer == nil {
 		cancel()
-		t.Fatal("installer should be initialized when manifests are present")
+		t.Fatal("installer should be initialized when descriptors are present")
 	}
 
 	cancel()
@@ -73,7 +73,7 @@ resources:
 func TestDaemonInstallerNoManifests(t *testing.T) {
 	cfg := testConfig(t)
 
-	agentsDir := t.TempDir() // empty directory — no manifest files
+	agentsDir := t.TempDir() // empty directory — no descriptor files
 	cfg.AgentsDir = agentsDir
 
 	d, err := New(cfg)
@@ -100,7 +100,7 @@ func TestDaemonInstallerNoManifests(t *testing.T) {
 
 	if d.installer != nil {
 		cancel()
-		t.Fatal("installer should be nil when no manifests are present")
+		t.Fatal("installer should be nil when no descriptors are present")
 	}
 
 	cancel()

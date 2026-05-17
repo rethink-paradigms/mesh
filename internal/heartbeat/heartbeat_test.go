@@ -50,6 +50,7 @@ func TestClient_Start_postsHeartbeat(t *testing.T) {
 		tier:         "standard",
 		orchestrator: "docker",
 		bodiesCount:  func() int { return 3 },
+		healthStatus: nil,
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -81,9 +82,10 @@ func TestClient_Start_postsHeartbeat(t *testing.T) {
 
 func TestClient_Start_emptyGatewayURL(t *testing.T) {
 	client := &Client{
-		gatewayURL: "",
-		authToken:  "test-token",
-		authMode:   "token",
+		gatewayURL:   "",
+		authToken:    "test-token",
+		authMode:     "token",
+		healthStatus: nil,
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -104,6 +106,7 @@ func TestClient_Start_pureJWTNoToken(t *testing.T) {
 		tier:         "standard",
 		orchestrator: "docker",
 		bodiesCount:  func() int { return 0 },
+		healthStatus: nil,
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -145,6 +148,7 @@ func TestClient_sendHeartbeat_payloadShape(t *testing.T) {
 		tier:         "premium",
 		orchestrator: "nomad",
 		bodiesCount:  func() int { return 5 },
+		healthStatus: nil,
 	}
 
 	ctx := context.Background()
@@ -169,6 +173,7 @@ func TestClient_sendHeartbeat_httpError(t *testing.T) {
 		tier:         "standard",
 		orchestrator: "docker",
 		bodiesCount:  func() int { return 1 },
+		healthStatus: nil,
 	}
 
 	ctx := context.Background()
@@ -194,6 +199,7 @@ func TestClient_sendHeartbeat_timeout(t *testing.T) {
 		tier:         "standard",
 		orchestrator: "docker",
 		bodiesCount:  func() int { return 1 },
+		healthStatus: nil,
 	}
 
 	ctx := context.Background()
@@ -218,6 +224,7 @@ func TestClient_Start_exitsOnContextCancel(t *testing.T) {
 		tier:         "standard",
 		orchestrator: "docker",
 		bodiesCount:  func() int { return 1 },
+		healthStatus: nil,
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -252,6 +259,7 @@ func TestClient_sendHeartbeat_bodiesCountCallback(t *testing.T) {
 			callCount++
 			return callCount
 		},
+		healthStatus: nil,
 	}
 
 	ctx := context.Background()
@@ -282,6 +290,7 @@ func TestClient_sendHeartbeat_requestHeaders(t *testing.T) {
 		tier:         "standard",
 		orchestrator: "docker",
 		bodiesCount:  func() int { return 1 },
+		healthStatus: nil,
 	}
 
 	ctx := context.Background()
@@ -311,6 +320,7 @@ func TestClient_sendHeartbeat_serverURL(t *testing.T) {
 		tier:         "standard",
 		orchestrator: "docker",
 		bodiesCount:  func() int { return 1 },
+		healthStatus: nil,
 	}
 
 	ctx := context.Background()
@@ -337,6 +347,7 @@ func TestClient_Start_heartbeatInterval(t *testing.T) {
 		tier:         "standard",
 		orchestrator: "docker",
 		bodiesCount:  func() int { return 1 },
+		healthStatus: nil,
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -383,6 +394,7 @@ func TestClient_Start_logsWarningOnFailure(t *testing.T) {
 		tier:         "standard",
 		orchestrator: "docker",
 		bodiesCount:  func() int { return 1 },
+		healthStatus: nil,
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -424,6 +436,7 @@ func TestClient_Start_logsWarningOnHTTPError(t *testing.T) {
 		tier:         "standard",
 		orchestrator: "docker",
 		bodiesCount:  func() int { return 1 },
+		healthStatus: nil,
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -458,6 +471,7 @@ func TestClient_sendHeartbeat_non200Status(t *testing.T) {
 				tier:         "standard",
 				orchestrator: "docker",
 				bodiesCount:  func() int { return 1 },
+				healthStatus: nil,
 			}
 
 			ctx := context.Background()
@@ -465,4 +479,66 @@ func TestClient_sendHeartbeat_non200Status(t *testing.T) {
 			require.Error(t, err)
 		})
 	}
+}
+
+func TestClient_sendHeartbeat_healthStatusCallback(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, err := io.ReadAll(r.Body)
+		require.NoError(t, err)
+
+		var p heartbeatPayload
+		require.NoError(t, json.Unmarshal(body, &p))
+
+		assert.Equal(t, "degraded", p.Status)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	client := &Client{
+		httpClient:   &http.Client{Timeout: 10 * time.Second},
+		gatewayURL:   server.URL,
+		authToken:    "token",
+		authMode:     "token",
+		clusterID:    "c1",
+		version:      "1.0.0",
+		tier:         "standard",
+		orchestrator: "docker",
+		bodiesCount:  func() int { return 1 },
+		healthStatus: func(_ context.Context) string { return "degraded" },
+	}
+
+	ctx := context.Background()
+	err := client.sendHeartbeat(ctx)
+	require.NoError(t, err)
+}
+
+func TestClient_sendHeartbeat_healthStatusReturnsEmptyDefaultsToHealthy(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, err := io.ReadAll(r.Body)
+		require.NoError(t, err)
+
+		var p heartbeatPayload
+		require.NoError(t, json.Unmarshal(body, &p))
+
+		assert.Equal(t, "healthy", p.Status)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	client := &Client{
+		httpClient:   &http.Client{Timeout: 10 * time.Second},
+		gatewayURL:   server.URL,
+		authToken:    "token",
+		authMode:     "token",
+		clusterID:    "c1",
+		version:      "1.0.0",
+		tier:         "standard",
+		orchestrator: "docker",
+		bodiesCount:  func() int { return 1 },
+		healthStatus: func(_ context.Context) string { return "" },
+	}
+
+	ctx := context.Background()
+	err := client.sendHeartbeat(ctx)
+	require.NoError(t, err)
 }

@@ -66,15 +66,15 @@ func tempStore(t *testing.T) *store.Store {
 
 func TestInstallAgent(t *testing.T) {
 	s := tempStore(t)
-	bm := body.NewBodyManager(s, &mockOrchAdapter{})
+	bm := body.NewBodyManager(s, &mockOrchAdapter{}, "")
 	ing := &mockIngress{}
 
-	manifests := map[string]*AgentManifest{
+	manifests := map[string]*Descriptor{
 		"test-agent": {
 			Name:    "test-agent",
 			Image:   "test-image",
 			Command: []string{"/app/test"},
-			Ports: []ManifestPort{
+			Ports: []PortMapping{
 				{Name: "api", ContainerPort: 8080, Protocol: "http", Expose: true},
 				{Name: "ws", ContainerPort: 8081, Protocol: "tcp", Expose: false},
 			},
@@ -87,7 +87,7 @@ func TestInstallAgent(t *testing.T) {
 	}
 
 	installer := NewInstaller(bm, ing, nil, manifests)
-	installer.healthPoll = func(context.Context, *AgentManifest, string) {}
+	installer.healthPoll = func(context.Context, *Descriptor, string) {}
 	ctx := context.Background()
 
 	result, err := installer.Install(ctx, "test-agent", "my-test", map[string]string{"API_KEY": "secret"}, "")
@@ -114,9 +114,9 @@ func TestInstallAgent(t *testing.T) {
 
 func TestInstallAgentMissingEnvVar(t *testing.T) {
 	s := tempStore(t)
-	bm := body.NewBodyManager(s, &mockOrchAdapter{})
+	bm := body.NewBodyManager(s, &mockOrchAdapter{}, "")
 
-	manifests := map[string]*AgentManifest{
+	manifests := map[string]*Descriptor{
 		"test-agent": {
 			Name:  "test-agent",
 			Image: "test-image",
@@ -141,9 +141,9 @@ func TestInstallAgentMissingEnvVar(t *testing.T) {
 
 func TestInstallAgentDuplicateName(t *testing.T) {
 	s := tempStore(t)
-	bm := body.NewBodyManager(s, &mockOrchAdapter{})
+	bm := body.NewBodyManager(s, &mockOrchAdapter{}, "")
 
-	manifests := map[string]*AgentManifest{
+	manifests := map[string]*Descriptor{
 		"test-agent": {
 			Name:  "test-agent",
 			Image: "test-image",
@@ -175,9 +175,9 @@ func TestInstallAgentDuplicateName(t *testing.T) {
 
 func TestInstallAgentUnknownType(t *testing.T) {
 	s := tempStore(t)
-	bm := body.NewBodyManager(s, &mockOrchAdapter{})
+	bm := body.NewBodyManager(s, &mockOrchAdapter{}, "")
 
-	installer := NewInstaller(bm, nil, nil, map[string]*AgentManifest{})
+	installer := NewInstaller(bm, nil, nil, map[string]*Descriptor{})
 	ctx := context.Background()
 
 	_, err := installer.Install(ctx, "unknown-agent", "my-test", map[string]string{}, "")
@@ -194,11 +194,11 @@ func TestInstallAgentUnknownType(t *testing.T) {
 
 func TestInstallAgentInlineManifest(t *testing.T) {
 	s := tempStore(t)
-	bm := body.NewBodyManager(s, &mockOrchAdapter{})
+	bm := body.NewBodyManager(s, &mockOrchAdapter{}, "")
 	ing := &mockIngress{}
 
-	installer := NewInstaller(bm, ing, nil, map[string]*AgentManifest{})
-	installer.healthPoll = func(context.Context, *AgentManifest, string) {}
+	installer := NewInstaller(bm, ing, nil, map[string]*Descriptor{})
+	installer.healthPoll = func(context.Context, *Descriptor, string) {}
 	ctx := context.Background()
 
 	inlineYAML := `
@@ -219,7 +219,7 @@ resources:
 
 	result, err := installer.Install(ctx, "inline-agent", "my-inline", map[string]string{"API_KEY": "secret"}, inlineYAML)
 	if err != nil {
-		t.Fatalf("Install with inline manifest: %v", err)
+		t.Fatalf("Install with inline descriptor: %v", err)
 	}
 	if result.BodyID == "" {
 		t.Error("BodyID is empty")
@@ -234,9 +234,9 @@ resources:
 
 func TestInstallAgentInlineManifestInvalidYAML(t *testing.T) {
 	s := tempStore(t)
-	bm := body.NewBodyManager(s, &mockOrchAdapter{})
+	bm := body.NewBodyManager(s, &mockOrchAdapter{}, "")
 
-	installer := NewInstaller(bm, nil, nil, map[string]*AgentManifest{})
+	installer := NewInstaller(bm, nil, nil, map[string]*Descriptor{})
 	ctx := context.Background()
 
 	invalidYAML := `
@@ -255,9 +255,9 @@ image: test
 
 func TestInstallAgentInlineManifestMissingEnv(t *testing.T) {
 	s := tempStore(t)
-	bm := body.NewBodyManager(s, &mockOrchAdapter{})
+	bm := body.NewBodyManager(s, &mockOrchAdapter{}, "")
 
-	installer := NewInstaller(bm, nil, nil, map[string]*AgentManifest{})
+	installer := NewInstaller(bm, nil, nil, map[string]*Descriptor{})
 	ctx := context.Background()
 
 	inlineYAML := `
@@ -281,9 +281,9 @@ env:
 
 func TestInstallAgentEmptyManifestFallsBackToLocal(t *testing.T) {
 	s := tempStore(t)
-	bm := body.NewBodyManager(s, &mockOrchAdapter{})
+	bm := body.NewBodyManager(s, &mockOrchAdapter{}, "")
 
-	manifests := map[string]*AgentManifest{
+	manifests := map[string]*Descriptor{
 		"test-agent": {
 			Name:  "test-agent",
 			Image: "test-image",
@@ -296,15 +296,15 @@ func TestInstallAgentEmptyManifestFallsBackToLocal(t *testing.T) {
 
 	_, err := installer.Install(ctx, "test-agent", "my-test", map[string]string{"API_KEY": "secret"}, "")
 	if err != nil {
-		t.Fatalf("Install with empty manifest (fallback): %v", err)
+		t.Fatalf("Install with empty descriptor (fallback): %v", err)
 	}
 }
 
 func TestInstallAgentInlineManifestTakesPrecedence(t *testing.T) {
 	s := tempStore(t)
-	bm := body.NewBodyManager(s, &mockOrchAdapter{})
+	bm := body.NewBodyManager(s, &mockOrchAdapter{}, "")
 
-	manifests := map[string]*AgentManifest{
+	manifests := map[string]*Descriptor{
 		"test-agent": {
 			Name:  "test-agent",
 			Image: "local-image",
@@ -324,6 +324,6 @@ env:
 
 	_, err := installer.Install(ctx, "test-agent", "my-test", map[string]string{"API_KEY": "secret"}, inlineYAML)
 	if err != nil {
-		t.Fatalf("Install with inline manifest (precedence): %v", err)
+		t.Fatalf("Install with inline descriptor (precedence): %v", err)
 	}
 }

@@ -175,14 +175,16 @@ func TestHealthzLiteDockerHealthy(t *testing.T) {
 	assert.Equal(t, "healthy", resp.Status)
 }
 
-func TestHealthzLiteNeverDegraded(t *testing.T) {
+func TestHealthzOrchestratorUnhealthyAlwaysDegraded(t *testing.T) {
+	// Orchestrator health always matters — if unhealthy, status is "degraded"
+	// regardless of tier (solo or cluster both run Nomad).
 	reg := orchestrator.NewRegistry()
 	reg.Register("docker", &mockOrchAdapter{name: "docker", healthy: false})
 	_ = reg.SetDefault("docker")
 
 	cfg := RouterConfig{
 		Version:      "0.1.0",
-		Tier:         "LITE",
+		Tier:         "solo",
 		OrchRegistry: reg,
 		Orchestrator: &mockOrchAdapter{name: "docker", healthy: false},
 	}
@@ -198,5 +200,5 @@ func TestHealthzLiteNeverDegraded(t *testing.T) {
 	err := json.NewDecoder(rr.Body).Decode(&resp)
 	require.NoError(t, err)
 
-	assert.Equal(t, "healthy", resp.Status)
+	assert.Equal(t, "degraded", resp.Status)
 }

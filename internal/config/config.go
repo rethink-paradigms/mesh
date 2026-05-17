@@ -1,4 +1,7 @@
 // Package config provides YAML configuration parsing and validation for the Mesh daemon.
+//
+// CANONICAL SCHEMA: contracts/mesh-daemon-config.schema.json
+// If this file disagrees with the schema, the schema wins until reconciled.
 package config
 
 import (
@@ -102,7 +105,6 @@ type Config struct {
 	Daemon        DaemonConfig                 `yaml:"daemon"`
 	Store         StoreConfig                  `yaml:"store"`
 	Orchestrators map[string]map[string]string `yaml:"orchestrators"`
-	Provisioners  map[string]map[string]string `yaml:"provisioners"`
 	Bodies        []BodyConfig                 `yaml:"bodies"`
 	Registry      RegistryConfig               `yaml:"registry"`
 	Plugin        PluginConfig                 `yaml:"plugin"`
@@ -226,10 +228,6 @@ func applyDefaults(cfg *Config) {
 	if cfg.Orchestrators == nil {
 		cfg.Orchestrators = make(map[string]map[string]string)
 	}
-	if cfg.Provisioners == nil {
-		cfg.Provisioners = make(map[string]map[string]string)
-	}
-
 	// Backward compatibility: migrate legacy [nomad] section to orchestrators.nomad
 	if cfg.Nomad.Address != "" || cfg.Nomad.Token != "" || cfg.Nomad.Region != "" || cfg.Nomad.Namespace != "" {
 		if cfg.Orchestrators["nomad"] == nil {
@@ -273,11 +271,6 @@ func validate(cfg *Config) error {
 			return fmt.Errorf("config: body %q: image must not be empty", b.Name)
 		}
 	}
-	if cfg.Plugin.Dir != "" {
-		if err := os.MkdirAll(cfg.Plugin.Dir, 0755); err != nil {
-			return fmt.Errorf("config: create plugin dir %q: %w", cfg.Plugin.Dir, err)
-		}
-	}
 	if addr := cfg.Orchestrators["nomad"]["address"]; addr != "" {
 		u, err := url.Parse(addr)
 		if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
@@ -314,5 +307,26 @@ func validate(cfg *Config) error {
 		return fmt.Errorf("config: auth_mode %q is invalid — must be \"token\", \"jwt\", or \"both\"", cfg.Daemon.AuthMode)
 	}
 
+	return nil
+}
+
+// EnsureDirs creates parent directories for all paths the daemon needs to write.
+// It is called after config validation succeeds and before the daemon starts.
+func EnsureDirs(cfg *Config) error {
+	if cfg.Plugin.Dir != "" {
+		if err := os.MkdirAll(cfg.Plugin.Dir, 0755); err != nil {
+			return fmt.Errorf("config: create plugin dir %q: %w", cfg.Plugin.Dir, err)
+		}
+	}
+	if cfg.Store.Path != "" {
+		if err := os.MkdirAll(filepath.Dir(cfg.Store.Path), 0755); err != nil {
+			return fmt.Errorf("config: create store parent dir %q: %w", filepath.Dir(cfg.Store.Path), err)
+		}
+	}
+	if cfg.Daemon.PIDFile != "" {
+		if err := os.MkdirAll(filepath.Dir(cfg.Daemon.PIDFile), 0755); err != nil {
+			return fmt.Errorf("config: create pid_file parent dir %q: %w", filepath.Dir(cfg.Daemon.PIDFile), err)
+		}
+	}
 	return nil
 }

@@ -128,6 +128,8 @@ type HealthzResponse struct {
 	OrchestratorConnected bool   `json:"orchestrator_connected"`
 	GatewayURL            string `json:"gateway_url"`
 	HeartbeatEnabled      bool   `json:"heartbeat_enabled"`
+	SQLiteHealthy         bool   `json:"sqlite_healthy"`
+	StuckStartingCount    int    `json:"stuck_starting_count"`
 }
 
 // CapabilitiesResponse is the response payload for GET /api/v1/capabilities.

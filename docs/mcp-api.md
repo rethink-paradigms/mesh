@@ -8,11 +8,11 @@ All lifecycle operations (create, start, stop, delete, exec, get status, get log
 
 The MCP server listens on **stdin/stdout** (stdio). Each request is a single JSON line. Each response is a single JSON line. Messages are newline-delimited. There is no HTTP layer.
 
-The server is started by `mesh serve`. The daemon registers all tools at startup and processes requests in a loop until EOF or context cancellation.
+The server is started by `mesh-daemon serve`. The daemon registers all tools at startup and processes requests in a loop until EOF or context cancellation.
 
 ### Connection Lifecycle
 
-1. Agent starts `mesh serve` (or connects to a running daemon)
+1. Agent starts `mesh-daemon serve` (or connects to a running daemon)
 2. Agent sends `initialize` request to negotiate protocol version
 3. Agent sends `tools/list` to discover available tools
 4. Agent sends `tools/call` with tool name and arguments to execute operations

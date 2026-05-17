@@ -26,7 +26,7 @@ go test -race ./...
 # Manual run (from workspace root, with Infisical)
 golangci-lint run
 (cd ../.. && infisical run -- ./code/mesh/mesh init)
-(cd ../.. && infisical run -- ./code/mesh/mesh serve --config ~/.mesh/config.yaml --verbose)
+(cd ../.. && infisical run -- ./code/mesh/mesh-daemon serve --config ~/.mesh/config.yaml --verbose)
 
 # In another terminal
 ./mesh status

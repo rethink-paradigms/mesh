@@ -14,13 +14,13 @@ import (
 )
 
 type mockInstaller struct {
-	installFunc   func(ctx context.Context, agentType, name string, env map[string]string, manifest string) (*agent.InstallResult, error)
+	installFunc   func(ctx context.Context, agentType, name string, env map[string]string, descriptorYAML string) (*agent.InstallResult, error)
 	uninstallFunc func(ctx context.Context, agentName string) error
 }
 
-func (m *mockInstaller) Install(ctx context.Context, agentType, name string, env map[string]string, manifest string) (*agent.InstallResult, error) {
+func (m *mockInstaller) Install(ctx context.Context, agentType, name string, env map[string]string, descriptorYAML string) (*agent.InstallResult, error) {
 	if m.installFunc != nil {
-		return m.installFunc(ctx, agentType, name, env, manifest)
+		return m.installFunc(ctx, agentType, name, env, descriptorYAML)
 	}
 	return &agent.InstallResult{BodyID: "test-id", Name: name}, nil
 }
@@ -34,7 +34,7 @@ func (m *mockInstaller) Uninstall(ctx context.Context, agentName string) error {
 
 func TestHandleInstallAgent(t *testing.T) {
 	installer := &mockInstaller{
-		installFunc: func(ctx context.Context, agentType, name string, env map[string]string, manifest string) (*agent.InstallResult, error) {
+		installFunc: func(ctx context.Context, agentType, name string, env map[string]string, descriptorYAML string) (*agent.InstallResult, error) {
 			return &agent.InstallResult{
 				BodyID:         "body-123",
 				Name:           name,
@@ -123,7 +123,7 @@ func TestHandleInstallAgentMissingName(t *testing.T) {
 
 func TestHandleInstallAgentNotFound(t *testing.T) {
 	installer := &mockInstaller{
-		installFunc: func(ctx context.Context, agentType, name string, env map[string]string, manifest string) (*agent.InstallResult, error) {
+		installFunc: func(ctx context.Context, agentType, name string, env map[string]string, descriptorYAML string) (*agent.InstallResult, error) {
 			return nil, &service.NotFoundError{ID: agentType}
 		},
 	}
@@ -145,7 +145,7 @@ func TestHandleInstallAgentNotFound(t *testing.T) {
 
 func TestHandleInstallAgentConflict(t *testing.T) {
 	installer := &mockInstaller{
-		installFunc: func(ctx context.Context, agentType, name string, env map[string]string, manifest string) (*agent.InstallResult, error) {
+		installFunc: func(ctx context.Context, agentType, name string, env map[string]string, descriptorYAML string) (*agent.InstallResult, error) {
 			return nil, &service.ConflictError{State: "exists", Required: "unique name"}
 		},
 	}
@@ -167,7 +167,7 @@ func TestHandleInstallAgentConflict(t *testing.T) {
 
 func TestHandleInstallAgentValidationError(t *testing.T) {
 	installer := &mockInstaller{
-		installFunc: func(ctx context.Context, agentType, name string, env map[string]string, manifest string) (*agent.InstallResult, error) {
+		installFunc: func(ctx context.Context, agentType, name string, env map[string]string, descriptorYAML string) (*agent.InstallResult, error) {
 			return nil, &service.ValidationError{Field: "env", Message: "required env var missing"}
 		},
 	}
@@ -298,15 +298,15 @@ func TestHandleUninstallAgentNoAuth(t *testing.T) {
 	}
 }
 
-func TestInstallAgentRequestManifestDeserialization(t *testing.T) {
-	// RED phase test: manifest field should deserialize from JSON
-	input := `{"agent_type":"test","name":"body1","manifest":"name: agent\nimage: test:latest"}`
+func TestInstallAgentRequestDescriptorDeserialization(t *testing.T) {
+	// RED phase test: descriptor field should deserialize from JSON
+	input := `{"agent_type":"test","name":"body1","descriptor":"name: agent\nimage: test:latest"}`
 	var req InstallAgentRequest
 	if err := json.Unmarshal([]byte(input), &req); err != nil {
-		t.Fatalf("unmarshal with manifest: %v", err)
+		t.Fatalf("unmarshal with descriptor: %v", err)
 	}
-	if req.Manifest != "name: agent\nimage: test:latest" {
-		t.Errorf("Manifest = %q, want %q", req.Manifest, "name: agent\nimage: test:latest")
+	if req.DescriptorYAML != "name: agent\nimage: test:latest" {
+		t.Errorf("DescriptorYAML = %q, want %q", req.DescriptorYAML, "name: agent\nimage: test:latest")
 	}
 	if req.AgentType != "test" {
 		t.Errorf("AgentType = %q, want test", req.AgentType)
@@ -316,23 +316,23 @@ func TestInstallAgentRequestManifestDeserialization(t *testing.T) {
 	}
 }
 
-func TestInstallAgentRequestNoManifest(t *testing.T) {
-	// Manifest should be empty string when not in JSON
+func TestInstallAgentRequestNoDescriptor(t *testing.T) {
+	// DescriptorYAML should be empty string when not in JSON
 	input := `{"agent_type":"test","name":"body1"}`
 	var req InstallAgentRequest
 	if err := json.Unmarshal([]byte(input), &req); err != nil {
-		t.Fatalf("unmarshal without manifest: %v", err)
+		t.Fatalf("unmarshal without descriptor: %v", err)
 	}
-	if req.Manifest != "" {
-		t.Errorf("Manifest = %q, want empty string", req.Manifest)
+	if req.DescriptorYAML != "" {
+		t.Errorf("DescriptorYAML = %q, want empty string", req.DescriptorYAML)
 	}
-	// omitempty should suppress manifest in output when empty
+	// omitempty should suppress descriptor in output when empty
 	out, err := json.Marshal(req)
 	if err != nil {
 		t.Fatalf("marshal: %v", err)
 	}
-	if bytes.Contains(out, []byte("manifest")) {
-		t.Errorf("output %q should not contain manifest when empty (omitempty)", string(out))
+	if bytes.Contains(out, []byte("descriptor")) {
+		t.Errorf("output %q should not contain descriptor when empty (omitempty)", string(out))
 	}
 }
 
@@ -354,9 +354,9 @@ func TestHandleInstallAgentNoInstaller(t *testing.T) {
 
 func TestHandleInstallAgentRealInstaller(t *testing.T) {
 	s := tempStore(t)
-	bm := body.NewBodyManager(s, &mockOrchAdapter{name: "mock", healthy: true})
+	bm := body.NewBodyManager(s, &mockOrchAdapter{name: "mock", healthy: true}, "test-cluster")
 
-	manifests := map[string]*agent.AgentManifest{
+	descriptors := map[string]*agent.Descriptor{
 		"test-agent": {
 			Name:  "test-agent",
 			Image: "test-image",
@@ -364,7 +364,7 @@ func TestHandleInstallAgentRealInstaller(t *testing.T) {
 		},
 	}
 
-	installer := agent.NewInstaller(bm, nil, nil, manifests)
+	installer := agent.NewInstaller(bm, nil, nil, descriptors)
 
 	cfg := RouterConfig{AuthToken: "test-token", Installer: installer}
 	h := NewHandler(cfg)

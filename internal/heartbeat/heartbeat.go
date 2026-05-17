@@ -12,6 +12,13 @@ import (
 	"time"
 )
 
+// HeartbeatBodyInfo represents a single body's status in the heartbeat payload.
+type HeartbeatBodyInfo struct {
+	ID    string `json:"id"`
+	Name  string `json:"name"`
+	State string `json:"state"`
+}
+
 // Client sends periodic heartbeat POSTs to a gateway URL.
 type Client struct {
 	httpClient   *http.Client
@@ -23,10 +30,14 @@ type Client struct {
 	tier         string
 	orchestrator string
 	bodiesCount  func() int
+	healthStatus func(context.Context) string
+	listBodies   func() []HeartbeatBodyInfo
 }
 
 // NewClient creates a new heartbeat client with the given configuration.
-func NewClient(gatewayURL, authToken, authMode, clusterID, version, tier, orchestrator string, bodiesCount func() int) *Client {
+// healthStatus is optional; if nil, status defaults to "healthy".
+// listBodies is optional; if nil, bodies are omitted from the payload.
+func NewClient(gatewayURL, authToken, authMode, clusterID, version, tier, orchestrator string, bodiesCount func() int, healthStatus func(context.Context) string, listBodies func() []HeartbeatBodyInfo) *Client {
 	return &Client{
 		gatewayURL:   gatewayURL,
 		authToken:    authToken,
@@ -36,17 +47,20 @@ func NewClient(gatewayURL, authToken, authMode, clusterID, version, tier, orches
 		tier:         tier,
 		orchestrator: orchestrator,
 		bodiesCount:  bodiesCount,
+		healthStatus: healthStatus,
+		listBodies:   listBodies,
 	}
 }
 
 // heartbeatPayload is the JSON shape sent on each heartbeat.
 type heartbeatPayload struct {
-	ClusterID    string `json:"cluster_id"`
-	Status       string `json:"status"`
-	BodiesCount  int    `json:"bodies_count"`
-	Version      string `json:"version"`
-	Tier         string `json:"tier"`
-	Orchestrator string `json:"orchestrator"`
+	ClusterID    string              `json:"cluster_id"`
+	Status       string              `json:"status"`
+	BodiesCount  int                 `json:"bodies_count"`
+	Version      string              `json:"version"`
+	Tier         string              `json:"tier"`
+	Orchestrator string              `json:"orchestrator"`
+	Bodies       []HeartbeatBodyInfo `json:"bodies,omitempty"`
 }
 
 // Start spawns a goroutine that sends heartbeats at the given interval.
@@ -84,13 +98,24 @@ func (c *Client) loop(ctx context.Context, interval time.Duration) {
 // sendHeartbeat builds and sends a single heartbeat POST request.
 // It uses a 10-second timeout for the HTTP call.
 func (c *Client) sendHeartbeat(ctx context.Context) error {
+	status := "healthy"
+	if c.healthStatus != nil {
+		status = c.healthStatus(ctx)
+		if status == "" {
+			status = "healthy"
+		}
+	}
 	payload := heartbeatPayload{
 		ClusterID:    c.clusterID,
-		Status:       "healthy",
+		Status:       status,
 		BodiesCount:  c.bodiesCount(),
 		Version:      c.version,
 		Tier:         c.tier,
 		Orchestrator: c.orchestrator,
+	}
+
+	if c.listBodies != nil {
+		payload.Bodies = c.listBodies()
 	}
 
 	body, err := json.Marshal(payload)

@@ -2,6 +2,7 @@ package api
 
 import (
 	"net/http"
+	"time"
 
 	"github.com/rethink-paradigms/mesh/internal/orchestrator"
 )
@@ -15,10 +16,26 @@ func (h *Handler) Healthz(w http.ResponseWriter, r *http.Request) {
 	nomadConnected := h.cfg.Orchestrator.IsHealthy(r.Context())
 
 	bodiesCount := 0
+	stuckStartingCount := 0
+	sqliteHealthy := false
 	if h.cfg.Store != nil {
+		// SQLite health check
+		var one int
+		if err := h.cfg.Store.QueryRow(r.Context(), "SELECT 1").Scan(&one); err == nil {
+			sqliteHealthy = true
+		}
+
 		bodies, err := h.cfg.Store.ListBodies(r.Context())
 		if err == nil {
 			bodiesCount = len(bodies)
+			cutoff := time.Now().UTC().Add(-5 * time.Minute)
+			for _, b := range bodies {
+				if b.State == orchestrator.StateStarting {
+					if updatedAt, err := time.Parse(time.RFC3339, b.UpdatedAt); err == nil && updatedAt.Before(cutoff) {
+						stuckStartingCount++
+					}
+				}
+			}
 		}
 	}
 
@@ -33,7 +50,11 @@ func (h *Handler) Healthz(w http.ResponseWriter, r *http.Request) {
 	}
 
 	status := "healthy"
-	if h.cfg.Tier != "LITE" && !nomadConnected {
+	if !nomadConnected || stuckStartingCount > 0 {
+		status = "degraded"
+	}
+	// Only count SQLite as unhealthy if a Store is configured
+	if h.cfg.Store != nil && !sqliteHealthy {
 		status = "degraded"
 	}
 
@@ -48,5 +69,7 @@ func (h *Handler) Healthz(w http.ResponseWriter, r *http.Request) {
 		OrchestratorConnected: nomadConnected,
 		GatewayURL:            h.cfg.GatewayURL,
 		HeartbeatEnabled:      heartbeatEnabled,
+		SQLiteHealthy:         sqliteHealthy,
+		StuckStartingCount:    stuckStartingCount,
 	})
 }

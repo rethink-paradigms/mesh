@@ -49,6 +49,7 @@ type RouterConfig struct {
 	GatewayURL               string
 	HeartbeatIntervalSeconds int
 	RegistryManager          RegistryManager // hot-swappable S3 registry (optional)
+	StopDaemon               func(context.Context) error
 }
 
 type bodyServiceAdapter interface {
@@ -82,6 +83,7 @@ func NewRouter(cfg RouterConfig) http.Handler {
 	apiMux.HandleFunc("GET /api/v1/nodes", h.ListNodes)
 	apiMux.HandleFunc("GET /api/v1/capabilities", h.Capabilities)
 	apiMux.HandleFunc("GET /api/v1/status", h.Status)
+	apiMux.HandleFunc("POST /api/v1/stop", h.StopDaemon)
 	apiMux.HandleFunc("POST /api/v1/agents/install", h.InstallAgent)
 	apiMux.HandleFunc("DELETE /api/v1/agents/{name}", h.UninstallAgent)
 

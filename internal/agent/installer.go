@@ -12,13 +12,13 @@ import (
 	"github.com/rethink-paradigms/mesh/internal/service"
 )
 
-// Installer orchestrates agent installation from a manifest.
+// Installer orchestrates agent installation from a descriptor.
 type Installer struct {
 	bodyMgr      *body.BodyManager
 	ingress      ingress.IngressAdapter
 	orchRegistry *orchestrator.Registry
-	manifests    map[string]*AgentManifest
-	healthPoll   func(ctx context.Context, manifest *AgentManifest, name string)
+	descriptors  map[string]*Descriptor
+	healthPoll   func(ctx context.Context, descriptor *Descriptor, name string)
 }
 
 // InstallResult is returned after a successful agent installation.
@@ -30,38 +30,38 @@ type InstallResult struct {
 }
 
 // NewInstaller creates a new Installer.
-func NewInstaller(bodyMgr *body.BodyManager, ing ingress.IngressAdapter, orchRegistry *orchestrator.Registry, manifests map[string]*AgentManifest) *Installer {
+func NewInstaller(bodyMgr *body.BodyManager, ing ingress.IngressAdapter, orchRegistry *orchestrator.Registry, descriptors map[string]*Descriptor) *Installer {
 	i := &Installer{
 		bodyMgr:      bodyMgr,
 		ingress:      ing,
 		orchRegistry: orchRegistry,
-		manifests:    manifests,
+		descriptors:  descriptors,
 	}
 	i.healthPoll = i.defaultPollHealth
 	return i
 }
 
-// Install installs an agent from a manifest.
-// Flow: resolve manifest → validate env → create body → allocate ports → start → health check → create routes.
-func (i *Installer) Install(ctx context.Context, agentType, name string, env map[string]string, manifest string) (*InstallResult, error) {
-	// 1. Resolve manifest
-	var agentManifest *AgentManifest
-	if manifest != "" {
+// Install installs an agent from a descriptor.
+// Flow: resolve descriptor → validate env → create body → allocate ports → start → health check → create routes.
+func (i *Installer) Install(ctx context.Context, agentType, name string, env map[string]string, descriptorYAML string) (*InstallResult, error) {
+	// 1. Resolve descriptor
+	var descriptor *Descriptor
+	if descriptorYAML != "" {
 		var err error
-		agentManifest, err = ParseManifest([]byte(manifest))
+		descriptor, err = ParseDescriptor([]byte(descriptorYAML))
 		if err != nil {
 			return nil, err
 		}
 	} else {
 		var ok bool
-		agentManifest, ok = i.manifests[agentType]
+		descriptor, ok = i.descriptors[agentType]
 		if !ok {
 			return nil, &service.NotFoundError{ID: agentType}
 		}
 	}
 
 	// 2. Validate required env vars
-	if err := ValidateEnv(agentManifest, env); err != nil {
+	if err := ValidateEnv(descriptor, env); err != nil {
 		return nil, &service.ValidationError{Field: "env", Message: err.Error()}
 	}
 
@@ -76,9 +76,9 @@ func (i *Installer) Install(ctx context.Context, agentType, name string, env map
 		}
 	}
 
-	// 4. Merge env defaults (optional vars from manifest)
+	// 4. Merge env defaults (optional vars from descriptor)
 	mergedEnv := make(map[string]string)
-	for _, key := range agentManifest.Env.Optional {
+	for _, key := range descriptor.Env.Optional {
 		if val, ok := env[key]; ok {
 			mergedEnv[key] = val
 		}
@@ -87,9 +87,9 @@ func (i *Installer) Install(ctx context.Context, agentType, name string, env map
 		mergedEnv[k] = v
 	}
 
-	// 5. Build BodySpec from manifest
-	ports := make([]orchestrator.BodyPort, len(agentManifest.Ports))
-	for i, p := range agentManifest.Ports {
+	// 5. Build BodySpec from descriptor
+	ports := make([]orchestrator.BodyPort, len(descriptor.Ports))
+	for i, p := range descriptor.Ports {
 		ports[i] = orchestrator.BodyPort{
 			Name:          p.Name,
 			ContainerPort: p.ContainerPort,
@@ -99,12 +99,12 @@ func (i *Installer) Install(ctx context.Context, agentType, name string, env map
 	}
 
 	spec := orchestrator.BodySpec{
-		Image:     agentManifest.Image,
+		Image:     descriptor.Image,
 		Workdir:   "/workspace",
 		Env:       mergedEnv,
-		Cmd:       agentManifest.Command,
-		MemoryMB:  agentManifest.Resources.MemoryMB,
-		CPUShares: agentManifest.Resources.CPUShares,
+		Cmd:       descriptor.Command,
+		MemoryMB:  descriptor.Resources.MemoryMB,
+		CPUShares: descriptor.Resources.CPUShares,
 		Ports:     ports,
 	}
 
@@ -119,7 +119,7 @@ func (i *Installer) Install(ctx context.Context, agentType, name string, env map
 	var accessURLs []string
 
 	if i.ingress != nil {
-		for _, p := range agentManifest.Ports {
+		for _, p := range descriptor.Ports {
 			if !p.Expose {
 				continue
 			}
@@ -138,8 +138,8 @@ func (i *Installer) Install(ctx context.Context, agentType, name string, env map
 		}
 	}
 
-	if agentManifest.HealthCheck != nil && i.healthPoll != nil {
-		i.healthPoll(ctx, agentManifest, name)
+	if descriptor.HealthCheck != nil && i.healthPoll != nil {
+		i.healthPoll(ctx, descriptor, name)
 	}
 
 	return &InstallResult{
@@ -167,8 +167,8 @@ func (i *Installer) Uninstall(ctx context.Context, agentName string) error {
 	return &service.NotFoundError{ID: agentName}
 }
 
-func (i *Installer) defaultPollHealth(ctx context.Context, manifest *AgentManifest, name string) {
-	if manifest.HealthCheck.Type != "http" {
+func (i *Installer) defaultPollHealth(ctx context.Context, descriptor *Descriptor, name string) {
+	if descriptor.HealthCheck.Type != "http" {
 		return
 	}
 
@@ -182,7 +182,7 @@ func (i *Installer) defaultPollHealth(ctx context.Context, manifest *AgentManife
 			return
 		case <-ticker.C:
 			// Try health check
-			url := fmt.Sprintf("http://%s-%s.mesh.local%s", name, manifest.HealthCheck.Port, manifest.HealthCheck.Path)
+			url := fmt.Sprintf("http://%s-%s.mesh.local%s", name, descriptor.HealthCheck.Port, descriptor.HealthCheck.Path)
 			req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 			if err != nil {
 				continue
