@@ -465,5 +465,3 @@ func intPtr(n int) *int {
 func intToPtr(n int) *int {
 	return &n
 }
-
-

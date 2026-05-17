@@ -26,9 +26,9 @@ type DaemonConfig struct {
 	ClusterOwnerID string `yaml:"cluster_owner_id"` // Auth0 user ID that owns this cluster
 	ClusterID      string `yaml:"cluster_id"`       // Cluster UUID assigned by gateway
 
-	GatewayURL              string `yaml:"gateway_url"`
+	GatewayURL               string `yaml:"gateway_url"`
 	HeartbeatIntervalSeconds int    `yaml:"heartbeat_interval_seconds"`
-	HeartbeatEnabled        bool   `yaml:"-"`
+	HeartbeatEnabled         bool   `yaml:"-"`
 }
 
 // AuthConfig holds authentication configuration for API consumption.

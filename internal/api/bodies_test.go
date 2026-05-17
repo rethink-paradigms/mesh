@@ -13,16 +13,16 @@ import (
 )
 
 type mockBodyService struct {
-	listFunc        func(ctx context.Context) ([]*body.Body, error)
-	listByClusterFunc func(ctx context.Context, clusterID string) ([]*body.Body, error)
-	createFunc      func(ctx context.Context, name, image string, opts orchestrator.BodySpec) (*body.Body, error)
-	getFunc         func(ctx context.Context, id string) (*body.Body, error)
-	getByClusterFunc func(ctx context.Context, id, clusterID string) (*body.Body, error)
-	startFunc       func(ctx context.Context, id string) error
-	stopFunc        func(ctx context.Context, id string) error
-	destroyFunc     func(ctx context.Context, id string) error
+	listFunc             func(ctx context.Context) ([]*body.Body, error)
+	listByClusterFunc    func(ctx context.Context, clusterID string) ([]*body.Body, error)
+	createFunc           func(ctx context.Context, name, image string, opts orchestrator.BodySpec) (*body.Body, error)
+	getFunc              func(ctx context.Context, id string) (*body.Body, error)
+	getByClusterFunc     func(ctx context.Context, id, clusterID string) (*body.Body, error)
+	startFunc            func(ctx context.Context, id string) error
+	stopFunc             func(ctx context.Context, id string) error
+	destroyFunc          func(ctx context.Context, id string) error
 	destroyByClusterFunc func(ctx context.Context, id, clusterID string) error
-	getStatusFunc   func(ctx context.Context, id string) (orchestrator.BodyStatus, error)
+	getStatusFunc        func(ctx context.Context, id string) (orchestrator.BodyStatus, error)
 }
 
 func (m *mockBodyService) List(ctx context.Context) ([]*body.Body, error) {

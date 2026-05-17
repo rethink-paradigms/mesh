@@ -7,14 +7,14 @@ import (
 
 // Error code constants for API error responses.
 const (
-	ErrCodeUnauthorized       = "unauthorized"
-	ErrCodeBodyNotFound       = "body_not_found"
-	ErrCodeNodeNotFound       = "node_not_found"
-	ErrCodeBodyConflict       = "body_conflict"
-	ErrCodeNomadUnreachable   = "nomad_unreachable"
-	ErrCodeResourceExhausted  = "resource_exhausted"
-	ErrCodeInternal           = "internal"
-	ErrCodeBadRequest         = "bad_request"
+	ErrCodeUnauthorized      = "unauthorized"
+	ErrCodeBodyNotFound      = "body_not_found"
+	ErrCodeNodeNotFound      = "node_not_found"
+	ErrCodeBodyConflict      = "body_conflict"
+	ErrCodeNomadUnreachable  = "nomad_unreachable"
+	ErrCodeResourceExhausted = "resource_exhausted"
+	ErrCodeInternal          = "internal"
+	ErrCodeBadRequest        = "bad_request"
 )
 
 // APIError represents a single error in an API response.

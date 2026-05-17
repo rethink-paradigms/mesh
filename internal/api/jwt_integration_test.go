@@ -18,7 +18,7 @@ type mockBodyServiceJWT struct {
 	getByClusterFunc  func(ctx context.Context, id, clusterID string) (*body.Body, error)
 }
 
-func (m *mockBodyServiceJWT) List(ctx context.Context) ([]*body.Body, error)                       { return nil, nil }
+func (m *mockBodyServiceJWT) List(ctx context.Context) ([]*body.Body, error) { return nil, nil }
 func (m *mockBodyServiceJWT) ListByCluster(ctx context.Context, clusterID string) ([]*body.Body, error) {
 	if m.listByClusterFunc != nil {
 		return m.listByClusterFunc(ctx, clusterID)
@@ -35,10 +35,12 @@ func (m *mockBodyServiceJWT) GetByCluster(ctx context.Context, id, clusterID str
 	}
 	return nil, nil
 }
-func (m *mockBodyServiceJWT) Start(ctx context.Context, id string) error  { return nil }
-func (m *mockBodyServiceJWT) Stop(ctx context.Context, id string) error   { return nil }
+func (m *mockBodyServiceJWT) Start(ctx context.Context, id string) error   { return nil }
+func (m *mockBodyServiceJWT) Stop(ctx context.Context, id string) error    { return nil }
 func (m *mockBodyServiceJWT) Destroy(ctx context.Context, id string) error { return nil }
-func (m *mockBodyServiceJWT) DestroyByCluster(ctx context.Context, id, clusterID string) error { return nil }
+func (m *mockBodyServiceJWT) DestroyByCluster(ctx context.Context, id, clusterID string) error {
+	return nil
+}
 func (m *mockBodyServiceJWT) GetStatus(ctx context.Context, id string) (orchestrator.BodyStatus, error) {
 	return orchestrator.BodyStatus{}, nil
 }

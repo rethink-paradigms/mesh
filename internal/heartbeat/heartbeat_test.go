@@ -264,8 +264,6 @@ func TestClient_sendHeartbeat_bodiesCountCallback(t *testing.T) {
 	assert.Equal(t, 2, callCount)
 }
 
-
-
 func TestClient_sendHeartbeat_requestHeaders(t *testing.T) {
 	var capturedHeaders http.Header
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

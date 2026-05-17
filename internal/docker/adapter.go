@@ -133,8 +133,8 @@ func (a *Adapter) ScheduleBody(ctx context.Context, spec orchestrator.BodySpec) 
 		"Cmd":   spec.Cmd,
 		"Env":   env,
 		"HostConfig": map[string]interface{}{
-			"Memory":     int64(spec.MemoryMB) * 1024 * 1024,
-			"CpuShares":  spec.CPUShares,
+			"Memory":       int64(spec.MemoryMB) * 1024 * 1024,
+			"CpuShares":    spec.CPUShares,
 			"PortBindings": portBindings,
 		},
 	}

@@ -226,8 +226,8 @@ func (c *CaddyAdapter) ListRoutes(ctx context.Context) ([]Route, error) {
 }
 
 type caddyRoute struct {
-	ID     string `json:"@id"`
-	Match  []struct {
+	ID    string `json:"@id"`
+	Match []struct {
 		Host []string `json:"host"`
 	} `json:"match"`
 	Handle []struct {

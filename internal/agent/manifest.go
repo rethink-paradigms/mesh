@@ -36,10 +36,10 @@ type EnvConfig struct {
 
 // HealthCheck describes a health check configuration.
 type HealthCheck struct {
-	Type             string `yaml:"type"`
-	Path             string `yaml:"path"`
-	Port             string `yaml:"port"`
-	IntervalSeconds  int    `yaml:"interval_seconds"`
+	Type            string `yaml:"type"`
+	Path            string `yaml:"path"`
+	Port            string `yaml:"port"`
+	IntervalSeconds int    `yaml:"interval_seconds"`
 }
 
 // ResourceLimits describes compute resource limits.

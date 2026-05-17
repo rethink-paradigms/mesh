@@ -109,7 +109,7 @@ func (mc *MigrationCoordinator) BeginMigration(ctx context.Context, bodyID, targ
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
-		if err := mc.transitionBody(ctx, b, orchestrator.StateMigrating); err != nil {
+	if err := mc.transitionBody(ctx, b, orchestrator.StateMigrating); err != nil {
 		return "", fmt.Errorf("transition to migrating: %w", err)
 	}
 
@@ -169,7 +169,7 @@ func (mc *MigrationCoordinator) ResumeMigration(ctx context.Context, migrationID
 	defer b.mu.Unlock()
 
 	if b.State == orchestrator.StateError {
-	if err := mc.transitionBody(ctx, b, orchestrator.StateMigrating); err != nil {
+		if err := mc.transitionBody(ctx, b, orchestrator.StateMigrating); err != nil {
 			return fmt.Errorf("transition from error to migrating: %w", err)
 		}
 	}
@@ -259,7 +259,7 @@ func (mc *MigrationCoordinator) stepProvision(ctx context.Context, mig *migratio
 	if rec.CurrentStep >= 2 {
 		bodyRec, err := mc.store.GetBody(ctx, mig.bodyID)
 		if err == nil && bodyRec.InstanceID != "" {
-		mig.newHandle = orchestrator.Handle(bodyRec.InstanceID)
+			mig.newHandle = orchestrator.Handle(bodyRec.InstanceID)
 			return nil
 		}
 	}
@@ -358,9 +358,9 @@ func (mc *MigrationCoordinator) stepProvision(ctx context.Context, mig *migratio
 		return fmt.Errorf("schedule body on target orchestrator %q: %w", mig.target, err)
 	}
 
-		mig.newHandle = orchestrator.Handle(targetHandle)
+	mig.newHandle = orchestrator.Handle(targetHandle)
 
-		if err := mc.store.UpdateBodyState(ctx, mig.bodyID, orchestrator.StateMigrating); err != nil {
+	if err := mc.store.UpdateBodyState(ctx, mig.bodyID, orchestrator.StateMigrating); err != nil {
 		_ = targetOrch.DestroyBody(ctx, targetHandle)
 		mig.newHandle = ""
 		return fmt.Errorf("persist target handle: %w", err)

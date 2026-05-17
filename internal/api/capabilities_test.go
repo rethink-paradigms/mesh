@@ -29,8 +29,8 @@ func (m *mockOrchAdapter) DestroyBody(ctx context.Context, id orchestrator.Handl
 func (m *mockOrchAdapter) GetBodyStatus(ctx context.Context, id orchestrator.Handle) (orchestrator.BodyStatus, error) {
 	return orchestrator.BodyStatus{}, nil
 }
-func (m *mockOrchAdapter) Name() string                          { return m.name }
-func (m *mockOrchAdapter) IsHealthy(ctx context.Context) bool    { return m.healthy }
+func (m *mockOrchAdapter) Name() string                       { return m.name }
+func (m *mockOrchAdapter) IsHealthy(ctx context.Context) bool { return m.healthy }
 
 func TestHandleCapabilities(t *testing.T) {
 	reg := orchestrator.NewRegistry()
@@ -38,10 +38,10 @@ func TestHandleCapabilities(t *testing.T) {
 	require.NoError(t, err)
 
 	cfg := RouterConfig{
-		Version:     "0.1.0",
-		Tier:        "lite",
+		Version:      "0.1.0",
+		Tier:         "lite",
 		OrchRegistry: reg,
-		Features:    map[string]bool{"snapshots": true, "migration": false},
+		Features:     map[string]bool{"snapshots": true, "migration": false},
 	}
 	h := NewHandler(cfg)
 

@@ -47,17 +47,17 @@ type HealthCheckSpec struct {
 // BodyResponse is the response payload for a single body.
 // @Description Response payload for a single body
 type BodyResponse struct {
-	ID            string             `json:"id" example:"body_abc123"`
-	Name          string             `json:"name" example:"my-agent-body"`
-	Image         string             `json:"image"`
-	State         string             `json:"state" example:"running"`
-	NodeID        string             `json:"node_id,omitempty" example:"node_xyz789"`
+	ID            string              `json:"id" example:"body_abc123"`
+	Name          string              `json:"name" example:"my-agent-body"`
+	Image         string              `json:"image"`
+	State         string              `json:"state" example:"running"`
+	NodeID        string              `json:"node_id,omitempty" example:"node_xyz789"`
 	Ports         map[string]PortInfo `json:"ports,omitempty"`
-	Resources     ResourceSpec       `json:"resources"`
-	Health        *HealthCheckSpec   `json:"health,omitempty"`
-	UptimeSeconds int64              `json:"uptime_seconds,omitempty"`
-	CreatedAt     string             `json:"created_at"`
-	StartedAt     string             `json:"started_at,omitempty"`
+	Resources     ResourceSpec        `json:"resources"`
+	Health        *HealthCheckSpec    `json:"health,omitempty"`
+	UptimeSeconds int64               `json:"uptime_seconds,omitempty"`
+	CreatedAt     string              `json:"created_at"`
+	StartedAt     string              `json:"started_at,omitempty"`
 }
 
 // PortInfo describes port information for a running body.
@@ -189,7 +189,7 @@ type PortsStatusInfo struct {
 	// Placeholder — port tracking not yet implemented
 	Used int `json:"used"`
 	// Placeholder — port tracking not yet implemented
-	Free int `json:"free"`
+	Free      int `json:"free"`
 	PoolStart int `json:"pool_start"`
 	PoolEnd   int `json:"pool_end"`
 }
@@ -202,7 +202,7 @@ type IngressStatusInfo struct {
 // CapacityStatusInfo describes daemon host capacity.
 type CapacityStatusInfo struct {
 	// CPUPercent is always 0.0 — real-time CPU sampling not implemented
-	CPUPercent float64 `json:"cpu_percent"`
+	CPUPercent    float64 `json:"cpu_percent"`
 	MemoryMBUsed  int64   `json:"memory_mb_used"`
 	MemoryMBTotal int64   `json:"memory_mb_total"`
 	DiskGBUsed    float64 `json:"disk_gb_used"`
