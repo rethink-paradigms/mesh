@@ -16,6 +16,7 @@ type CaddyConfig struct {
 	PortPoolStart int
 	PortPoolEnd   int
 	DomainSuffix  string
+	PublicDomain  string
 }
 
 type PortPool struct {
@@ -63,6 +64,7 @@ type CaddyAdapter struct {
 	adminURL     string
 	pool         *PortPool
 	domainSuffix string
+	publicDomain string
 }
 
 func NewCaddyAdapter(cfg CaddyConfig) *CaddyAdapter {
@@ -90,11 +92,23 @@ func NewCaddyAdapter(cfg CaddyConfig) *CaddyAdapter {
 		adminURL:     adminURL,
 		pool:         NewPortPool(start, end),
 		domainSuffix: suffix,
+		publicDomain: cfg.PublicDomain,
 	}
 }
 
 func (c *CaddyAdapter) Name() string {
 	return "caddy"
+}
+
+func (c *CaddyAdapter) BuildURL(agentName string, hostPort int) string {
+	if c.publicDomain != "" {
+		return fmt.Sprintf("https://%s.%s", agentName, c.publicDomain)
+	}
+	return fmt.Sprintf("http://127.0.0.1:%d", hostPort)
+}
+
+func (c *CaddyAdapter) PublicDomain() string {
+	return c.publicDomain
 }
 
 func (c *CaddyAdapter) AllocPort(ctx context.Context, containerPort int) (int, error) {

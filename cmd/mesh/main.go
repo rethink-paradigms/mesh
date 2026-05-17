@@ -17,9 +17,9 @@ import (
 
 	"github.com/rethink-paradigms/mesh/internal/config"
 	configtoml "github.com/rethink-paradigms/mesh/internal/config-toml"
-	"github.com/rethink-paradigms/mesh/internal/snapshotmeta"
 	"github.com/rethink-paradigms/mesh/internal/restore"
 	"github.com/rethink-paradigms/mesh/internal/snapshot"
+	"github.com/rethink-paradigms/mesh/internal/snapshotmeta"
 	"github.com/rethink-paradigms/mesh/internal/version"
 )
 

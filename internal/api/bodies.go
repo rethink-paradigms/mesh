@@ -250,6 +250,13 @@ func bodyToResponse(b *body.Body, status orchestrator.BodyStatus) BodyResponse {
 		resp.NodeID = string(b.InstanceID)
 	}
 
+	for _, alloc := range b.PortAllocations {
+		resp.Ports[alloc.Name] = PortInfo{
+			HostPort: alloc.HostPort,
+			Domain:   alloc.AccessURL,
+		}
+	}
+
 	if !status.StartedAt.IsZero() {
 		resp.StartedAt = status.StartedAt.Format(time.RFC3339)
 		resp.UptimeSeconds = int64(status.Uptime.Seconds())

@@ -1094,6 +1094,91 @@ func TestCaddyDetected_HTTP401(t *testing.T) {
 	}
 }
 
+func TestDaemonHeartbeatStatusWiredToHealthz(t *testing.T) {
+	var mu sync.Mutex
+	heartbeatReceived := make(chan struct{}, 10)
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/internal/heartbeat" {
+			mu.Lock()
+			heartbeatReceived <- struct{}{}
+			mu.Unlock()
+			w.WriteHeader(http.StatusOK)
+		}
+	}))
+	defer server.Close()
+
+	cfg := testConfig(t)
+	cfg.Daemon.GatewayURL = server.URL
+	cfg.Daemon.HeartbeatIntervalSeconds = 1
+
+	d, err := New(cfg)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	done := make(chan error, 1)
+	go func() {
+		done <- d.Start(ctx)
+	}()
+
+	var addr string
+	for i := 0; i < 50; i++ {
+		addr = d.HTTPAddr()
+		if addr != "" {
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	if addr == "" {
+		t.Fatal("API server never started")
+	}
+
+	// Wait for at least one heartbeat to complete
+	select {
+	case <-heartbeatReceived:
+	case <-time.After(3 * time.Second):
+		t.Fatal("heartbeat not received")
+	}
+
+	// Give the status a moment to settle
+	time.Sleep(100 * time.Millisecond)
+
+	// Hit healthz and verify gateway fields
+	resp, err := http.Get("http://" + addr + "/healthz")
+	if err != nil {
+		t.Fatalf("GET /healthz: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want %d", resp.StatusCode, http.StatusOK)
+	}
+
+	var body map[string]interface{}
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+
+	// Gateway should be reachable (server responded with 200)
+	if reachable, ok := body["gateway_reachable"].(bool); !ok || !reachable {
+		t.Fatalf("gateway_reachable = %v, want true", body["gateway_reachable"])
+	}
+
+	// Last heartbeat should have a timestamp
+	if lastSuccess, ok := body["last_heartbeat_success"].(string); !ok || lastSuccess == "" {
+		t.Fatalf("last_heartbeat_success is empty, body=%+v", body)
+	}
+
+	// Consecutive failures should be 0
+	if failures, ok := body["heartbeat_consecutive_failures"].(float64); !ok || failures != 0 {
+		t.Fatalf("heartbeat_consecutive_failures = %v, want 0", body["heartbeat_consecutive_failures"])
+	}
+}
+
 func TestDaemonHeartbeatEnabled(t *testing.T) {
 	var received bool
 	mu := sync.Mutex{}

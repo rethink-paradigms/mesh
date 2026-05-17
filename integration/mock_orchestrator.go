@@ -110,5 +110,3 @@ func (m *mockOrchestratorAdapter) Name() string {
 func (m *mockOrchestratorAdapter) IsHealthy(_ context.Context) bool {
 	return true
 }
-
-

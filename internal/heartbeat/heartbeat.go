@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"sync"
 	"time"
 )
 
@@ -17,6 +18,19 @@ type HeartbeatBodyInfo struct {
 	ID    string `json:"id"`
 	Name  string `json:"name"`
 	State string `json:"state"`
+}
+
+// GatewayStatus represents the current state of gateway connectivity
+// as observed by the heartbeat client.
+type GatewayStatus struct {
+	// Reachable is true when the last heartbeat attempt succeeded.
+	Reachable bool `json:"reachable"`
+	// LastSuccess is when the last successful heartbeat was sent.
+	LastSuccess time.Time `json:"last_success"`
+	// ConsecutiveFailures is the number of heartbeats that have failed in a row.
+	ConsecutiveFailures int `json:"consecutive_failures"`
+	// LastError is the error message from the last failed heartbeat, if any.
+	LastError string `json:"last_error,omitempty"`
 }
 
 // Client sends periodic heartbeat POSTs to a gateway URL.
@@ -32,6 +46,12 @@ type Client struct {
 	bodiesCount  func() int
 	healthStatus func(context.Context) string
 	listBodies   func() []HeartbeatBodyInfo
+
+	mu                  sync.RWMutex
+	lastSuccess         time.Time
+	lastAttempt         time.Time
+	consecutiveFailures int
+	lastError           string
 }
 
 // NewClient creates a new heartbeat client with the given configuration.
@@ -61,6 +81,20 @@ type heartbeatPayload struct {
 	Tier         string              `json:"tier"`
 	Orchestrator string              `json:"orchestrator"`
 	Bodies       []HeartbeatBodyInfo `json:"bodies,omitempty"`
+}
+
+// Status returns the current gateway connectivity status.
+// This is thread-safe and can be called from any goroutine.
+func (c *Client) Status() GatewayStatus {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
+	return GatewayStatus{
+		Reachable:           c.consecutiveFailures == 0 && !c.lastSuccess.IsZero(),
+		LastSuccess:         c.lastSuccess,
+		ConsecutiveFailures: c.consecutiveFailures,
+		LastError:           c.lastError,
+	}
 }
 
 // Start spawns a goroutine that sends heartbeats at the given interval.
@@ -97,6 +131,7 @@ func (c *Client) loop(ctx context.Context, interval time.Duration) {
 
 // sendHeartbeat builds and sends a single heartbeat POST request.
 // It uses a 10-second timeout for the HTTP call.
+// On success or failure, it updates the internal gateway tracking state.
 func (c *Client) sendHeartbeat(ctx context.Context) error {
 	status := "healthy"
 	if c.healthStatus != nil {
@@ -126,6 +161,7 @@ func (c *Client) sendHeartbeat(ctx context.Context) error {
 	url := c.gatewayURL + "/api/internal/heartbeat"
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
 	if err != nil {
+		c.recordFailure(err)
 		return fmt.Errorf("create heartbeat request: %w", err)
 	}
 
@@ -139,13 +175,39 @@ func (c *Client) sendHeartbeat(ctx context.Context) error {
 
 	resp, err := client.Do(req)
 	if err != nil {
+		c.recordFailure(err)
 		return fmt.Errorf("send heartbeat: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return fmt.Errorf("heartbeat returned %d", resp.StatusCode)
+		err := fmt.Errorf("heartbeat returned %d", resp.StatusCode)
+		c.recordFailure(err)
+		return err
 	}
 
+	c.recordSuccess()
 	return nil
+}
+
+// recordSuccess updates tracking state after a successful heartbeat.
+func (c *Client) recordSuccess() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	now := time.Now()
+	c.lastSuccess = now
+	c.lastAttempt = now
+	c.consecutiveFailures = 0
+	c.lastError = ""
+}
+
+// recordFailure updates tracking state after a failed heartbeat.
+func (c *Client) recordFailure(err error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	c.lastAttempt = time.Now()
+	c.consecutiveFailures++
+	c.lastError = err.Error()
 }

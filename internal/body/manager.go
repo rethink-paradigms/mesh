@@ -129,10 +129,13 @@ func (bm *BodyManager) postStart(ctx context.Context, b *Body) {
 			ContainerPort: p.ContainerPort,
 			HostPort:      hostPort,
 			Protocol:      p.Protocol,
+			AccessURL:     bm.ingress.BuildURL(b.Name, hostPort),
 		})
-		domain := fmt.Sprintf("%s-%d%s", b.Name, p.ContainerPort, ".mesh.local")
-		if err := bm.ingress.AddRoute(ctx, domain, "127.0.0.1", hostPort); err != nil {
-			fmt.Fprintf(os.Stderr, "body %s: add route for %s: %v\n", b.ID, domain, err)
+		if bm.ingress.PublicDomain() != "" {
+			domain := fmt.Sprintf("%s.%s", b.Name, bm.ingress.PublicDomain())
+			if err := bm.ingress.AddRoute(ctx, domain, "127.0.0.1", hostPort); err != nil {
+				fmt.Fprintf(os.Stderr, "body %s: add route for %s: %v\n", b.ID, domain, err)
+			}
 		}
 	}
 }
@@ -145,9 +148,11 @@ func (bm *BodyManager) preStop(ctx context.Context, b *Body) {
 		if err := bm.ingress.FreePort(alloc.HostPort); err != nil {
 			fmt.Fprintf(os.Stderr, "body %s: free port %d: %v\n", b.ID, alloc.HostPort, err)
 		}
-		domain := fmt.Sprintf("%s-%d%s", b.Name, alloc.ContainerPort, ".mesh.local")
-		if err := bm.ingress.RemoveRoute(ctx, domain); err != nil {
-			fmt.Fprintf(os.Stderr, "body %s: remove route %s: %v\n", b.ID, domain, err)
+		if bm.ingress.PublicDomain() != "" {
+			domain := fmt.Sprintf("%s.%s", b.Name, bm.ingress.PublicDomain())
+			if err := bm.ingress.RemoveRoute(ctx, domain); err != nil {
+				fmt.Fprintf(os.Stderr, "body %s: remove route %s: %v\n", b.ID, domain, err)
+			}
 		}
 	}
 	b.PortAllocations = nil

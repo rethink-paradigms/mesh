@@ -272,6 +272,197 @@ func TestClient_sendHeartbeat_bodiesCountCallback(t *testing.T) {
 	assert.Equal(t, 2, callCount)
 }
 
+func TestClient_Status_initialState(t *testing.T) {
+	client := &Client{
+		gatewayURL:   "http://example.com",
+		authToken:    "token",
+		authMode:     "token",
+		clusterID:    "c1",
+		version:      "1.0.0",
+		tier:         "standard",
+		orchestrator: "docker",
+		bodiesCount:  func() int { return 1 },
+		healthStatus: nil,
+	}
+
+	status := client.Status()
+	assert.False(t, status.Reachable, "should not be reachable before first heartbeat")
+	assert.True(t, status.LastSuccess.IsZero(), "last success should be zero")
+	assert.Equal(t, 0, status.ConsecutiveFailures)
+	assert.Empty(t, status.LastError)
+}
+
+func TestClient_sendHeartbeat_tracksSuccess(t *testing.T) {
+	before := time.Now()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	client := &Client{
+		httpClient:   &http.Client{Timeout: 10 * time.Second},
+		gatewayURL:   server.URL,
+		authToken:    "token",
+		authMode:     "token",
+		clusterID:    "c1",
+		version:      "1.0.0",
+		tier:         "standard",
+		orchestrator: "docker",
+		bodiesCount:  func() int { return 1 },
+		healthStatus: nil,
+	}
+
+	ctx := context.Background()
+	err := client.sendHeartbeat(ctx)
+	require.NoError(t, err)
+
+	status := client.Status()
+	assert.True(t, status.Reachable)
+	assert.False(t, status.LastSuccess.IsZero())
+	assert.True(t, status.LastSuccess.After(before))
+	assert.Equal(t, 0, status.ConsecutiveFailures)
+	assert.Empty(t, status.LastError)
+}
+
+func TestClient_sendHeartbeat_tracksFailure(t *testing.T) {
+	client := &Client{
+		httpClient:   &http.Client{Timeout: 10 * time.Second},
+		gatewayURL:   "http://127.0.0.1:1", // connection refused
+		authToken:    "token",
+		authMode:     "token",
+		clusterID:    "c1",
+		version:      "1.0.0",
+		tier:         "standard",
+		orchestrator: "docker",
+		bodiesCount:  func() int { return 1 },
+		healthStatus: nil,
+	}
+
+	ctx := context.Background()
+	err := client.sendHeartbeat(ctx)
+	require.Error(t, err)
+
+	status := client.Status()
+	assert.False(t, status.Reachable)
+	assert.True(t, status.LastSuccess.IsZero())
+	assert.Equal(t, 1, status.ConsecutiveFailures)
+	assert.NotEmpty(t, status.LastError)
+}
+
+func TestClient_sendHeartbeat_consecutiveFailures(t *testing.T) {
+	client := &Client{
+		httpClient:   &http.Client{Timeout: 10 * time.Second},
+		gatewayURL:   "http://127.0.0.1:1", // connection refused
+		authToken:    "token",
+		authMode:     "token",
+		clusterID:    "c1",
+		version:      "1.0.0",
+		tier:         "standard",
+		orchestrator: "docker",
+		bodiesCount:  func() int { return 1 },
+		healthStatus: nil,
+	}
+
+	ctx := context.Background()
+	for i := 0; i < 5; i++ {
+		_ = client.sendHeartbeat(ctx)
+	}
+
+	status := client.Status()
+	assert.False(t, status.Reachable)
+	assert.Equal(t, 5, status.ConsecutiveFailures)
+}
+
+func TestClient_sendHeartbeat_failureThenSuccessResets(t *testing.T) {
+	callCount := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		callCount++
+		if callCount <= 3 {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	client := &Client{
+		httpClient:   &http.Client{Timeout: 10 * time.Second},
+		gatewayURL:   server.URL,
+		authToken:    "token",
+		authMode:     "token",
+		clusterID:    "c1",
+		version:      "1.0.0",
+		tier:         "standard",
+		orchestrator: "docker",
+		bodiesCount:  func() int { return 1 },
+		healthStatus: nil,
+	}
+
+	ctx := context.Background()
+
+	// 3 failures
+	for i := 0; i < 3; i++ {
+		_ = client.sendHeartbeat(ctx)
+	}
+	status := client.Status()
+	assert.False(t, status.Reachable)
+	assert.Equal(t, 3, status.ConsecutiveFailures)
+
+	// Then success
+	err := client.sendHeartbeat(ctx)
+	require.NoError(t, err)
+
+	status = client.Status()
+	assert.True(t, status.Reachable)
+	assert.Equal(t, 0, status.ConsecutiveFailures)
+	assert.Empty(t, status.LastError)
+}
+
+func TestClient_Status_threadSafe(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	client := &Client{
+		httpClient:   &http.Client{Timeout: 10 * time.Second},
+		gatewayURL:   server.URL,
+		authToken:    "token",
+		authMode:     "token",
+		clusterID:    "c1",
+		version:      "1.0.0",
+		tier:         "standard",
+		orchestrator: "docker",
+		bodiesCount:  func() int { return 1 },
+		healthStatus: nil,
+	}
+
+	ctx := context.Background()
+
+	// Send a heartbeat to initialize state
+	_ = client.sendHeartbeat(ctx)
+
+	// Concurrent reads should not race
+	done := make(chan struct{})
+	go func() {
+		for i := 0; i < 100; i++ {
+			client.sendHeartbeat(ctx)
+		}
+	}()
+	go func() {
+		for i := 0; i < 100; i++ {
+			_ = client.Status()
+		}
+		done <- struct{}{}
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(3 * time.Second):
+		t.Fatal("Status calls blocked on mutex")
+	}
+}
+
 func TestClient_sendHeartbeat_requestHeaders(t *testing.T) {
 	var capturedHeaders http.Header
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

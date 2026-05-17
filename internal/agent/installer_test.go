@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -34,6 +35,13 @@ func (m *mockIngress) AllocPort(ctx context.Context, containerPort int) (int, er
 	return containerPort + 10000, nil
 }
 func (m *mockIngress) FreePort(hostPort int) error { return nil }
+func (m *mockIngress) BuildURL(agentName string, hostPort int) string {
+	return fmt.Sprintf("http://%s.local:%d", agentName, hostPort)
+}
+
+func (m *mockIngress) PublicDomain() string {
+	return ""
+}
 
 type mockOrchAdapter struct {
 	handle orchestrator.Handle
@@ -87,7 +95,7 @@ func TestInstallAgent(t *testing.T) {
 	}
 
 	installer := NewInstaller(bm, ing, nil, manifests)
-	installer.healthPoll = func(context.Context, *Descriptor, string) {}
+	installer.healthPoll = func(context.Context, *Descriptor, string, map[string]int) {}
 	ctx := context.Background()
 
 	result, err := installer.Install(ctx, "test-agent", "my-test", map[string]string{"API_KEY": "secret"}, "")
@@ -198,7 +206,7 @@ func TestInstallAgentInlineManifest(t *testing.T) {
 	ing := &mockIngress{}
 
 	installer := NewInstaller(bm, ing, nil, map[string]*Descriptor{})
-	installer.healthPoll = func(context.Context, *Descriptor, string) {}
+	installer.healthPoll = func(context.Context, *Descriptor, string, map[string]int) {}
 	ctx := context.Background()
 
 	inlineYAML := `

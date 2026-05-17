@@ -21,11 +21,11 @@ import (
 	"github.com/rethink-paradigms/mesh/internal/body"
 	"github.com/rethink-paradigms/mesh/internal/config"
 	"github.com/rethink-paradigms/mesh/internal/daemon"
-	"github.com/rethink-paradigms/mesh/internal/snapshotmeta"
 	"github.com/rethink-paradigms/mesh/internal/mcp"
 	"github.com/rethink-paradigms/mesh/internal/orchestrator"
 	"github.com/rethink-paradigms/mesh/internal/plugin"
 	"github.com/rethink-paradigms/mesh/internal/service"
+	"github.com/rethink-paradigms/mesh/internal/snapshotmeta"
 	"github.com/rethink-paradigms/mesh/internal/store"
 	"gopkg.in/yaml.v3"
 )
@@ -211,7 +211,7 @@ func TestDaemonFullPipeline(t *testing.T) {
 	h.srv.SetBodyService(service.NewBodyService(bm, s, nil))
 	orchReg := orchestrator.NewRegistry()
 	_ = orchReg.Register(mockAdapter.Name(), mockAdapter)
-	migrator := body.NewMigrationCoordinator(s, bm, orchReg, nil, nil)
+	migrator := body.NewMigrationCoordinator(s, bm, orchReg, nil)
 	h.srv.SetMigrator(migrator)
 
 	h.send(t, mcp.Request{

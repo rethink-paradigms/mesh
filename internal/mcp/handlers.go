@@ -819,10 +819,10 @@ func (s *Server) handleInstallAgent(ctx context.Context, params json.RawMessage)
 		return nil, &RPCError{Code: -32603, Message: "installer not available"}
 	}
 	var p struct {
-		AgentType string            `json:"agent_type"`
-		Name      string            `json:"name"`
-		Env       map[string]string `json:"env,omitempty"`
-		DescriptorYAML string       `json:"descriptor,omitempty"`
+		AgentType      string            `json:"agent_type"`
+		Name           string            `json:"name"`
+		Env            map[string]string `json:"env,omitempty"`
+		DescriptorYAML string            `json:"descriptor,omitempty"`
 	}
 	if err := json.Unmarshal(params, &p); err != nil {
 		return nil, &RPCError{Code: -32602, Message: "invalid params: " + err.Error()}

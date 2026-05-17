@@ -13,6 +13,7 @@ type AllocatedPort struct {
 	ContainerPort int
 	HostPort      int
 	Protocol      string
+	AccessURL     string
 }
 
 type Body struct {

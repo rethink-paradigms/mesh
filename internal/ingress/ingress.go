@@ -30,4 +30,13 @@ type IngressAdapter interface {
 
 	// FreePort releases a previously allocated host port.
 	FreePort(hostPort int) error
+
+	// BuildURL returns the external access URL for an agent based on ingress
+	// configuration. When public_domain is set, returns https://{agentName}.{publicDomain}.
+	// When public_domain is empty, returns http://127.0.0.1:{hostPort} for VM-local access.
+	BuildURL(agentName string, hostPort int) string
+
+	// PublicDomain returns the configured public domain, or empty string if
+	// direct port mode is active.
+	PublicDomain() string
 }

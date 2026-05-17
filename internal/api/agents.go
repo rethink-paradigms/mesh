@@ -18,10 +18,10 @@ type Installer interface {
 
 // InstallAgentRequest is the request payload for POST /api/v1/agents/install.
 type InstallAgentRequest struct {
-	AgentType string            `json:"agent_type"`
-	Name      string            `json:"name"`
-	Env       map[string]string `json:"env,omitempty"`
-	DescriptorYAML string       `json:"descriptor,omitempty"`
+	AgentType      string            `json:"agent_type"`
+	Name           string            `json:"name"`
+	Env            map[string]string `json:"env,omitempty"`
+	DescriptorYAML string            `json:"descriptor,omitempty"`
 }
 
 // @Summary Install an agent

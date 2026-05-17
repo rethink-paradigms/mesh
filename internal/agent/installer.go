@@ -18,7 +18,7 @@ type Installer struct {
 	ingress      ingress.IngressAdapter
 	orchRegistry *orchestrator.Registry
 	descriptors  map[string]*Descriptor
-	healthPoll   func(ctx context.Context, descriptor *Descriptor, name string)
+	healthPoll   func(ctx context.Context, descriptor *Descriptor, name string, allocatedPorts map[string]int)
 }
 
 // InstallResult is returned after a successful agent installation.
@@ -131,15 +131,19 @@ func (i *Installer) Install(ctx context.Context, agentType, name string, env map
 			allocatedPorts[p.Name] = hostPort
 
 			// 8. Create ingress route
-			domain := fmt.Sprintf("%s-%d.mesh.local", name, p.ContainerPort)
-			if err := i.ingress.AddRoute(ctx, domain, "127.0.0.1", hostPort); err == nil {
-				accessURLs = append(accessURLs, fmt.Sprintf("http://%s", domain))
+			url := i.ingress.BuildURL(name, hostPort)
+			if url != "" {
+				accessURLs = append(accessURLs, url)
+			}
+			if i.ingress.PublicDomain() != "" {
+				domain := fmt.Sprintf("%s.%s", name, i.ingress.PublicDomain())
+				_ = i.ingress.AddRoute(ctx, domain, "127.0.0.1", hostPort)
 			}
 		}
 	}
 
 	if descriptor.HealthCheck != nil && i.healthPoll != nil {
-		i.healthPoll(ctx, descriptor, name)
+		i.healthPoll(ctx, descriptor, name, allocatedPorts)
 	}
 
 	return &InstallResult{
@@ -167,10 +171,24 @@ func (i *Installer) Uninstall(ctx context.Context, agentName string) error {
 	return &service.NotFoundError{ID: agentName}
 }
 
-func (i *Installer) defaultPollHealth(ctx context.Context, descriptor *Descriptor, name string) {
+func (i *Installer) defaultPollHealth(ctx context.Context, descriptor *Descriptor, name string, allocatedPorts map[string]int) {
 	if descriptor.HealthCheck.Type != "http" {
 		return
 	}
+
+	// Find the allocated host port for the health check container port
+	var healthHostPort int
+	for _, p := range descriptor.Ports {
+		if fmt.Sprintf("%d", p.ContainerPort) == descriptor.HealthCheck.Port && p.Expose {
+			healthHostPort = allocatedPorts[p.Name]
+			break
+		}
+	}
+	if healthHostPort == 0 {
+		return
+	}
+
+	url := i.ingress.BuildURL(name, healthHostPort) + descriptor.HealthCheck.Path
 
 	timeout := time.After(60 * time.Second)
 	ticker := time.NewTicker(2 * time.Second)
@@ -181,8 +199,6 @@ func (i *Installer) defaultPollHealth(ctx context.Context, descriptor *Descripto
 		case <-timeout:
 			return
 		case <-ticker.C:
-			// Try health check
-			url := fmt.Sprintf("http://%s-%s.mesh.local%s", name, descriptor.HealthCheck.Port, descriptor.HealthCheck.Path)
 			req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 			if err != nil {
 				continue

@@ -497,6 +497,9 @@ func (d *Daemon) Stop(ctx context.Context) error {
 func (d *Daemon) reconcile(ctx context.Context) error {
 	bodies, err := d.store.ListBodies(ctx)
 	if err != nil {
+		if ctx.Err() == context.Canceled {
+			return nil
+		}
 		return fmt.Errorf("reconcile: list bodies: %w", err)
 	}
 
@@ -587,6 +590,7 @@ func (d *Daemon) createIngressAdapter() ingress.IngressAdapter {
 			PortPoolStart: d.cfg.Ingress.PortPoolStart,
 			PortPoolEnd:   d.cfg.Ingress.PortPoolEnd,
 			DomainSuffix:  d.cfg.Ingress.DomainSuffix,
+			PublicDomain:  d.cfg.Ingress.PublicDomain,
 		})
 	case "noop", "":
 		return ingress.NewNoopAdapter()
@@ -604,6 +608,23 @@ func (d *Daemon) startAPIServer() error {
 
 	if d.ingress == nil {
 		d.ingress = d.createIngressAdapter()
+	}
+
+	// Build heartbeat status function. d.heartbeat may be nil at router
+	// creation time but is set later by Start() before the loop runs.
+	// The closure captures d (not d.heartbeat), so it reads the current
+	// value on each call.
+	heartbeatStatusFn := func() api.GatewayHeartbeatStatus {
+		if d.heartbeat == nil {
+			return api.GatewayHeartbeatStatus{}
+		}
+		s := d.heartbeat.Status()
+		return api.GatewayHeartbeatStatus{
+			Reachable:           s.Reachable,
+			LastSuccess:         s.LastSuccess,
+			ConsecutiveFailures: s.ConsecutiveFailures,
+			LastError:           s.LastError,
+		}
 	}
 
 	router := api.NewRouter(api.RouterConfig{
@@ -628,6 +649,7 @@ func (d *Daemon) startAPIServer() error {
 		HeartbeatIntervalSeconds: d.cfg.Daemon.HeartbeatIntervalSeconds,
 		RegistryManager:          d, // Daemon implements api.RegistryManager
 		StopDaemon:               d.Stop,
+		HeartbeatStatusFn:        heartbeatStatusFn,
 	})
 
 	listenAddr := d.cfg.Daemon.ListenAddr

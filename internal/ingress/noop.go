@@ -45,5 +45,15 @@ func (n *NoopAdapter) FreePort(hostPort int) error {
 	return nil
 }
 
+// BuildURL returns an empty string since no ingress is configured.
+func (n *NoopAdapter) BuildURL(agentName string, hostPort int) string {
+	return ""
+}
+
+// PublicDomain returns an empty string since no ingress is configured.
+func (n *NoopAdapter) PublicDomain() string {
+	return ""
+}
+
 // Compile-time check that NoopAdapter implements IngressAdapter.
 var _ IngressAdapter = (*NoopAdapter)(nil)

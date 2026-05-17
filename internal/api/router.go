@@ -50,6 +50,15 @@ type RouterConfig struct {
 	HeartbeatIntervalSeconds int
 	RegistryManager          RegistryManager // hot-swappable S3 registry (optional)
 	StopDaemon               func(context.Context) error
+	HeartbeatStatusFn        func() GatewayHeartbeatStatus
+}
+
+// GatewayHeartbeatStatus represents the daemon's view of gateway connectivity.
+type GatewayHeartbeatStatus struct {
+	Reachable           bool
+	LastSuccess         time.Time
+	ConsecutiveFailures int
+	LastError           string
 }
 
 type bodyServiceAdapter interface {

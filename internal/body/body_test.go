@@ -1274,9 +1274,6 @@ func TestMigrationStepSwitchRollbackOnFailure(t *testing.T) {
 	}
 }
 
-
-
-
 func TestMigrationSameMachineIgnoresRegistry(t *testing.T) {
 	s := openTestStore(t)
 	ma := newMockOrchAdapter()
@@ -1308,15 +1305,14 @@ func TestMigrationSameMachineIgnoresRegistry(t *testing.T) {
 	}
 }
 
-
-
 type mockIngressAdapter struct {
-	mu        sync.Mutex
-	allocs    []int
-	frees     []int
-	routes    []string
-	removed   []string
-	failAlloc bool
+	mu           sync.Mutex
+	allocs       []int
+	frees        []int
+	routes       []string
+	removed      []string
+	failAlloc    bool
+	publicDomain string
 }
 
 func (m *mockIngressAdapter) Name() string { return "mock-ingress" }
@@ -1357,11 +1353,22 @@ func (m *mockIngressAdapter) FreePort(hostPort int) error {
 	return nil
 }
 
+func (m *mockIngressAdapter) BuildURL(agentName string, hostPort int) string {
+	return fmt.Sprintf("http://%s.local:%d", agentName, hostPort)
+}
+
+func (m *mockIngressAdapter) PublicDomain() string {
+	if m.publicDomain != "" {
+		return m.publicDomain
+	}
+	return "mesh.local"
+}
+
 func TestPostStartAllocatesPorts(t *testing.T) {
 	s := openTestStore(t)
 	ma := newMockOrchAdapter()
 	bm := NewBodyManager(s, ma, "")
-	ing := &mockIngressAdapter{}
+	ing := &mockIngressAdapter{publicDomain: "example.com"}
 	bm.SetIngress(ing)
 
 	ctx := context.Background()

@@ -21,8 +21,8 @@ import (
 
 	"github.com/klauspost/compress/zstd"
 	configtoml "github.com/rethink-paradigms/mesh/internal/config-toml"
-	"github.com/rethink-paradigms/mesh/internal/snapshotmeta"
 	"github.com/rethink-paradigms/mesh/internal/orchestrator"
+	"github.com/rethink-paradigms/mesh/internal/snapshotmeta"
 	"github.com/rethink-paradigms/mesh/internal/store"
 )
 

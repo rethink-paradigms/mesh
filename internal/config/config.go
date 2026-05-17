@@ -98,6 +98,7 @@ type IngressConfig struct {
 	PortPoolStart int    `yaml:"port_pool_start"`
 	PortPoolEnd   int    `yaml:"port_pool_end"`
 	DomainSuffix  string `yaml:"domain_suffix"`
+	PublicDomain  string `yaml:"public_domain"`
 }
 
 // Config is the top-level v1 configuration.

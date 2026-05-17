@@ -1,5 +1,5 @@
 [Unit]
-Description=Mesh Daemon — Portable agent-body runtime
+Description=Mesh Daemon -- Portable agent-body runtime
 After=network-online.target docker.service
 
 [Service]

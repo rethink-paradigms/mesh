@@ -60,16 +60,48 @@ func (h *Handler) Healthz(w http.ResponseWriter, r *http.Request) {
 
 	heartbeatEnabled := h.cfg.GatewayURL != "" && h.cfg.HeartbeatIntervalSeconds > 0
 
+	// Check gateway reachability from heartbeat tracking
+	gatewayReachable := false
+	lastHeartbeatSuccess := ""
+	heartbeatConsecutiveFailures := 0
+	if heartbeatEnabled && h.cfg.HeartbeatStatusFn != nil {
+		hbStatus := h.cfg.HeartbeatStatusFn()
+		gatewayReachable = hbStatus.Reachable
+		heartbeatConsecutiveFailures = hbStatus.ConsecutiveFailures
+		if !hbStatus.LastSuccess.IsZero() {
+			lastHeartbeatSuccess = hbStatus.LastSuccess.UTC().Format(time.RFC3339)
+		}
+
+		// If heartbeat has been failing for > 120 seconds, degrade status
+		if hbStatus.ConsecutiveFailures > 0 {
+			sinceLastSuccess := time.Since(hbStatus.LastSuccess)
+			// If we've never succeeded, use time since first attempt
+			lastKnown := hbStatus.LastSuccess
+			if lastKnown.IsZero() {
+				// Degrade after a brief grace window even without any successful heartbeat
+				// (the client starts sending immediately, so a few intervals is enough)
+				if hbStatus.ConsecutiveFailures >= 3 {
+					status = "degraded"
+				}
+			} else if sinceLastSuccess > 120*time.Second {
+				status = "degraded"
+			}
+		}
+	}
+
 	WriteJSON(w, http.StatusOK, HealthzResponse{
-		Status:                status,
-		Version:               h.cfg.Version,
-		NomadConnected:        nomadConnected,
-		BodiesCount:           bodiesCount,
-		NodesCount:            nodesCount,
-		OrchestratorConnected: nomadConnected,
-		GatewayURL:            h.cfg.GatewayURL,
-		HeartbeatEnabled:      heartbeatEnabled,
-		SQLiteHealthy:         sqliteHealthy,
-		StuckStartingCount:    stuckStartingCount,
+		Status:                       status,
+		Version:                      h.cfg.Version,
+		NomadConnected:               nomadConnected,
+		BodiesCount:                  bodiesCount,
+		NodesCount:                   nodesCount,
+		OrchestratorConnected:        nomadConnected,
+		GatewayURL:                   h.cfg.GatewayURL,
+		GatewayReachable:             gatewayReachable,
+		LastHeartbeatSuccess:         lastHeartbeatSuccess,
+		HeartbeatConsecutiveFailures: heartbeatConsecutiveFailures,
+		HeartbeatEnabled:             heartbeatEnabled,
+		SQLiteHealthy:                sqliteHealthy,
+		StuckStartingCount:           stuckStartingCount,
 	})
 }

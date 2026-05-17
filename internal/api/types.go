@@ -120,16 +120,19 @@ type ListNodesResponse struct {
 // HealthzResponse is the response payload for GET /healthz.
 // @Description Response payload for health check
 type HealthzResponse struct {
-	Status                string `json:"status"`
-	Version               string `json:"version"`
-	NomadConnected        bool   `json:"nomad_connected"`
-	BodiesCount           int    `json:"bodies_count"`
-	NodesCount            int    `json:"nodes_count"`
-	OrchestratorConnected bool   `json:"orchestrator_connected"`
-	GatewayURL            string `json:"gateway_url"`
-	HeartbeatEnabled      bool   `json:"heartbeat_enabled"`
-	SQLiteHealthy         bool   `json:"sqlite_healthy"`
-	StuckStartingCount    int    `json:"stuck_starting_count"`
+	Status                       string `json:"status"`
+	Version                      string `json:"version"`
+	NomadConnected               bool   `json:"nomad_connected"`
+	BodiesCount                  int    `json:"bodies_count"`
+	NodesCount                   int    `json:"nodes_count"`
+	OrchestratorConnected        bool   `json:"orchestrator_connected"`
+	GatewayURL                   string `json:"gateway_url"`
+	GatewayReachable             bool   `json:"gateway_reachable"`
+	LastHeartbeatSuccess         string `json:"last_heartbeat_success,omitempty"`
+	HeartbeatConsecutiveFailures int    `json:"heartbeat_consecutive_failures"`
+	HeartbeatEnabled             bool   `json:"heartbeat_enabled"`
+	SQLiteHealthy                bool   `json:"sqlite_healthy"`
+	StuckStartingCount           int    `json:"stuck_starting_count"`
 }
 
 // CapabilitiesResponse is the response payload for GET /api/v1/capabilities.
