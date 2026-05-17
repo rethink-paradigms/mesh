@@ -154,6 +154,11 @@ func (i *Installer) Install(ctx context.Context, agentType, name string, env map
 	}, nil
 }
 
+// IngressAdapter returns the ingress adapter used by this installer.
+func (i *Installer) IngressAdapter() ingress.IngressAdapter {
+	return i.ingress
+}
+
 // Uninstall uninstalls an agent by name, destroying its body.
 func (i *Installer) Uninstall(ctx context.Context, agentName string) error {
 	if i.bodyMgr == nil {

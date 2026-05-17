@@ -55,5 +55,10 @@ func (n *NoopAdapter) PublicDomain() string {
 	return ""
 }
 
+// PortPoolStats returns zero values since no ingress is configured.
+func (n *NoopAdapter) PortPoolStats() (int, int, int, int) {
+	return 0, 0, 0, 0
+}
+
 // Compile-time check that NoopAdapter implements IngressAdapter.
 var _ IngressAdapter = (*NoopAdapter)(nil)

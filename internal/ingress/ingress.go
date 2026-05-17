@@ -39,4 +39,8 @@ type IngressAdapter interface {
 	// PublicDomain returns the configured public domain, or empty string if
 	// direct port mode is active.
 	PublicDomain() string
+
+	// PortPoolStats returns the current port pool allocation statistics:
+	// (poolStart, poolEnd, usedCount, freeCount).
+	PortPoolStats() (int, int, int, int)
 }

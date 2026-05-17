@@ -94,11 +94,10 @@ select_downloader() {
 # --- Build download URLs ---
 build_urls() {
   if [ "$VERSION" = "latest" ]; then
-    RELEASE_TAG="latest"
-  else
-    RELEASE_TAG="$VERSION"
+    die "Cannot determine archive name for 'latest' version without GitHub API access. Please set MESH_VERSION to a specific release tag (e.g., MESH_VERSION=1.0.1)."
   fi
 
+  RELEASE_TAG="$VERSION"
   BASE_URL="https://github.com/${MESH_REPO}/releases/download/${RELEASE_TAG}"
   ARCHIVE_VERSION="${VERSION#v}"
   ARCHIVE_NAME="mesh_${ARCHIVE_VERSION}_${OS}_${ARCH}.tar.gz"
@@ -360,8 +359,8 @@ ExecStart=/usr/local/bin/mesh-daemon serve --config /etc/mesh/config.yaml
 Restart=on-failure
 RestartSec=5
 User=root
-StandardOutput=journal
-StandardError=journal
+StandardOutput=append:/var/log/mesh-daemon.log
+StandardError=append:/var/log/mesh-daemon.log
 
 [Install]
 WantedBy=multi-user.target

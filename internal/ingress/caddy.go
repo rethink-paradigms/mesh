@@ -65,6 +65,8 @@ type CaddyAdapter struct {
 	pool         *PortPool
 	domainSuffix string
 	publicDomain string
+	serverName   string
+	serverNameMu sync.Mutex
 }
 
 func NewCaddyAdapter(cfg CaddyConfig) *CaddyAdapter {
@@ -100,6 +102,18 @@ func (c *CaddyAdapter) Name() string {
 	return "caddy"
 }
 
+func (c *CaddyAdapter) PortPoolStats() (int, int, int, int) {
+	c.pool.mu.Lock()
+	defer c.pool.mu.Unlock()
+	used := len(c.pool.used)
+	total := c.pool.end - c.pool.start + 1
+	free := total - used
+	if free < 0 {
+		free = 0
+	}
+	return c.pool.start, c.pool.end, used, free
+}
+
 func (c *CaddyAdapter) BuildURL(agentName string, hostPort int) string {
 	if c.publicDomain != "" {
 		return fmt.Sprintf("https://%s.%s", agentName, c.publicDomain)
@@ -109,6 +123,56 @@ func (c *CaddyAdapter) BuildURL(agentName string, hostPort int) string {
 
 func (c *CaddyAdapter) PublicDomain() string {
 	return c.publicDomain
+}
+
+func (c *CaddyAdapter) getServerName(ctx context.Context) (string, error) {
+	c.serverNameMu.Lock()
+	defer c.serverNameMu.Unlock()
+
+	if c.serverName != "" {
+		return c.serverName, nil
+	}
+
+	name, err := c.discoverServerName(ctx)
+	if err != nil {
+		return "", err
+	}
+	c.serverName = name
+	return name, nil
+}
+
+func (c *CaddyAdapter) discoverServerName(ctx context.Context) (string, error) {
+	url := fmt.Sprintf("%s/config/apps/http/servers", c.adminURL)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return "", fmt.Errorf("create request: %w", err)
+	}
+
+	resp, err := c.client.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("caddy admin API: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode >= 400 {
+		respBody, _ := io.ReadAll(resp.Body)
+		return "", fmt.Errorf("caddy admin API returned %d: %s", resp.StatusCode, string(respBody))
+	}
+
+	var servers map[string]interface{}
+	if err := json.NewDecoder(resp.Body).Decode(&servers); err != nil {
+		return "", fmt.Errorf("decode servers: %w", err)
+	}
+
+	if len(servers) == 0 {
+		return "", fmt.Errorf("no HTTP servers found in Caddy config")
+	}
+
+	// Pick the first server. Caddyfile typically creates exactly one.
+	for name := range servers {
+		return name, nil
+	}
+	return "", fmt.Errorf("no HTTP servers found in Caddy config")
 }
 
 func (c *CaddyAdapter) AllocPort(ctx context.Context, containerPort int) (int, error) {
@@ -147,7 +211,12 @@ func (c *CaddyAdapter) AddRoute(ctx context.Context, domain, upstream string, po
 		return fmt.Errorf("marshal route: %w", err)
 	}
 
-	url := fmt.Sprintf("%s/config/apps/http/servers/srv0/routes/%s", c.adminURL, domain)
+	serverName, err := c.getServerName(ctx)
+	if err != nil {
+		return fmt.Errorf("discover caddy server: %w", err)
+	}
+
+	url := fmt.Sprintf("%s/config/apps/http/servers/%s/routes/%s", c.adminURL, serverName, domain)
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
 	if err != nil {
 		return fmt.Errorf("create request: %w", err)
@@ -171,7 +240,12 @@ func (c *CaddyAdapter) RemoveRoute(ctx context.Context, domain string) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	url := fmt.Sprintf("%s/config/apps/http/servers/srv0/routes/%s", c.adminURL, domain)
+	serverName, err := c.getServerName(ctx)
+	if err != nil {
+		return fmt.Errorf("discover caddy server: %w", err)
+	}
+
+	url := fmt.Sprintf("%s/config/apps/http/servers/%s/routes/%s", c.adminURL, serverName, domain)
 	req, err := http.NewRequestWithContext(ctx, http.MethodDelete, url, nil)
 	if err != nil {
 		return fmt.Errorf("create request: %w", err)
@@ -194,7 +268,12 @@ func (c *CaddyAdapter) ListRoutes(ctx context.Context) ([]Route, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	url := fmt.Sprintf("%s/config/apps/http/servers/srv0/routes", c.adminURL)
+	serverName, err := c.getServerName(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("discover caddy server: %w", err)
+	}
+
+	url := fmt.Sprintf("%s/config/apps/http/servers/%s/routes", c.adminURL, serverName)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return nil, fmt.Errorf("create request: %w", err)

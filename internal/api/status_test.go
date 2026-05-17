@@ -84,11 +84,11 @@ func TestHandleStatus(t *testing.T) {
 	assert.Equal(t, 0, resp.Bodies.Error)
 	assert.Len(t, resp.Bodies.List, 2)
 
-	// Ports section - pool defaults set when ingress adapter is present
+	// Ports section - NoopAdapter returns zero values
 	assert.Equal(t, 0, resp.Ports.Used)
 	assert.Equal(t, 0, resp.Ports.Free)
-	assert.Equal(t, 9000, resp.Ports.PoolStart)
-	assert.Equal(t, 9999, resp.Ports.PoolEnd)
+	assert.Equal(t, 0, resp.Ports.PoolStart)
+	assert.Equal(t, 0, resp.Ports.PoolEnd)
 
 	// Ingress section
 	assert.Equal(t, 0, resp.Ingress.RouteCount)
@@ -151,6 +151,44 @@ func TestHandleStatusBodyCounts(t *testing.T) {
 			t.Errorf("unexpected body id: %s", item.ID)
 		}
 	}
+}
+
+func TestHandleStatusPortTracking(t *testing.T) {
+	s := tempStore(t)
+	ctx := context.Background()
+
+	require.NoError(t, s.CreateBody(ctx, "b1", "body-1", orchestrator.StateRunning, `{}`, "docker", ""))
+
+	ca := ingress.NewCaddyAdapter(ingress.CaddyConfig{
+		PortPoolStart: 9000,
+		PortPoolEnd:   9004,
+	})
+	_, _ = ca.AllocPort(ctx, 8080)
+	_, _ = ca.AllocPort(ctx, 8081)
+
+	cfg := RouterConfig{
+		Store:        s,
+		Version:      "0.5.0",
+		Ingress:      ca,
+		Orchestrator: &mockOrchAdapter{name: "docker", healthy: true},
+		Uptime:       time.Now(),
+	}
+	h := NewHandler(cfg)
+
+	req := httptest.NewRequest("GET", "/api/v1/status", nil)
+	rr := httptest.NewRecorder()
+	h.Status(rr, req)
+
+	require.Equal(t, http.StatusOK, rr.Code)
+
+	var resp StatusResponse
+	err := json.NewDecoder(rr.Body).Decode(&resp)
+	require.NoError(t, err)
+
+	assert.Equal(t, 9000, resp.Ports.PoolStart)
+	assert.Equal(t, 9004, resp.Ports.PoolEnd)
+	assert.Equal(t, 2, resp.Ports.Used)
+	assert.Equal(t, 3, resp.Ports.Free)
 }
 
 func TestHandleStatusCapacity(t *testing.T) {

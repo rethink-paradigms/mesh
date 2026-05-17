@@ -194,9 +194,7 @@ type BodyStatusItem struct {
 
 // PortsStatusInfo describes port pool usage.
 type PortsStatusInfo struct {
-	// Placeholder — port tracking not yet implemented
-	Used int `json:"used"`
-	// Placeholder — port tracking not yet implemented
+	Used      int `json:"used"`
 	Free      int `json:"free"`
 	PoolStart int `json:"pool_start"`
 	PoolEnd   int `json:"pool_end"`

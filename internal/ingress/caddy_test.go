@@ -78,6 +78,38 @@ func TestCaddyAdapterPoolExhaustion(t *testing.T) {
 	}
 }
 
+func TestCaddyAdapterPortPoolStats(t *testing.T) {
+	ca := NewCaddyAdapter(CaddyConfig{
+		PortPoolStart: 9000,
+		PortPoolEnd:   9004,
+	})
+
+	start, end, used, free := ca.PortPoolStats()
+	if start != 9000 {
+		t.Errorf("start = %d, want 9000", start)
+	}
+	if end != 9004 {
+		t.Errorf("end = %d, want 9004", end)
+	}
+	if used != 0 {
+		t.Errorf("used = %d, want 0", used)
+	}
+	if free != 5 {
+		t.Errorf("free = %d, want 5", free)
+	}
+
+	_, _ = ca.AllocPort(context.Background(), 8080)
+	_, _ = ca.AllocPort(context.Background(), 8081)
+
+	_, _, used, free = ca.PortPoolStats()
+	if used != 2 {
+		t.Errorf("used after alloc = %d, want 2", used)
+	}
+	if free != 3 {
+		t.Errorf("free after alloc = %d, want 3", free)
+	}
+}
+
 func TestCaddyAdapterConcurrentAlloc(t *testing.T) {
 	ca := NewCaddyAdapter(CaddyConfig{
 		PortPoolStart: 9000,
@@ -124,10 +156,85 @@ func TestCaddyAdapterConcurrentAlloc(t *testing.T) {
 	}
 }
 
+func TestCaddyAdapterServerNameDiscovery(t *testing.T) {
+	tests := []struct {
+		name        string
+		serversBody string
+		wantName    string
+		wantErr     bool
+	}{
+		{
+			name:        "single server",
+			serversBody: `{"srv0":{}}`,
+			wantName:    "srv0",
+		},
+		{
+			name:        "no servers",
+			serversBody: `{}`,
+			wantErr:     true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mux := http.NewServeMux()
+			mux.HandleFunc("/config/apps/http/servers", func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				w.Write([]byte(tt.serversBody))
+			})
+
+			ln, err := net.Listen("tcp", "127.0.0.1:0")
+			if err != nil {
+				t.Fatalf("listen: %v", err)
+			}
+			defer ln.Close()
+
+			srv := &http.Server{Handler: mux}
+			go srv.Serve(ln)
+			defer srv.Close()
+
+			adminURL := fmt.Sprintf("http://%s", ln.Addr().String())
+			ca := NewCaddyAdapter(CaddyConfig{
+				AdminURL: adminURL,
+			})
+
+			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+			defer cancel()
+
+			name, err := ca.getServerName(ctx)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatal("expected error, got nil")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("getServerName: %v", err)
+			}
+			if name != tt.wantName {
+				t.Errorf("getServerName() = %q, want %q", name, tt.wantName)
+			}
+
+			// Second call should use cached value (no mock server needed)
+			name2, err := ca.getServerName(ctx)
+			if err != nil {
+				t.Fatalf("getServerName second call: %v", err)
+			}
+			if name2 != tt.wantName {
+				t.Errorf("cached getServerName() = %q, want %q", name2, tt.wantName)
+			}
+		})
+	}
+}
+
 func TestCaddyAdapterAddRoute(t *testing.T) {
 	mux := http.NewServeMux()
 	var routeReq *http.Request
 	var routeBody []byte
+	mux.HandleFunc("/config/apps/http/servers", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"srv0":{}}`))
+	})
 	mux.HandleFunc("/config/apps/http/servers/srv0/routes/", func(w http.ResponseWriter, r *http.Request) {
 		routeReq = r
 		routeBody, _ = io.ReadAll(r.Body)
@@ -169,6 +276,10 @@ func TestCaddyAdapterAddRoute(t *testing.T) {
 func TestCaddyAdapterRemoveRoute(t *testing.T) {
 	mux := http.NewServeMux()
 	var deletePath string
+	mux.HandleFunc("/config/apps/http/servers", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"srv0":{}}`))
+	})
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodDelete {
 			deletePath = r.URL.Path
@@ -206,6 +317,10 @@ func TestCaddyAdapterRemoveRoute(t *testing.T) {
 
 func TestCaddyAdapterListRoutes(t *testing.T) {
 	mux := http.NewServeMux()
+	mux.HandleFunc("/config/apps/http/servers", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"srv0":{}}`))
+	})
 	mux.HandleFunc("/config/apps/http/servers/srv0/routes", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.Write([]byte(`[

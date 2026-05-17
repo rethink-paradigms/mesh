@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -177,6 +179,75 @@ func TestDaemon_IngressAdapter_UnknownAdapter(t *testing.T) {
 	if _, ok := d.ingress.(*ingress.NoopAdapter); !ok {
 		cancel()
 		t.Fatalf("expected NoopAdapter fallback, got %T", d.ingress)
+	}
+
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("Start did not return within timeout")
+	}
+}
+
+// Regression test for ME-003: installer must receive the real ingress adapter,
+// not a fresh NoopAdapter instance.
+func TestDaemon_InstallerWiresRealIngressAdapter(t *testing.T) {
+	agentsDir := filepath.Join(t.TempDir(), "agents")
+	if err := os.MkdirAll(agentsDir, 0755); err != nil {
+		t.Fatalf("mkdir agents: %v", err)
+	}
+	descriptor := `name: test-agent
+image: test:latest
+`
+	if err := os.WriteFile(filepath.Join(agentsDir, "test.yaml"), []byte(descriptor), 0644); err != nil {
+		t.Fatalf("write descriptor: %v", err)
+	}
+
+	cfg := testConfig(t)
+	cfg.AgentsDir = agentsDir
+	cfg.Ingress.Adapter = "caddy"
+	cfg.Ingress.AdminURL = "http://127.0.0.1:2099"
+	cfg.Ingress.PortPoolStart = 10000
+	cfg.Ingress.PortPoolEnd = 10100
+	cfg.Ingress.DomainSuffix = ".example.com"
+
+	d, err := New(cfg)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() {
+		done <- d.Start(ctx)
+	}()
+
+	var addr string
+	for i := 0; i < 50; i++ {
+		addr = d.HTTPAddr()
+		if addr != "" {
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	if addr == "" {
+		cancel()
+		t.Fatal("API server never started")
+	}
+
+	if d.installer == nil {
+		cancel()
+		t.Fatal("expected installer to be wired, got nil")
+	}
+
+	if d.installer.IngressAdapter() != d.ingress {
+		cancel()
+		t.Fatalf("installer ingress adapter %T != daemon ingress adapter %T", d.installer.IngressAdapter(), d.ingress)
+	}
+
+	if _, ok := d.ingress.(*ingress.CaddyAdapter); !ok {
+		cancel()
+		t.Fatalf("expected daemon ingress to be CaddyAdapter, got %T", d.ingress)
 	}
 
 	cancel()

@@ -24,5 +24,13 @@ func TestNoopAdapterFreePort(t *testing.T) {
 	}
 }
 
+func TestNoopAdapterPortPoolStats(t *testing.T) {
+	n := NewNoopAdapter()
+	start, end, used, free := n.PortPoolStats()
+	if start != 0 || end != 0 || used != 0 || free != 0 {
+		t.Fatalf("PortPoolStats = (%d, %d, %d, %d), expected all zeros", start, end, used, free)
+	}
+}
+
 // Compile-time check that NoopAdapter still implements IngressAdapter.
 var _ IngressAdapter = (*NoopAdapter)(nil)

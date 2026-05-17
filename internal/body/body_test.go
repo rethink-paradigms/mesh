@@ -1364,6 +1364,12 @@ func (m *mockIngressAdapter) PublicDomain() string {
 	return "mesh.local"
 }
 
+func (m *mockIngressAdapter) PortPoolStats() (int, int, int, int) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return 9000, 9999, len(m.allocs), 0
+}
+
 func TestPostStartAllocatesPorts(t *testing.T) {
 	s := openTestStore(t)
 	ma := newMockOrchAdapter()

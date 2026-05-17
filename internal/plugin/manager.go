@@ -104,28 +104,37 @@ func (pm *PluginManager) Scan() (map[string]string, error) {
 			continue
 		}
 
-		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-		cmd := exec.CommandContext(ctx, path)
+		// Use a context-based timeout instead of a goroutine race.
+		// A real plugin binary survives the 800ms probe because it
+		// implements the go-plugin protocol and waits for a parent gRPC
+		// connection. Non-plugin binaries exit (or error out) quickly.
+		//
+		// exec.CommandContext + Run() avoids the goroutine scheduling race
+		// present in the old goroutine+select+time.After pattern:
+		// under CPU load, cmd.Wait() in the spawned goroutine might not
+		// get scheduled before the timeout fires, causing non-plugin
+		// binaries to be incorrectly identified as plugins.
+		// See https://go.dev/issues/50187, https://go.dev/issues/68308.
+		probeCtx, probeCancel := context.WithTimeout(context.Background(), 800*time.Millisecond)
+		cmd := exec.CommandContext(probeCtx, path)
 		cmd.Env = append(os.Environ(), Handshake.MagicCookieKey+"="+Handshake.MagicCookieValue)
-		err = cmd.Start()
+
+		err = cmd.Run()
+		probeCancel()
+
 		if err != nil {
-			cancel()
-			continue
-		}
-		done := make(chan error, 1)
-		go func() { done <- cmd.Wait() }()
-		select {
-		case <-done:
-			cancel()
-			continue
-		case <-time.After(800 * time.Millisecond):
-			if cmd.Process != nil {
-				_ = cmd.Process.Kill()
+			// Run() returned an error. If the context timed out, the
+			// process was still running after 800ms — it's a plugin candidate.
+			if probeCtx.Err() == context.DeadlineExceeded {
+				found[name] = path
 			}
-			cancel()
+			// Otherwise (process exited before timeout with non-zero exit
+			// code, or some other error) — not a plugin, skip it.
+			continue
 		}
 
-		found[name] = path
+		// Process exited with code 0 before the 800ms timeout.
+		// Definitely not a plugin — skip it.
 	}
 
 	return found, nil
