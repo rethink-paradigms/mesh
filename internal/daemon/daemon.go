@@ -460,7 +460,7 @@ func (d *Daemon) startAPIServer() error {
 	if listenAddr == "" {
 		port := os.Getenv("MESH_PORT")
 		if port == "" {
-			return fmt.Errorf("MESH_PORT env var is required (or set daemon.listen_addr in config)")
+			port = "8080"
 		}
 		listenAddr = "127.0.0.1:" + port
 	}
