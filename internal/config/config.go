@@ -15,6 +15,8 @@ type DaemonConfig struct {
 	SocketPath string `yaml:"socket_path"`
 	PIDFile    string `yaml:"pid_file"`
 	LogLevel   string `yaml:"log_level"`
+	// ListenAddr is an explicit override for the daemon HTTP listen address.
+	// Preferred method is the MESH_PORT environment variable (no default).
 	ListenAddr string `yaml:"listen_addr"`
 	AuthToken  string `yaml:"auth_token"`
 
@@ -171,9 +173,7 @@ func applyDefaults(cfg *Config) {
 	if cfg.Daemon.LogLevel == "" {
 		cfg.Daemon.LogLevel = "info"
 	}
-	if cfg.Daemon.ListenAddr == "" {
-		cfg.Daemon.ListenAddr = "127.0.0.1:8080"
-	}
+
 	if cfg.Daemon.HeartbeatIntervalSeconds == 0 {
 		cfg.Daemon.HeartbeatIntervalSeconds = 30
 	}

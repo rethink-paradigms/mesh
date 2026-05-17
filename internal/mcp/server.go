@@ -72,13 +72,13 @@ type Server struct {
 	svc          *service.BodyService
 	installer    *agent.Installer
 
-	version    string
-	tier       string
-	features   map[string]bool
-	maxBodies  int
+	version      string
+	tier         string
+	features     map[string]bool
+	maxBodies    int
 	maxSnapshots int
-	startedAt  time.Time
-	ingress    ingress.IngressAdapter
+	startedAt    time.Time
+	ingress      ingress.IngressAdapter
 
 	authValidator *api.JWTValidator
 	authEnabled   bool

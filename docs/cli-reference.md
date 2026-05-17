@@ -29,6 +29,9 @@ Does not write a config file; run `mesh serve` afterward to generate one if need
 
 Start the Mesh daemon. A long-running process that opens the SQLite store, initializes the Docker adapter, starts the MCP server on stdio, and registers signal handlers for graceful shutdown.
 
+> **Workspace:** Use `make up-mesh` from workspace root (handles Infisical + backgrounding).
+> See [`SERVICES.md`](../../SERVICES.md).
+
 ```
 mesh serve
 ```

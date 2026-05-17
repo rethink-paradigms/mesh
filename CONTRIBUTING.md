@@ -10,6 +10,18 @@ Thanks for your interest in contributing to Mesh!
 
 ## Getting Started
 
+> **Workspace Development:** This repo is part of the Mesh workspace.
+> From the workspace root, use:
+> ```bash
+> make up-mesh      # Start daemon (with Infisical)
+> make down-mesh    # Stop daemon
+> make status       # Check all services
+> make logs         # Tail logs
+> ```
+> See [`SERVICES.md`](../../SERVICES.md) for the full service catalog.
+>
+> For standalone development (public repo):
+
 ```bash
 # Clone the repository
 git clone https://github.com/rethink-paradigms/mesh.git
@@ -22,10 +34,10 @@ go build -o mesh ./cmd/mesh/
 go test ./...
 
 # Initialize config
-./mesh init
+mesh init
 
-# Start the daemon (in background)
-./mesh serve &
+# Start the daemon
+mesh serve &
 
 # Check status
 ./mesh status
@@ -33,6 +45,10 @@ go test ./...
 # Stop the daemon
 ./mesh stop
 ```
+
+> **Secrets (workspace):** This workspace uses [Infisical](https://app.infisical.com)
+> for secret management. `make up-mesh` handles injection automatically.
+> For manual runs from workspace root: `infisical run -- ./code/mesh/mesh serve`.
 
 ## Package Organization
 
@@ -180,14 +196,15 @@ chore: upgrade gopkg.in/yaml.v3 to v3.0.1
 
 ## Development Workflow
 
-For daemon development:
+For daemon development (workspace):
 
 ```bash
-# Build
-go build -o mesh ./cmd/mesh/
+# Start daemon with logs
+make up-mesh
+make log-mesh
 
-# Run in foreground with debug logging
-./mesh serve --config ~/.mesh/config.yaml --verbose
+# Or run in foreground manually (from workspace root)
+infisical run -- ./code/mesh/mesh serve --config ~/.mesh/config.yaml --verbose
 
 # In another terminal, test MCP
 echo '{"jsonrpc":"2.0","id":1,"method":"ping"}' | ./mesh mcp

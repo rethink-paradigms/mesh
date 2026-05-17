@@ -907,3 +907,64 @@ bodies:
 		t.Fatal("Orchestrators is nil")
 	}
 }
+
+func TestHeartbeatEnabledDerivedFromIntervalAndGateway(t *testing.T) {
+	content := `
+daemon:
+  auth_token: test-token
+  gateway_url: https://api.example.com
+  heartbeat_interval_seconds: 30
+plugin:
+  dir: /tmp
+registry:
+  type: none
+`
+	path := writeConfig(t, content)
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if !cfg.Daemon.HeartbeatEnabled {
+		t.Fatalf("HeartbeatEnabled = false, want true (interval=30, gateway_url set)")
+	}
+}
+
+func TestHeartbeatEnabledFalseWhenGatewayEmpty(t *testing.T) {
+	content := `
+daemon:
+  auth_token: test-token
+  gateway_url: ""
+  heartbeat_interval_seconds: 30
+plugin:
+  dir: /tmp
+registry:
+  type: none
+`
+	path := writeConfig(t, content)
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if cfg.Daemon.HeartbeatEnabled {
+		t.Fatalf("HeartbeatEnabled = true, want false (gateway_url empty)")
+	}
+}
+
+func TestHeartbeatEnabledFalseWhenBothEmpty(t *testing.T) {
+	content := `
+daemon:
+  auth_token: test-token
+plugin:
+  dir: /tmp
+registry:
+  type: none
+`
+	path := writeConfig(t, content)
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if cfg.Daemon.HeartbeatEnabled {
+		t.Fatalf("HeartbeatEnabled = true, want false (gateway_url empty, standalone mode)")
+	}
+}

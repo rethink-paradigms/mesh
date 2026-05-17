@@ -88,6 +88,21 @@ Mesh occupies a lane none of these fill: a lightweight, self-hosted, portable bo
 
 ## Quick Start
 
+### Workspace Development
+
+This repo is part of the Mesh workspace. From workspace root:
+
+```bash
+make up-mesh      # Start daemon (with Infisical)
+make down-mesh    # Stop daemon
+make status       # Check all services
+make logs         # Tail logs
+```
+
+See [`SERVICES.md`](../../SERVICES.md) for the full service catalog.
+
+### Public Installation
+
 ```bash
 # Install
 go install github.com/rethink-paradigms/mesh/cmd/mesh@latest

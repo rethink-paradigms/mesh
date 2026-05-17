@@ -1,5 +1,73 @@
 # AGENTS.md — Mesh Project Context
 
+> **Purpose:** What an agent needs to know to work in `mesh/`. This file covers both day-to-day operations (build, test, navigate) and the project's governance/discovery system. For system-level context, see the workspace root `AGENTS.md`.
+
+---
+
+## Quick Start
+
+> **Workspace Development:** Use workspace-level commands from repo root:
+> ```bash
+> make up-mesh      # Start daemon in background (with Infisical)
+> make down-mesh    # Stop daemon
+> make status       # Check all services
+> make logs         # Tail logs
+> ```
+> See [`SERVICES.md`](../../SERVICES.md) and [`services.json`](../../services.json).
+
+```bash
+# Build
+go build -o mesh ./cmd/mesh/
+
+# Test
+go test ./...
+go test -race ./...
+
+# Manual run (from workspace root, with Infisical)
+golangci-lint run
+(cd ../.. && infisical run -- ./code/mesh/mesh init)
+(cd ../.. && infisical run -- ./code/mesh/mesh serve --config ~/.mesh/config.yaml --verbose)
+
+# In another terminal
+./mesh status
+echo '{"jsonrpc":"2.0","id":1,"method":"ping"}' | ./mesh mcp
+```
+
+> **Secrets:** This workspace uses [Infisical](https://app.infisical.com) for secret management.
+> `make up-mesh` handles Infisical injection automatically.
+> For manual runs: `infisical run -- ./mesh <command>` from workspace root.
+> Cloud API tokens (`DIGITALOCEAN_API_TOKEN`, `TAILSCALE_KEY`, etc.) are managed there.
+> See [`../../SECRETS-PROTOCOL.md`](../../SECRETS-PROTOCOL.md) for the full env key catalog and agent checklist.
+> The ONE file for human secret input: [`../../.workspace-secrets.yml`](../../.workspace-secrets.yml).
+
+---
+
+## Key Conventions
+
+- **Go 1.25+**, no CGo. Docker required for development.
+- **Library-first**: all logic in `internal/` packages; CLI is a thin Cobra wrapper in `cmd/mesh/`.
+- **Package CONTEXT.md**: every `internal/<pkg>/` has a `CONTEXT.md` describing what it does, key types, and dependencies.
+- **Tests alongside code**: `<package>_test.go`, fast + isolated + deterministic.
+- **Conventional Commits**: `feat:`, `fix:`, `refactor:`, `docs:`, `test:`, `chore:`.
+- **Formatting**: `go fmt ./...` and `go vet ./...` before commit.
+- **No panics**: errors are returned as values.
+
+---
+
+## Navigation
+
+| File | What it is |
+|------|-----------|
+| [`MANIFEST.yaml`](MANIFEST.yaml) | Capability declaration — what this daemon exposes, how it's accessed, auth modes |
+| [`CONTRIBUTING.md`](CONTRIBUTING.md) | Full build/test workflow, package layout, code style, PR process |
+| [`README.md`](README.md) | Project overview, features, architecture, docs index |
+| [`../../specs/SPEC-MESH-DAEMON.md`](../../specs/SPEC-MESH-DAEMON.md) | Required changes spec (G2 heartbeat, G3 inline manifests, G11 caddy auto-detect) |
+| `discovery/INDEX.md` | Current state dashboard (decisions, questions, research) |
+| `discovery/state/decisions.md` | Numbered decisions (D1, D2, ...) — **check before proposing changes** |
+| `discovery/constraints.md` | Hard boundaries — non-negotiable |
+
+---
+
 ## What This Project Is
 
 Mesh is a portable agent-body runtime for AI agents. Gives an agent a persistent compute identity (filesystem state) that can live on any substrate — always-on VM, shared-tenant fleet, ephemeral sandbox — and move between them without losing itself. Self-hosted, user-owned, no central dependency.

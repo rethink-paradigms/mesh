@@ -4,7 +4,9 @@
 
 The Mesh daemon reads a YAML configuration file on startup. By default it
 looks for `~/.mesh/config.yaml`. You can override the path with the
-`MESH_CONFIG` environment variable. There is no `.env` file support.
+`MESH_CONFIG` environment variable. There is no `.env` file support in the
+daemon itself — secrets are injected at runtime via Infisical in the workspace
+(`infisical run -- ./mesh serve`). See workspace [`SERVICES.md`](../../SERVICES.md).
 
 The file defines daemon runtime settings, state store location, orchestrator
 connections, provisioners, body definitions, artifact registry access, and
@@ -19,7 +21,7 @@ plugin loading.
 | `socket_path` | string | No | `/tmp/mesh.sock` | Unix domain socket path for IPC |
 | `pid_file` | string | No | `~/.mesh/mesh.pid` | PID file path |
 | `log_level` | string | No | `info` | One of: debug, info, warn, error |
-| `listen_addr` | string | No | `127.0.0.1:8080` | HTTP REST API listen address |
+| `listen_addr` | string | No | (from `MESH_PORT`) | HTTP REST API listen address. If omitted, the daemon requires the `MESH_PORT` environment variable and binds to `127.0.0.1:${MESH_PORT}`. Set this field to override the env var. |
 | `auth_token` | string | **Yes** | -- | Bearer token for REST API authentication and heartbeat authentication to agent-bodies gateway |
 | `auth_mode` | string | No | `token` | Authentication mode: `token`, `jwt`, or `both` |
 | `auth0_domain` | string | Conditional | -- | Auth0 tenant domain (required when `auth_mode` is `jwt` or `both`) |

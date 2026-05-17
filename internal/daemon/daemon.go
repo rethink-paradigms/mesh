@@ -455,7 +455,11 @@ func (d *Daemon) startAPIServer() error {
 
 	listenAddr := d.cfg.Daemon.ListenAddr
 	if listenAddr == "" {
-		listenAddr = "127.0.0.1:8080"
+		port := os.Getenv("MESH_PORT")
+		if port == "" {
+			return fmt.Errorf("MESH_PORT env var is required (or set daemon.listen_addr in config)")
+		}
+		listenAddr = "127.0.0.1:" + port
 	}
 
 	srv := &http.Server{Addr: listenAddr, Handler: router}
