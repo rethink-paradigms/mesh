@@ -42,6 +42,7 @@ func (m *mockIngress) BuildURL(agentName string, hostPort int) string {
 func (m *mockIngress) PublicDomain() string {
 	return ""
 }
+func (m *mockIngress) PortPoolStats() (int, int, int, int) { return 0, 0, 0, 0 }
 
 type mockOrchAdapter struct {
 	handle orchestrator.Handle
