@@ -45,6 +45,7 @@ func main() {
 			if err != nil {
 				return fmt.Errorf("failed to create daemon: %w", err)
 			}
+			d.SetVersion(version)
 
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()

@@ -23,6 +23,9 @@ import (
 	"github.com/rethink-paradigms/mesh/internal/snapshot"
 )
 
+// version is set via ldflags at build time (-X main.version=...).
+var version = "dev"
+
 func main() {
 	rootCmd := newRootCmd()
 	if err := rootCmd.Execute(); err != nil {
@@ -45,7 +48,7 @@ func newRootCmd() *cobra.Command {
 		Use:           "mesh",
 		Short:         "Portable agent-body runtime for AI agents",
 		Long:          "Mesh gives an agent a persistent compute identity that can live on any substrate and move between them without losing itself.",
-		Version:       version(),
+		Version:       buildVersion(),
 		SilenceUsage:  true,
 		SilenceErrors: true,
 	}
@@ -69,8 +72,11 @@ func newRootCmd() *cobra.Command {
 	return root
 }
 
-// version returns the build version from Go build info, or a fallback.
-func version() string {
+// buildVersion returns the build version from ldflags, Go build info, or a fallback.
+func buildVersion() string {
+	if version != "dev" {
+		return version
+	}
 	bi, ok := debug.ReadBuildInfo()
 	if !ok {
 		return "v0.0.0-dev"
@@ -446,6 +452,7 @@ func newServeCmd() *cobra.Command {
 			if err != nil {
 				return fmt.Errorf("create daemon: %w", err)
 			}
+			d.SetVersion(version)
 
 			if err := d.Start(cmd.Context()); err != nil {
 				if strings.Contains(err.Error(), "already running") {

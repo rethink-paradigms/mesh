@@ -278,7 +278,7 @@ func (s *Server) handle(ctx context.Context, req Request) {
 			},
 			"serverInfo": map[string]interface{}{
 				"name":    "mesh",
-				"version": "0.1.0",
+				"version": s.version,
 			},
 		})
 
