@@ -40,7 +40,7 @@ func CreateSnapshot(ctx context.Context, workdir string, outputPath string) erro
 
 	outFile, err := os.Create(outputPath)
 	if err != nil {
-		pipeReader.Close()
+		pipeReader.Close() //nolint:errcheck
 		<-tarErrCh
 		return fmt.Errorf("create output file: %w", err)
 	}
@@ -50,20 +50,20 @@ func CreateSnapshot(ctx context.Context, workdir string, outputPath string) erro
 	mw := io.MultiWriter(outFile, hasher)
 	zw, err := zstd.NewWriter(mw)
 	if err != nil {
-		pipeReader.Close()
+		pipeReader.Close() //nolint:errcheck
 		<-tarErrCh
 		return fmt.Errorf("create zstd writer: %w", err)
 	}
 
 	if _, err := io.Copy(zw, pipeReader); err != nil {
-		zw.Close()
+		zw.Close() //nolint:errcheck
 		cleanup(outputPath)
 		<-tarErrCh
 		return fmt.Errorf("compress pipeline: %w", err)
 	}
 
 	if tarErr := <-tarErrCh; tarErr != nil {
-		zw.Close()
+		zw.Close() //nolint:errcheck
 		cleanup(outputPath)
 		return fmt.Errorf("tar writing: %w", tarErr)
 	}

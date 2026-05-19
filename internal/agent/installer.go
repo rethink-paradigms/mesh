@@ -210,7 +210,7 @@ func (i *Installer) defaultPollHealth(ctx context.Context, descriptor *Descripto
 			}
 			resp, err := http.DefaultClient.Do(req)
 			if err == nil {
-				resp.Body.Close()
+				resp.Body.Close() //nolint:errcheck
 				if resp.StatusCode == http.StatusOK {
 					return
 				}

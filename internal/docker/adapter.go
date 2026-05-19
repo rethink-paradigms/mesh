@@ -83,7 +83,7 @@ func (a *Adapter) getClient() (*http.Client, error) {
 		if err := json.NewDecoder(vresp.Body).Decode(&versionInfo); err == nil && versionInfo.APIVersion != "" {
 			a.apiVersion = "v" + versionInfo.APIVersion
 		}
-		vresp.Body.Close()
+		vresp.Body.Close() //nolint:errcheck
 	}
 	if a.apiVersion == "" {
 		a.apiVersion = "v1.44" // fallback minimum
@@ -336,8 +336,8 @@ func (a *Adapter) ExportFilesystem(ctx context.Context, id orchestrator.Handle) 
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		resp.Body.Close()
 		body, _ := io.ReadAll(resp.Body)
+		resp.Body.Close() //nolint:errcheck
 		return nil, fmt.Errorf("docker: export filesystem: status %d: %s", resp.StatusCode, string(body))
 	}
 	return resp.Body, nil

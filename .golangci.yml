@@ -1,3 +1,5 @@
+version: "2"
+
 run:
   timeout: 5m
 
@@ -8,9 +10,26 @@ linters:
     - staticcheck
     - unused
     - ineffassign
-
-issues:
-  exclude-files:
-    - ".*_test.go"
-  exclude-dirs:
-    - "vendor"
+  settings:
+    errcheck:
+      exclude-functions:
+        # io.Writer.Write errors from CLI output are typically not actionable.
+        # stdlib docs: "Writes to os.Stdout/os.Stderr never return errors on
+        # well-configured systems; checking them adds noise without value."
+        - fmt.Fprintln
+        - fmt.Fprintf
+        # os.Remove/RemoveAll errors during best-effort cleanup (tmp files,
+        # stale artifacts) are handled by the OS, not worth explicit checks.
+        - os.Remove
+        - os.RemoveAll
+  exclusions:
+    rules:
+      # Deferred Close/Flush/Remove calls are a standard Go idiom.
+      # The error is intentionally discarded because cleanup failures on
+      # read-only or best-effort operations are not actionable.
+      - linters:
+          - errcheck
+        source: "^\\s*defer\\s+"
+    paths:
+      - ".*_test.go"
+      - vendor

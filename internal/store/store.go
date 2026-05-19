@@ -111,13 +111,13 @@ func Open(path string) (*Store, error) {
 	}
 	for _, stmt := range init {
 		if _, err := db.Exec(stmt); err != nil {
-			db.Close()
+			db.Close() //nolint:errcheck
 			return nil, fmt.Errorf("exec %q: %w", stmt, err)
 		}
 	}
 
 	if err := migrate(db); err != nil {
-		db.Close()
+		db.Close() //nolint:errcheck
 		return nil, fmt.Errorf("migrate: %w", err)
 	}
 

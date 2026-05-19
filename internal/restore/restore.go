@@ -220,10 +220,10 @@ func extractTar(ctx context.Context, r io.Reader, dstDir string) error {
 			}
 
 			if _, err := io.Copy(f, tr); err != nil {
-				f.Close()
+				f.Close() //nolint:errcheck
 				return fmt.Errorf("write file %q: %w", target, err)
 			}
-			f.Close()
+			f.Close() //nolint:errcheck
 
 			if err := os.Chmod(target, fs.FileMode(header.Mode)); err != nil {
 				return fmt.Errorf("chmod file %q: %w", target, err)
@@ -260,7 +260,7 @@ func checkWritableDir(dir string) error {
 	if err != nil {
 		return fmt.Errorf("%q is not writable: %w", dir, err)
 	}
-	f.Close()
+	f.Close() //nolint:errcheck
 	os.Remove(f.Name())
 
 	return nil
@@ -343,7 +343,7 @@ func copyFile(src, dst string, mode fs.FileMode) error {
 	}
 
 	_, err = io.Copy(out, in)
-	out.Close()
+	out.Close() //nolint:errcheck
 	if err != nil {
 		return err
 	}

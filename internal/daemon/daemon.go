@@ -377,7 +377,7 @@ func (d *Daemon) Stop(ctx context.Context) error {
 	}
 
 	if d.store != nil {
-		d.store.Close()
+		d.store.Close() //nolint:errcheck
 	}
 
 	d.removePIDFile()

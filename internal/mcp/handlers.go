@@ -351,7 +351,7 @@ func (s *Server) handleCreateSnapshot(ctx context.Context, params json.RawMessag
 	}
 
 	if _, err := io.Copy(zw, rc); err != nil {
-		zw.Close()
+		zw.Close() //nolint:errcheck
 		os.Remove(storagePath)
 		return nil, &RPCError{Code: -32603, Message: fmt.Sprintf("compress pipeline: %v", err)}
 	}
@@ -774,7 +774,7 @@ func collectMCPCapacity() map[string]any {
 				}
 			}
 		}
-		f.Close()
+		f.Close() //nolint:errcheck
 	}
 
 	diskGBUsed, diskGBTotal := 0.0, 0.0
