@@ -386,5 +386,3 @@ func (d *Daemon) Stop(ctx context.Context) error {
 	d.doneOnce.Do(func() { close(d.done) })
 	return nil
 }
-
-

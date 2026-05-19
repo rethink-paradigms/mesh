@@ -54,6 +54,9 @@ func (a *Adapter) getClient() (*http.Client, error) {
 	}
 
 	socketPath := a.config.SocketPath
+	if socketPath == "" && os.Getenv("DOCKER_HOST") != "" {
+		socketPath = os.Getenv("DOCKER_HOST")
+	}
 	if socketPath == "" {
 		socketPath = "/var/run/docker.sock"
 	}
