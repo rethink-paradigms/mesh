@@ -22,7 +22,7 @@ jobs:
       - name: Systemd unit — heredoc matches canonical file
         run: bash scripts/validate-systemd-unit.sh
       - name: golangci-lint
-        uses: golangci/golangci-lint-action@v6
+        uses: golangci/golangci-lint-action@v7
         with:
           version: v2.12.2
           install-mode: binary
