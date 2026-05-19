@@ -93,6 +93,11 @@ func (a *Adapter) getClient() (*http.Client, error) {
 }
 
 func (a *Adapter) apiURL(path string) string {
+	// Ensure version is negotiated before URL construction.
+	// getClient is idempotent — it returns early if client exists.
+	if _, err := a.getClient(); err != nil || a.apiVersion == "" {
+		a.apiVersion = "v1.44"
+	}
 	return "http://localhost/" + a.apiVersion + path
 }
 
