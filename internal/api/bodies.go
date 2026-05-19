@@ -4,8 +4,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
-	"os"
 	"time"
 
 	"github.com/rethink-paradigms/mesh/internal/body"
@@ -57,7 +57,7 @@ func (h *Handler) ListBodies(w http.ResponseWriter, r *http.Request) {
 	for _, b := range bodies {
 		status, err := h.cfg.BodyService.GetStatus(r.Context(), b.ID)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "api: get status for body %s: %v\n", b.ID, err)
+			slog.Warn("failed to get body status during list", "body_id", b.ID, "error", err)
 		}
 		responses = append(responses, bodyToResponse(b, status))
 	}
@@ -132,7 +132,7 @@ func (h *Handler) GetBody(w http.ResponseWriter, r *http.Request) {
 
 	status, err := h.cfg.BodyService.GetStatus(r.Context(), id)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "api: get status for body %s: %v\n", id, err)
+		slog.Warn("failed to get body status", "body_id", id, "error", err)
 	}
 	resp := bodyToResponse(b, status)
 	WriteJSON(w, http.StatusOK, resp)

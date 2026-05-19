@@ -235,7 +235,7 @@ type RegistryManager interface {
 	// DisconnectS3 clears the registry plugin. Falls back to same-machine migration.
 	DisconnectS3(ctx context.Context) error
 	// RegistryStatus returns the current registry state.
-	RegistryStatus(ctx context.Context) map[string]interface{}
+	RegistryStatus(ctx context.Context) map[string]any
 }
 
 // RegistryStatusResponse is the response payload for GET /api/v1/registry/status.

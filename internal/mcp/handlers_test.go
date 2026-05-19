@@ -22,11 +22,11 @@ func TestGetBodyNotFoundErrorCode(t *testing.T) {
 		JSONRPC: "2.0",
 		ID:      1,
 		Method:  "tools/call",
-		Params:  rawMessage(t, map[string]interface{}{"name": "get_body", "arguments": map[string]interface{}{"id": "nonexistent"}}),
+		Params:  rawMessage(t, map[string]any{"name": "get_body", "arguments": map[string]any{"id": "nonexistent"}}),
 	})
 
 	resp := h.readResponse(t)
-	rpcErr := resp["error"].(map[string]interface{})
+	rpcErr := resp["error"].(map[string]any)
 	code := rpcErr["code"].(float64)
 	if code != -32001 {
 		t.Fatalf("error code = %v, want -32001 (NotFoundError)", code)
@@ -56,11 +56,11 @@ func TestDeleteBodyConflictErrorCode(t *testing.T) {
 		JSONRPC: "2.0",
 		ID:      2,
 		Method:  "tools/call",
-		Params:  rawMessage(t, map[string]interface{}{"name": "delete_body", "arguments": map[string]interface{}{"id": created.ID}}),
+		Params:  rawMessage(t, map[string]any{"name": "delete_body", "arguments": map[string]any{"id": created.ID}}),
 	})
 
 	resp := h.readResponse(t)
-	rpcErr := resp["error"].(map[string]interface{})
+	rpcErr := resp["error"].(map[string]any)
 	code := rpcErr["code"].(float64)
 	if code != -32002 {
 		t.Fatalf("error code = %v, want -32002 (ConflictError)", code)
@@ -80,11 +80,11 @@ func TestCreateBodyValidationErrorCode(t *testing.T) {
 		JSONRPC: "2.0",
 		ID:      3,
 		Method:  "tools/call",
-		Params:  rawMessage(t, map[string]interface{}{"name": "create_body", "arguments": map[string]interface{}{"name": "test"}}),
+		Params:  rawMessage(t, map[string]any{"name": "create_body", "arguments": map[string]any{"name": "test"}}),
 	})
 
 	resp := h.readResponse(t)
-	rpcErr := resp["error"].(map[string]interface{})
+	rpcErr := resp["error"].(map[string]any)
 	code := rpcErr["code"].(float64)
 	if code != -32602 {
 		t.Fatalf("error code = %v, want -32602 (ValidationError)", code)

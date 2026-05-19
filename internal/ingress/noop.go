@@ -2,8 +2,7 @@ package ingress
 
 import (
 	"context"
-	"fmt"
-	"os"
+	"log/slog"
 )
 
 // NoopAdapter is a no-op implementation of IngressAdapter that logs
@@ -16,15 +15,15 @@ func NewNoopAdapter() *NoopAdapter {
 	return &NoopAdapter{}
 }
 
-// AddRoute logs the intended route addition to stderr and returns nil.
+// AddRoute logs the intended route addition to debug log and returns nil.
 func (n *NoopAdapter) AddRoute(ctx context.Context, domain, upstream string, port int) error {
-	fmt.Fprintf(os.Stderr, "ingress: would add route %s → %s:%d (no Caddy configured)\n", domain, upstream, port)
+	slog.Debug("noop ingress: route add skipped", "domain", domain, "upstream", upstream, "port", port)
 	return nil
 }
 
-// RemoveRoute logs the intended route removal to stderr and returns nil.
+// RemoveRoute logs the intended route removal to debug log and returns nil.
 func (n *NoopAdapter) RemoveRoute(ctx context.Context, domain string) error {
-	fmt.Fprintf(os.Stderr, "ingress: would remove route %s (no Caddy configured)\n", domain)
+	slog.Debug("noop ingress: route remove skipped", "domain", domain)
 	return nil
 }
 
@@ -33,15 +32,15 @@ func (n *NoopAdapter) ListRoutes(ctx context.Context) ([]Route, error) {
 	return []Route{}, nil
 }
 
-// AllocPort logs the intended port allocation to stderr and returns (0, nil).
+// AllocPort logs the intended port allocation to debug log and returns (0, nil).
 func (n *NoopAdapter) AllocPort(ctx context.Context, containerPort int) (int, error) {
-	fmt.Fprintf(os.Stderr, "ingress: would allocate port for container port %d (no Caddy configured)\n", containerPort)
+	slog.Debug("noop ingress: port alloc skipped", "container_port", containerPort)
 	return 0, nil
 }
 
-// FreePort logs the intended port release to stderr and returns nil.
+// FreePort logs the intended port release to debug log and returns nil.
 func (n *NoopAdapter) FreePort(hostPort int) error {
-	fmt.Fprintf(os.Stderr, "ingress: would free port %d (no Caddy configured)\n", hostPort)
+	slog.Debug("noop ingress: port free skipped", "host_port", hostPort)
 	return nil
 }
 

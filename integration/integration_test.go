@@ -114,7 +114,7 @@ func newHarness(t *testing.T, s *store.Store) *harness {
 	return &harness{srv: srv, stdinW: inW, stdoutR: outR, scanner: scanner, cancel: cancel, done: done}
 }
 
-func (h *harness) send(t *testing.T, v interface{}) {
+func (h *harness) send(t *testing.T, v any) {
 	t.Helper()
 	data, err := json.Marshal(v)
 	if err != nil {
@@ -127,16 +127,16 @@ func (h *harness) close() {
 	h.stdinW.Close()
 }
 
-func (h *harness) readResponse(t *testing.T) map[string]interface{} {
+func (h *harness) readResponse(t *testing.T) map[string]any {
 	t.Helper()
-	respCh := make(chan map[string]interface{}, 1)
+	respCh := make(chan map[string]any, 1)
 	go func() {
 		for h.scanner.Scan() {
 			line := strings.TrimSpace(h.scanner.Text())
 			if line == "" {
 				continue
 			}
-			var resp map[string]interface{}
+			var resp map[string]any
 			if err := json.Unmarshal([]byte(line), &resp); err != nil {
 				continue
 			}
@@ -153,7 +153,7 @@ func (h *harness) readResponse(t *testing.T) map[string]interface{} {
 	}
 }
 
-func rawJSON(t *testing.T, v interface{}) json.RawMessage {
+func rawJSON(t *testing.T, v any) json.RawMessage {
 	t.Helper()
 	data, err := json.Marshal(v)
 	if err != nil {
@@ -218,16 +218,16 @@ func TestDaemonFullPipeline(t *testing.T) {
 		JSONRPC: "2.0",
 		ID:      1,
 		Method:  "tools/call",
-		Params:  rawJSON(t, map[string]interface{}{"name": "list_bodies", "arguments": map[string]interface{}{}}),
+		Params:  rawJSON(t, map[string]any{"name": "list_bodies", "arguments": map[string]any{}}),
 	})
 	resp := h.readResponse(t)
 	if resp["error"] != nil {
 		t.Fatalf("list_bodies error: %v", resp["error"])
 	}
-	result := resp["result"].(map[string]interface{})
-	content := result["content"].([]interface{})
-	text := content[0].(map[string]interface{})["text"].(string)
-	var bodies []interface{}
+	result := resp["result"].(map[string]any)
+	content := result["content"].([]any)
+	text := content[0].(map[string]any)["text"].(string)
+	var bodies []any
 	if err := json.Unmarshal([]byte(text), &bodies); err != nil {
 		t.Fatalf("unmarshal bodies: %v", err)
 	}
@@ -239,19 +239,19 @@ func TestDaemonFullPipeline(t *testing.T) {
 		JSONRPC: "2.0",
 		ID:      2,
 		Method:  "tools/call",
-		Params: rawJSON(t, map[string]interface{}{
+		Params: rawJSON(t, map[string]any{
 			"name":      "create_body",
-			"arguments": map[string]interface{}{"name": "body-via-mcp", "image": "alpine:3.19"},
+			"arguments": map[string]any{"name": "body-via-mcp", "image": "alpine:3.19"},
 		}),
 	})
 	resp = h.readResponse(t)
 	if resp["error"] != nil {
 		t.Fatalf("create_body error: %v", resp["error"])
 	}
-	result = resp["result"].(map[string]interface{})
-	content = result["content"].([]interface{})
-	text = content[0].(map[string]interface{})["text"].(string)
-	var createResp map[string]interface{}
+	result = resp["result"].(map[string]any)
+	content = result["content"].([]any)
+	text = content[0].(map[string]any)["text"].(string)
+	var createResp map[string]any
 	if err := json.Unmarshal([]byte(text), &createResp); err != nil {
 		t.Fatalf("unmarshal create response: %v", err)
 	}
@@ -263,12 +263,12 @@ func TestDaemonFullPipeline(t *testing.T) {
 		JSONRPC: "2.0",
 		ID:      3,
 		Method:  "tools/call",
-		Params:  rawJSON(t, map[string]interface{}{"name": "list_bodies", "arguments": map[string]interface{}{}}),
+		Params:  rawJSON(t, map[string]any{"name": "list_bodies", "arguments": map[string]any{}}),
 	})
 	resp = h.readResponse(t)
-	result = resp["result"].(map[string]interface{})
-	content = result["content"].([]interface{})
-	text = content[0].(map[string]interface{})["text"].(string)
+	result = resp["result"].(map[string]any)
+	content = result["content"].([]any)
+	text = content[0].(map[string]any)["text"].(string)
 	if err := json.Unmarshal([]byte(text), &bodies); err != nil {
 		t.Fatalf("unmarshal bodies: %v", err)
 	}
@@ -805,16 +805,16 @@ func TestPluginManagement(t *testing.T) {
 		JSONRPC: "2.0",
 		ID:      1,
 		Method:  "tools/call",
-		Params:  rawJSON(t, map[string]interface{}{"name": "list_plugins", "arguments": map[string]interface{}{}}),
+		Params:  rawJSON(t, map[string]any{"name": "list_plugins", "arguments": map[string]any{}}),
 	})
 	resp := h.readResponse(t)
 	if resp["error"] != nil {
 		t.Fatalf("list_plugins error: %v", resp["error"])
 	}
-	result := resp["result"].(map[string]interface{})
-	content := result["content"].([]interface{})
-	text := content[0].(map[string]interface{})["text"].(string)
-	var plugins []map[string]interface{}
+	result := resp["result"].(map[string]any)
+	content := result["content"].([]any)
+	text := content[0].(map[string]any)["text"].(string)
+	var plugins []map[string]any
 	if err := json.Unmarshal([]byte(text), &plugins); err != nil {
 		t.Fatalf("unmarshal plugins: %v", err)
 	}
@@ -832,19 +832,19 @@ func TestPluginManagement(t *testing.T) {
 		JSONRPC: "2.0",
 		ID:      2,
 		Method:  "tools/call",
-		Params: rawJSON(t, map[string]interface{}{
+		Params: rawJSON(t, map[string]any{
 			"name":      "plugin_health",
-			"arguments": map[string]interface{}{"plugin_name": "reference-plugin"},
+			"arguments": map[string]any{"plugin_name": "reference-plugin"},
 		}),
 	})
 	resp = h.readResponse(t)
 	if resp["error"] != nil {
 		t.Fatalf("plugin_health error: %v", resp["error"])
 	}
-	result = resp["result"].(map[string]interface{})
-	content = result["content"].([]interface{})
-	text = content[0].(map[string]interface{})["text"].(string)
-	var healthResp map[string]interface{}
+	result = resp["result"].(map[string]any)
+	content = result["content"].([]any)
+	text = content[0].(map[string]any)["text"].(string)
+	var healthResp map[string]any
 	if err := json.Unmarshal([]byte(text), &healthResp); err != nil {
 		t.Fatalf("unmarshal health: %v", err)
 	}
@@ -938,7 +938,7 @@ func TestDaemonCrashRecovery(t *testing.T) {
 		t.Fatalf("health status = %d, want 200", resp.StatusCode)
 	}
 
-	var healthResp map[string]interface{}
+	var healthResp map[string]any
 	if err := json.NewDecoder(resp.Body).Decode(&healthResp); err != nil {
 		cancel()
 		t.Fatalf("decode health: %v", err)
@@ -1076,19 +1076,19 @@ func TestBodyLifecycleFull(t *testing.T) {
 		JSONRPC: "2.0",
 		ID:      1,
 		Method:  "tools/call",
-		Params: rawJSON(t, map[string]interface{}{
+		Params: rawJSON(t, map[string]any{
 			"name":      "create_snapshot",
-			"arguments": map[string]interface{}{"body_id": b.ID, "label": "test-snap"},
+			"arguments": map[string]any{"body_id": b.ID, "label": "test-snap"},
 		}),
 	})
 	resp := h.readResponse(t)
 	if resp["error"] != nil {
 		t.Fatalf("create_snapshot error: %v", resp["error"])
 	}
-	resultMap := resp["result"].(map[string]interface{})
-	content := resultMap["content"].([]interface{})
-	text := content[0].(map[string]interface{})["text"].(string)
-	var snapResp map[string]interface{}
+	resultMap := resp["result"].(map[string]any)
+	content := resultMap["content"].([]any)
+	text := content[0].(map[string]any)["text"].(string)
+	var snapResp map[string]any
 	if err := json.Unmarshal([]byte(text), &snapResp); err != nil {
 		t.Fatalf("unmarshal snapshot response: %v", err)
 	}
@@ -1109,9 +1109,9 @@ func TestBodyLifecycleFull(t *testing.T) {
 		JSONRPC: "2.0",
 		ID:      2,
 		Method:  "tools/call",
-		Params: rawJSON(t, map[string]interface{}{
+		Params: rawJSON(t, map[string]any{
 			"name":      "restore_body",
-			"arguments": map[string]interface{}{"snapshot_id": snapID},
+			"arguments": map[string]any{"snapshot_id": snapID},
 		}),
 	})
 	resp = h.readResponse(t)
@@ -1175,19 +1175,19 @@ func TestMCPToolsEndToEnd(t *testing.T) {
 		JSONRPC: "2.0",
 		ID:      1,
 		Method:  "tools/call",
-		Params: rawJSON(t, map[string]interface{}{
+		Params: rawJSON(t, map[string]any{
 			"name":      "execute_command",
-			"arguments": map[string]interface{}{"body_id": b.ID, "command": []string{"echo", "hello"}},
+			"arguments": map[string]any{"body_id": b.ID, "command": []string{"echo", "hello"}},
 		}),
 	})
 	resp := h.readResponse(t)
 	if resp["error"] != nil {
 		t.Fatalf("execute_command error: %v", resp["error"])
 	}
-	result := resp["result"].(map[string]interface{})
-	content := result["content"].([]interface{})
-	text := content[0].(map[string]interface{})["text"].(string)
-	var execResp map[string]interface{}
+	result := resp["result"].(map[string]any)
+	content := result["content"].([]any)
+	text := content[0].(map[string]any)["text"].(string)
+	var execResp map[string]any
 	if err := json.Unmarshal([]byte(text), &execResp); err != nil {
 		t.Fatalf("unmarshal exec response: %v", err)
 	}
@@ -1199,19 +1199,19 @@ func TestMCPToolsEndToEnd(t *testing.T) {
 		JSONRPC: "2.0",
 		ID:      2,
 		Method:  "tools/call",
-		Params: rawJSON(t, map[string]interface{}{
+		Params: rawJSON(t, map[string]any{
 			"name":      "get_body_status",
-			"arguments": map[string]interface{}{"body_id": b.ID},
+			"arguments": map[string]any{"body_id": b.ID},
 		}),
 	})
 	resp = h.readResponse(t)
 	if resp["error"] != nil {
 		t.Fatalf("get_body_status error: %v", resp["error"])
 	}
-	result = resp["result"].(map[string]interface{})
-	content = result["content"].([]interface{})
-	text = content[0].(map[string]interface{})["text"].(string)
-	var statusResp map[string]interface{}
+	result = resp["result"].(map[string]any)
+	content = result["content"].([]any)
+	text = content[0].(map[string]any)["text"].(string)
+	var statusResp map[string]any
 	if err := json.Unmarshal([]byte(text), &statusResp); err != nil {
 		t.Fatalf("unmarshal status response: %v", err)
 	}
@@ -1223,19 +1223,19 @@ func TestMCPToolsEndToEnd(t *testing.T) {
 		JSONRPC: "2.0",
 		ID:      3,
 		Method:  "tools/call",
-		Params: rawJSON(t, map[string]interface{}{
+		Params: rawJSON(t, map[string]any{
 			"name":      "get_body_logs",
-			"arguments": map[string]interface{}{"body_id": b.ID, "tail": 10},
+			"arguments": map[string]any{"body_id": b.ID, "tail": 10},
 		}),
 	})
 	resp = h.readResponse(t)
 	if resp["error"] != nil {
 		t.Fatalf("get_body_logs error: %v", resp["error"])
 	}
-	result = resp["result"].(map[string]interface{})
-	content = result["content"].([]interface{})
-	text = content[0].(map[string]interface{})["text"].(string)
-	var logsResp map[string]interface{}
+	result = resp["result"].(map[string]any)
+	content = result["content"].([]any)
+	text = content[0].(map[string]any)["text"].(string)
+	var logsResp map[string]any
 	if err := json.Unmarshal([]byte(text), &logsResp); err != nil {
 		t.Fatalf("unmarshal logs response: %v", err)
 	}
@@ -1247,19 +1247,19 @@ func TestMCPToolsEndToEnd(t *testing.T) {
 		JSONRPC: "2.0",
 		ID:      4,
 		Method:  "tools/call",
-		Params: rawJSON(t, map[string]interface{}{
+		Params: rawJSON(t, map[string]any{
 			"name":      "stop_body",
-			"arguments": map[string]interface{}{"body_id": b.ID},
+			"arguments": map[string]any{"body_id": b.ID},
 		}),
 	})
 	resp = h.readResponse(t)
 	if resp["error"] != nil {
 		t.Fatalf("stop_body error: %v", resp["error"])
 	}
-	result = resp["result"].(map[string]interface{})
-	content = result["content"].([]interface{})
-	text = content[0].(map[string]interface{})["text"].(string)
-	var stopResp map[string]interface{}
+	result = resp["result"].(map[string]any)
+	content = result["content"].([]any)
+	text = content[0].(map[string]any)["text"].(string)
+	var stopResp map[string]any
 	if err := json.Unmarshal([]byte(text), &stopResp); err != nil {
 		t.Fatalf("unmarshal stop response: %v", err)
 	}
@@ -1271,19 +1271,19 @@ func TestMCPToolsEndToEnd(t *testing.T) {
 		JSONRPC: "2.0",
 		ID:      5,
 		Method:  "tools/call",
-		Params: rawJSON(t, map[string]interface{}{
+		Params: rawJSON(t, map[string]any{
 			"name":      "start_body",
-			"arguments": map[string]interface{}{"body_id": stoppedBody.ID},
+			"arguments": map[string]any{"body_id": stoppedBody.ID},
 		}),
 	})
 	resp = h.readResponse(t)
 	if resp["error"] != nil {
 		t.Fatalf("start_body error: %v", resp["error"])
 	}
-	result = resp["result"].(map[string]interface{})
-	content = result["content"].([]interface{})
-	text = content[0].(map[string]interface{})["text"].(string)
-	var startResp map[string]interface{}
+	result = resp["result"].(map[string]any)
+	content = result["content"].([]any)
+	text = content[0].(map[string]any)["text"].(string)
+	var startResp map[string]any
 	if err := json.Unmarshal([]byte(text), &startResp); err != nil {
 		t.Fatalf("unmarshal start response: %v", err)
 	}
@@ -1299,18 +1299,18 @@ func TestMCPToolsEndToEnd(t *testing.T) {
 		JSONRPC: "2.0",
 		ID:      6,
 		Method:  "tools/call",
-		Params: rawJSON(t, map[string]interface{}{
+		Params: rawJSON(t, map[string]any{
 			"name":      "delete_body",
-			"arguments": map[string]interface{}{"id": stoppedBody.ID},
+			"arguments": map[string]any{"id": stoppedBody.ID},
 		}),
 	})
 	resp = h.readResponse(t)
 	if resp["error"] != nil {
 		t.Fatalf("delete_body error: %v", resp["error"])
 	}
-	result = resp["result"].(map[string]interface{})
-	content = result["content"].([]interface{})
-	text = content[0].(map[string]interface{})["text"].(string)
+	result = resp["result"].(map[string]any)
+	content = result["content"].([]any)
+	text = content[0].(map[string]any)["text"].(string)
 	var deleteResp map[string]bool
 	if err := json.Unmarshal([]byte(text), &deleteResp); err != nil {
 		t.Fatalf("unmarshal delete response: %v", err)

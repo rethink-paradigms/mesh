@@ -3,6 +3,7 @@ package plugin
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -24,7 +25,7 @@ var Handshake = plugin.HandshakeConfig{
 
 type stubPlugin struct{ plugin.Plugin }
 
-func (s *stubPlugin) GRPCClient(_ context.Context, _ *plugin.GRPCBroker, _ *grpc.ClientConn) (interface{}, error) {
+func (s *stubPlugin) GRPCClient(_ context.Context, _ *plugin.GRPCBroker, _ *grpc.ClientConn) (any, error) {
 	return nil, fmt.Errorf("plugin loading disabled: gRPC transport removed, redesign pending")
 }
 
@@ -213,7 +214,7 @@ func (pm *PluginManager) StartScanAndLoad() error {
 			continue
 		}
 		if err := pm.Load(name, path); err != nil {
-			fmt.Fprintf(os.Stderr, "plugin manager: failed to load %q: %v\n", name, err)
+			slog.Error("failed to load plugin", "name", name, "error", err)
 		}
 	}
 
@@ -260,7 +261,7 @@ func (pm *PluginManager) checkAll() {
 				rec.State = StateUnhealthy
 			}
 			rec.mu.Unlock()
-			fmt.Fprintf(os.Stderr, "plugin manager: health check failed for %q (fail %d): %v\n", name, rec.FailCount, err)
+			slog.Warn("plugin health check failed", "name", name, "fail_count", rec.FailCount, "error", err)
 
 			if rec.Client.Exited() {
 				rec.SetState(StateCrashed)
@@ -282,7 +283,7 @@ func (pm *PluginManager) attemptRestart(name string, rec *PluginRecord) {
 	if rec.RetryCount >= 3 {
 		rec.State = StateUnhealthy
 		rec.mu.Unlock()
-		fmt.Fprintf(os.Stderr, "plugin manager: %q exceeded max retries, marking unhealthy\n", name)
+		slog.Warn("plugin exceeded max retries, marking unhealthy", "name", name)
 		return
 	}
 	rec.RetryCount++
@@ -293,7 +294,7 @@ func (pm *PluginManager) attemptRestart(name string, rec *PluginRecord) {
 	}
 
 	for attempt := 1; attempt <= 3; attempt++ {
-		fmt.Fprintf(os.Stderr, "plugin manager: restarting %q (retry %d/%d)\n", name, attempt, 3)
+		slog.Info("restarting plugin", "name", name, "attempt", attempt)
 
 		client := plugin.NewClient(&plugin.ClientConfig{
 			HandshakeConfig: Handshake,
@@ -350,14 +351,14 @@ func (pm *PluginManager) attemptRestart(name string, rec *PluginRecord) {
 		rec.State = StateHealthy
 		rec.FailCount = 0
 		rec.mu.Unlock()
-		fmt.Fprintf(os.Stderr, "plugin manager: %q restarted successfully\n", name)
+		slog.Info("plugin restarted successfully", "name", name)
 		return
 	}
 
 	rec.mu.Lock()
 	rec.State = StateUnhealthy
 	rec.mu.Unlock()
-	fmt.Fprintf(os.Stderr, "plugin manager: %q restart failed after retries\n", name)
+	slog.Warn("plugin restart failed after retries", "name", name)
 }
 
 func (pm *PluginManager) Stop() error {
@@ -374,7 +375,7 @@ func (pm *PluginManager) Stop() error {
 		}
 		rec.State = StateRemoved
 		if rec.Client != nil && !rec.Client.Exited() {
-			fmt.Fprintf(os.Stderr, "plugin manager: warning %q process may be orphaned\n", name)
+			slog.Warn("plugin process may be orphaned", "name", name)
 		}
 	}
 

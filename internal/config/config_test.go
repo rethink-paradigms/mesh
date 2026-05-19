@@ -343,7 +343,7 @@ func TestDefaultPathEnvOverride(t *testing.T) {
 
 // TestConfigStructTags verifies all exported fields have yaml tags.
 func TestConfigStructTags(t *testing.T) {
-	types := []interface{}{
+	types := []any{
 		DaemonConfig{},
 		StoreConfig{},
 		BodyConfig{},
@@ -750,7 +750,7 @@ bodies:
 
 // TestConfigStructTagsNew verifies new structs have yaml tags.
 func TestConfigStructTagsNew(t *testing.T) {
-	types := []interface{}{
+	types := []any{
 		RegistryConfig{},
 		PluginConfig{},
 	}

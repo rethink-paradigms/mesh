@@ -159,7 +159,7 @@ func (c *CaddyAdapter) discoverServerName(ctx context.Context) (string, error) {
 		return "", fmt.Errorf("caddy admin API returned %d: %s", resp.StatusCode, string(respBody))
 	}
 
-	var servers map[string]interface{}
+	var servers map[string]any
 	if err := json.NewDecoder(resp.Body).Decode(&servers); err != nil {
 		return "", fmt.Errorf("decode servers: %w", err)
 	}
@@ -191,15 +191,15 @@ func (c *CaddyAdapter) AddRoute(ctx context.Context, domain, upstream string, po
 		domain = fmt.Sprintf("%s%s", upstream, c.domainSuffix)
 	}
 
-	route := map[string]interface{}{
+	route := map[string]any{
 		"@id": domain,
-		"match": []map[string]interface{}{
+		"match": []map[string]any{
 			{"host": []string{domain}},
 		},
-		"handle": []map[string]interface{}{
+		"handle": []map[string]any{
 			{
 				"handler": "reverse_proxy",
-				"upstreams": []map[string]interface{}{
+				"upstreams": []map[string]any{
 					{"dial": fmt.Sprintf("%s:%d", upstream, port)},
 				},
 			},

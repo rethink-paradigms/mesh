@@ -122,7 +122,7 @@ func TestClient_sendHeartbeat_payloadShape(t *testing.T) {
 		body, err := io.ReadAll(r.Body)
 		require.NoError(t, err)
 
-		var raw map[string]interface{}
+		var raw map[string]any
 		require.NoError(t, json.Unmarshal(body, &raw))
 
 		assert.Equal(t, "cluster-abc", raw["cluster_id"])

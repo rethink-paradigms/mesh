@@ -24,9 +24,10 @@ var _ orchestrator.Importer = (*Adapter)(nil)
 var _ orchestrator.Executor = (*Adapter)(nil)
 
 type Adapter struct {
-	mu     sync.Mutex
-	client *http.Client
-	config Config
+	mu         sync.Mutex
+	client     *http.Client
+	config     Config
+	apiVersion string // negotiated from Docker engine, e.g. "v1.44"
 }
 
 type Config struct {
@@ -68,11 +69,32 @@ func (a *Adapter) getClient() (*http.Client, error) {
 		Transport: transport,
 		Timeout:   5 * time.Minute,
 	}
+
+	// Negotiate Docker API version
+	versionURL := a.apiURLRaw("version")
+	vresp, verr := a.client.Get(versionURL)
+	if verr == nil && vresp.StatusCode == http.StatusOK {
+		var versionInfo struct {
+			APIVersion string `json:"ApiVersion"`
+		}
+		if err := json.NewDecoder(vresp.Body).Decode(&versionInfo); err == nil && versionInfo.APIVersion != "" {
+			a.apiVersion = "v" + versionInfo.APIVersion
+		}
+		vresp.Body.Close()
+	}
+	if a.apiVersion == "" {
+		a.apiVersion = "v1.44" // fallback minimum
+	}
+
 	return a.client, nil
 }
 
 func (a *Adapter) apiURL(path string) string {
-	return "http://localhost/v1.43" + path
+	return "http://localhost/" + a.apiVersion + path
+}
+
+func (a *Adapter) apiURLRaw(path string) string {
+	return "http://localhost/" + path
 }
 
 func (a *Adapter) doRequest(ctx context.Context, method, url string, body io.Reader) (*http.Response, error) {
@@ -126,11 +148,11 @@ func (a *Adapter) ScheduleBody(ctx context.Context, spec orchestrator.BodySpec) 
 		portBindings[portKey] = append(portBindings[portKey], binding)
 	}
 
-	createBody := map[string]interface{}{
+	createBody := map[string]any{
 		"Image": spec.Image,
 		"Cmd":   spec.Cmd,
 		"Env":   env,
-		"HostConfig": map[string]interface{}{
+		"HostConfig": map[string]any{
 			"Memory":       int64(spec.MemoryMB) * 1024 * 1024,
 			"CpuShares":    spec.CPUShares,
 			"PortBindings": portBindings,
@@ -339,7 +361,7 @@ func (a *Adapter) Exec(ctx context.Context, id orchestrator.Handle, cmd []string
 		return orchestrator.ExecResult{}, err
 	}
 
-	execBody := map[string]interface{}{
+	execBody := map[string]any{
 		"Cmd":          cmd,
 		"AttachStdout": true,
 		"AttachStderr": true,
@@ -368,7 +390,7 @@ func (a *Adapter) Exec(ctx context.Context, id orchestrator.Handle, cmd []string
 		return orchestrator.ExecResult{}, fmt.Errorf("docker: decode exec response: %w", err)
 	}
 
-	startBody := map[string]interface{}{
+	startBody := map[string]any{
 		"Detach": false,
 		"Tty":    false,
 	}

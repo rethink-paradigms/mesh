@@ -105,7 +105,7 @@ func (a *Adapter) ScheduleBody(ctx context.Context, spec orchestrator.BodySpec) 
 					{
 						Name:   "body",
 						Driver: "docker",
-						Config: map[string]interface{}{
+						Config: map[string]any{
 							"image":    spec.Image,
 							"command":  spec.Cmd,
 							"work_dir": spec.Workdir,

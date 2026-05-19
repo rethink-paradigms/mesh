@@ -63,7 +63,7 @@ func testJWKSServer(t *testing.T, pubKey *rsa.PublicKey) *httptest.Server {
 		X5c: []string{base64.StdEncoding.EncodeToString(pemBytes)},
 	}
 
-	jwks := map[string]interface{}{
+	jwks := map[string]any{
 		"keys": []jwkKey{jwk},
 	}
 

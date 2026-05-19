@@ -114,7 +114,7 @@ func TestHealthzNoConsulConnectedField(t *testing.T) {
 	require.Equal(t, http.StatusOK, rr.Code)
 
 	// Verify the JSON response does NOT contain consul_connected key
-	var rawResp map[string]interface{}
+	var rawResp map[string]any
 	err := json.NewDecoder(rr.Body).Decode(&rawResp)
 	require.NoError(t, err)
 

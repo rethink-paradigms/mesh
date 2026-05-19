@@ -70,9 +70,9 @@ func getProviders() json.RawMessage {
 	cmd.Stderr = &stderr
 
 	if err := cmd.Run(); err != nil {
-		fallback, _ := json.Marshal(map[string]interface{}{
+		fallback, _ := json.Marshal(map[string]any{
 			"status":    "unavailable",
-			"providers": []interface{}{},
+			"providers": []any{},
 		})
 		return fallback
 	}

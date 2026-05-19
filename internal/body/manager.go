@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"os"
+	"log/slog"
 	"sync"
 
 	"github.com/google/uuid"
@@ -121,7 +121,7 @@ func (bm *BodyManager) postStart(ctx context.Context, b *Body) {
 		}
 		hostPort, err := bm.ingress.AllocPort(ctx, p.ContainerPort)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "body %s: alloc port for %d: %v\n", b.ID, p.ContainerPort, err)
+			slog.Warn("failed to allocate port for body", "body_id", b.ID, "container_port", p.ContainerPort, "error", err)
 			continue
 		}
 		b.PortAllocations = append(b.PortAllocations, AllocatedPort{
@@ -134,7 +134,7 @@ func (bm *BodyManager) postStart(ctx context.Context, b *Body) {
 		if bm.ingress.PublicDomain() != "" {
 			domain := fmt.Sprintf("%s.%s", b.Name, bm.ingress.PublicDomain())
 			if err := bm.ingress.AddRoute(ctx, domain, "127.0.0.1", hostPort); err != nil {
-				fmt.Fprintf(os.Stderr, "body %s: add route for %s: %v\n", b.ID, domain, err)
+				slog.Warn("failed to add ingress route for body", "body_id", b.ID, "domain", domain, "error", err)
 			}
 		}
 	}
@@ -146,12 +146,12 @@ func (bm *BodyManager) preStop(ctx context.Context, b *Body) {
 	}
 	for _, alloc := range b.PortAllocations {
 		if err := bm.ingress.FreePort(alloc.HostPort); err != nil {
-			fmt.Fprintf(os.Stderr, "body %s: free port %d: %v\n", b.ID, alloc.HostPort, err)
+			slog.Warn("failed to free port for body", "body_id", b.ID, "host_port", alloc.HostPort, "error", err)
 		}
 		if bm.ingress.PublicDomain() != "" {
 			domain := fmt.Sprintf("%s.%s", b.Name, bm.ingress.PublicDomain())
 			if err := bm.ingress.RemoveRoute(ctx, domain); err != nil {
-				fmt.Fprintf(os.Stderr, "body %s: remove route %s: %v\n", b.ID, domain, err)
+				slog.Warn("failed to remove ingress route for body", "body_id", b.ID, "domain", domain, "error", err)
 			}
 		}
 	}

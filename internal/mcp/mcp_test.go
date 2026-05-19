@@ -149,7 +149,7 @@ func newHarness(t *testing.T, s *store.Store) *testHarness {
 	}
 }
 
-func (h *testHarness) send(t *testing.T, v interface{}) {
+func (h *testHarness) send(t *testing.T, v any) {
 	t.Helper()
 	data, err := json.Marshal(v)
 	if err != nil {
@@ -162,16 +162,16 @@ func (h *testHarness) close() {
 	h.stdinW.Close()
 }
 
-func (h *testHarness) readResponse(t *testing.T) map[string]interface{} {
+func (h *testHarness) readResponse(t *testing.T) map[string]any {
 	t.Helper()
-	respCh := make(chan map[string]interface{}, 1)
+	respCh := make(chan map[string]any, 1)
 	go func() {
 		for h.scanner.Scan() {
 			line := strings.TrimSpace(h.scanner.Text())
 			if line == "" {
 				continue
 			}
-			var resp map[string]interface{}
+			var resp map[string]any
 			if err := json.Unmarshal([]byte(line), &resp); err != nil {
 				continue
 			}
@@ -200,11 +200,11 @@ func TestInitialize(t *testing.T) {
 	if resp["id"].(float64) != 1 {
 		t.Fatalf("id = %v, want 1", resp["id"])
 	}
-	result := resp["result"].(map[string]interface{})
+	result := resp["result"].(map[string]any)
 	if result["protocolVersion"] == "" {
 		t.Fatal("expected protocolVersion in initialize response")
 	}
-	caps, ok := result["capabilities"].(map[string]interface{})
+	caps, ok := result["capabilities"].(map[string]any)
 	if !ok {
 		t.Fatal("expected capabilities map")
 	}
@@ -222,15 +222,15 @@ func TestPing(t *testing.T) {
 		JSONRPC: "2.0",
 		ID:      2,
 		Method:  "tools/call",
-		Params:  rawMessage(t, map[string]interface{}{"name": "ping", "arguments": map[string]interface{}{}}),
+		Params:  rawMessage(t, map[string]any{"name": "ping", "arguments": map[string]any{}}),
 	})
 
 	resp := h.readResponse(t)
-	result := resp["result"].(map[string]interface{})
-	content := result["content"].([]interface{})
-	text := content[0].(map[string]interface{})["text"].(string)
+	result := resp["result"].(map[string]any)
+	content := result["content"].([]any)
+	text := content[0].(map[string]any)["text"].(string)
 
-	var pong map[string]interface{}
+	var pong map[string]any
 	if err := json.Unmarshal([]byte(text), &pong); err != nil {
 		t.Fatalf("unmarshal pong: %v", err)
 	}
@@ -254,15 +254,15 @@ func TestListBodies(t *testing.T) {
 		JSONRPC: "2.0",
 		ID:      3,
 		Method:  "tools/call",
-		Params:  rawMessage(t, map[string]interface{}{"name": "list_bodies", "arguments": map[string]interface{}{}}),
+		Params:  rawMessage(t, map[string]any{"name": "list_bodies", "arguments": map[string]any{}}),
 	})
 
 	resp := h.readResponse(t)
-	result := resp["result"].(map[string]interface{})
-	content := result["content"].([]interface{})
-	text := content[0].(map[string]interface{})["text"].(string)
+	result := resp["result"].(map[string]any)
+	content := result["content"].([]any)
+	text := content[0].(map[string]any)["text"].(string)
 
-	var bodies []interface{}
+	var bodies []any
 	if err := json.Unmarshal([]byte(text), &bodies); err != nil {
 		t.Fatalf("unmarshal bodies: %v", err)
 	}
@@ -286,15 +286,15 @@ func TestGetBody(t *testing.T) {
 		JSONRPC: "2.0",
 		ID:      4,
 		Method:  "tools/call",
-		Params:  rawMessage(t, map[string]interface{}{"name": "get_body", "arguments": map[string]interface{}{"id": "b1"}}),
+		Params:  rawMessage(t, map[string]any{"name": "get_body", "arguments": map[string]any{"id": "b1"}}),
 	})
 
 	resp := h.readResponse(t)
-	result := resp["result"].(map[string]interface{})
-	content := result["content"].([]interface{})
-	text := content[0].(map[string]interface{})["text"].(string)
+	result := resp["result"].(map[string]any)
+	content := result["content"].([]any)
+	text := content[0].(map[string]any)["text"].(string)
 
-	var body map[string]interface{}
+	var body map[string]any
 	if err := json.Unmarshal([]byte(text), &body); err != nil {
 		t.Fatalf("unmarshal body: %v", err)
 	}
@@ -319,11 +319,11 @@ func TestGetBodyNotFound(t *testing.T) {
 		JSONRPC: "2.0",
 		ID:      5,
 		Method:  "tools/call",
-		Params:  rawMessage(t, map[string]interface{}{"name": "get_body", "arguments": map[string]interface{}{"id": "nonexistent"}}),
+		Params:  rawMessage(t, map[string]any{"name": "get_body", "arguments": map[string]any{"id": "nonexistent"}}),
 	})
 
 	resp := h.readResponse(t)
-	rpcErr := resp["error"].(map[string]interface{})
+	rpcErr := resp["error"].(map[string]any)
 	code := rpcErr["code"].(float64)
 	if code != -32001 {
 		t.Fatalf("error code = %v, want -32001", code)
@@ -347,15 +347,15 @@ func TestGetSnapshot(t *testing.T) {
 		JSONRPC: "2.0",
 		ID:      6,
 		Method:  "tools/call",
-		Params:  rawMessage(t, map[string]interface{}{"name": "get_snapshot", "arguments": map[string]interface{}{"id": "snap1"}}),
+		Params:  rawMessage(t, map[string]any{"name": "get_snapshot", "arguments": map[string]any{"id": "snap1"}}),
 	})
 
 	resp := h.readResponse(t)
-	result := resp["result"].(map[string]interface{})
-	content := result["content"].([]interface{})
-	text := content[0].(map[string]interface{})["text"].(string)
+	result := resp["result"].(map[string]any)
+	content := result["content"].([]any)
+	text := content[0].(map[string]any)["text"].(string)
 
-	var snap map[string]interface{}
+	var snap map[string]any
 	if err := json.Unmarshal([]byte(text), &snap); err != nil {
 		t.Fatalf("unmarshal snapshot: %v", err)
 	}
@@ -383,18 +383,18 @@ func TestExecCommandSuccess(t *testing.T) {
 		JSONRPC: "2.0",
 		ID:      7,
 		Method:  "tools/call",
-		Params: rawMessage(t, map[string]interface{}{
+		Params: rawMessage(t, map[string]any{
 			"name":      "execute_command",
-			"arguments": map[string]interface{}{"body_id": created.ID, "command": []string{"echo", "hello"}},
+			"arguments": map[string]any{"body_id": created.ID, "command": []string{"echo", "hello"}},
 		}),
 	})
 
 	resp := h.readResponse(t)
-	result := resp["result"].(map[string]interface{})
-	content := result["content"].([]interface{})
-	text := content[0].(map[string]interface{})["text"].(string)
+	result := resp["result"].(map[string]any)
+	content := result["content"].([]any)
+	text := content[0].(map[string]any)["text"].(string)
 
-	var execResp map[string]interface{}
+	var execResp map[string]any
 	if err := json.Unmarshal([]byte(text), &execResp); err != nil {
 		t.Fatalf("unmarshal exec response: %v", err)
 	}
@@ -428,14 +428,14 @@ func TestExecCommandNotRunning(t *testing.T) {
 		JSONRPC: "2.0",
 		ID:      7,
 		Method:  "tools/call",
-		Params: rawMessage(t, map[string]interface{}{
+		Params: rawMessage(t, map[string]any{
 			"name":      "execute_command",
-			"arguments": map[string]interface{}{"body_id": created.ID, "command": []string{"echo", "hello"}},
+			"arguments": map[string]any{"body_id": created.ID, "command": []string{"echo", "hello"}},
 		}),
 	})
 
 	resp := h.readResponse(t)
-	rpcErr := resp["error"].(map[string]interface{})
+	rpcErr := resp["error"].(map[string]any)
 	msg := rpcErr["message"].(string)
 	if !strings.Contains(msg, "state conflict") {
 		t.Fatalf("error message = %q, want 'state conflict'", msg)
@@ -461,14 +461,14 @@ func TestExecCommandTimeout(t *testing.T) {
 		JSONRPC: "2.0",
 		ID:      7,
 		Method:  "tools/call",
-		Params: rawMessage(t, map[string]interface{}{
+		Params: rawMessage(t, map[string]any{
 			"name":      "execute_command",
-			"arguments": map[string]interface{}{"body_id": created.ID, "command": []string{"sleep", "10"}, "timeout_seconds": 1},
+			"arguments": map[string]any{"body_id": created.ID, "command": []string{"sleep", "10"}, "timeout_seconds": 1},
 		}),
 	})
 
 	resp := h.readResponse(t)
-	rpcErr := resp["error"].(map[string]interface{})
+	rpcErr := resp["error"].(map[string]any)
 	msg := rpcErr["message"].(string)
 	if !strings.Contains(msg, "timeout") {
 		t.Fatalf("error message = %q, want 'timeout'", msg)
@@ -494,14 +494,14 @@ func TestExecCommandEmptyCommand(t *testing.T) {
 		JSONRPC: "2.0",
 		ID:      7,
 		Method:  "tools/call",
-		Params: rawMessage(t, map[string]interface{}{
+		Params: rawMessage(t, map[string]any{
 			"name":      "execute_command",
-			"arguments": map[string]interface{}{"body_id": created.ID, "command": []string{}},
+			"arguments": map[string]any{"body_id": created.ID, "command": []string{}},
 		}),
 	})
 
 	resp := h.readResponse(t)
-	rpcErr := resp["error"].(map[string]interface{})
+	rpcErr := resp["error"].(map[string]any)
 	msg := rpcErr["message"].(string)
 	if !strings.Contains(msg, "command are required") {
 		t.Fatalf("error message = %q, want 'command are required'", msg)
@@ -521,14 +521,14 @@ func TestExecCommandBodyNotFound(t *testing.T) {
 		JSONRPC: "2.0",
 		ID:      7,
 		Method:  "tools/call",
-		Params: rawMessage(t, map[string]interface{}{
+		Params: rawMessage(t, map[string]any{
 			"name":      "execute_command",
-			"arguments": map[string]interface{}{"body_id": "nonexistent", "command": []string{"echo", "hello"}},
+			"arguments": map[string]any{"body_id": "nonexistent", "command": []string{"echo", "hello"}},
 		}),
 	})
 
 	resp := h.readResponse(t)
-	rpcErr := resp["error"].(map[string]interface{})
+	rpcErr := resp["error"].(map[string]any)
 	msg := rpcErr["message"].(string)
 	if !strings.Contains(msg, "not found") {
 		t.Fatalf("error message = %q, want 'not found'", msg)
@@ -544,14 +544,14 @@ func TestExecCommandNoBodyManager(t *testing.T) {
 		JSONRPC: "2.0",
 		ID:      7,
 		Method:  "tools/call",
-		Params: rawMessage(t, map[string]interface{}{
+		Params: rawMessage(t, map[string]any{
 			"name":      "execute_command",
-			"arguments": map[string]interface{}{"body_id": "b1", "command": []string{"ls"}},
+			"arguments": map[string]any{"body_id": "b1", "command": []string{"ls"}},
 		}),
 	})
 
 	resp := h.readResponse(t)
-	rpcErr := resp["error"].(map[string]interface{})
+	rpcErr := resp["error"].(map[string]any)
 	msg := rpcErr["message"].(string)
 	if !strings.Contains(msg, "body service not available") {
 		t.Fatalf("error message = %q, want 'body service not available'", msg)
@@ -566,12 +566,12 @@ func TestToolsList(t *testing.T) {
 	h.send(t, Request{JSONRPC: "2.0", ID: 8, Method: "tools/list"})
 
 	resp := h.readResponse(t)
-	result := resp["result"].(map[string]interface{})
-	tools := result["tools"].([]interface{})
+	result := resp["result"].(map[string]any)
+	tools := result["tools"].([]any)
 
 	names := map[string]bool{}
 	for _, tool := range tools {
-		name := tool.(map[string]interface{})["name"].(string)
+		name := tool.(map[string]any)["name"].(string)
 		names[name] = true
 	}
 	for _, want := range []string{"ping", "list_bodies", "get_body", "get_snapshot", "execute_command", "create_body", "delete_body", "migrate_body"} {
@@ -589,7 +589,7 @@ func TestInvalidJSON(t *testing.T) {
 	h.stdinW.Write([]byte("not-json\n"))
 
 	resp := h.readResponse(t)
-	rpcErr := resp["error"].(map[string]interface{})
+	rpcErr := resp["error"].(map[string]any)
 	code := rpcErr["code"].(float64)
 	if code != -32700 {
 		t.Fatalf("error code = %v, want -32700 (parse error)", code)
@@ -604,7 +604,7 @@ func TestUnknownMethod(t *testing.T) {
 	h.send(t, Request{JSONRPC: "2.0", ID: 9, Method: "nonexistent/method"})
 
 	resp := h.readResponse(t)
-	rpcErr := resp["error"].(map[string]interface{})
+	rpcErr := resp["error"].(map[string]any)
 	code := rpcErr["code"].(float64)
 	if code != -32601 {
 		t.Fatalf("error code = %v, want -32601 (method not found)", code)
@@ -620,11 +620,11 @@ func TestToolNotFound(t *testing.T) {
 		JSONRPC: "2.0",
 		ID:      10,
 		Method:  "tools/call",
-		Params:  rawMessage(t, map[string]interface{}{"name": "nonexistent_tool", "arguments": map[string]interface{}{}}),
+		Params:  rawMessage(t, map[string]any{"name": "nonexistent_tool", "arguments": map[string]any{}}),
 	})
 
 	resp := h.readResponse(t)
-	rpcErr := resp["error"].(map[string]interface{})
+	rpcErr := resp["error"].(map[string]any)
 	code := rpcErr["code"].(float64)
 	if code != -32601 {
 		t.Fatalf("error code = %v, want -32601", code)
@@ -677,15 +677,15 @@ func TestCreateBody(t *testing.T) {
 		JSONRPC: "2.0",
 		ID:      20,
 		Method:  "tools/call",
-		Params:  rawMessage(t, map[string]interface{}{"name": "create_body", "arguments": map[string]interface{}{"name": "test-body", "image": "alpine:latest"}}),
+		Params:  rawMessage(t, map[string]any{"name": "create_body", "arguments": map[string]any{"name": "test-body", "image": "alpine:latest"}}),
 	})
 
 	resp := h.readResponse(t)
-	result := resp["result"].(map[string]interface{})
-	content := result["content"].([]interface{})
-	text := content[0].(map[string]interface{})["text"].(string)
+	result := resp["result"].(map[string]any)
+	content := result["content"].([]any)
+	text := content[0].(map[string]any)["text"].(string)
 
-	var body map[string]interface{}
+	var body map[string]any
 	if err := json.Unmarshal([]byte(text), &body); err != nil {
 		t.Fatalf("unmarshal body: %v", err)
 	}
@@ -715,11 +715,11 @@ func TestCreateBodyMissingRequired(t *testing.T) {
 		JSONRPC: "2.0",
 		ID:      21,
 		Method:  "tools/call",
-		Params:  rawMessage(t, map[string]interface{}{"name": "create_body", "arguments": map[string]interface{}{"name": "test-body"}}),
+		Params:  rawMessage(t, map[string]any{"name": "create_body", "arguments": map[string]any{"name": "test-body"}}),
 	})
 
 	resp := h.readResponse(t)
-	rpcErr := resp["error"].(map[string]interface{})
+	rpcErr := resp["error"].(map[string]any)
 	msg := rpcErr["message"].(string)
 	if !strings.Contains(msg, "image") {
 		t.Fatalf("error message = %q, want mention of image requirement", msg)
@@ -735,11 +735,11 @@ func TestCreateBodyNoBodyManager(t *testing.T) {
 		JSONRPC: "2.0",
 		ID:      22,
 		Method:  "tools/call",
-		Params:  rawMessage(t, map[string]interface{}{"name": "create_body", "arguments": map[string]interface{}{"name": "test-body", "image": "alpine"}}),
+		Params:  rawMessage(t, map[string]any{"name": "create_body", "arguments": map[string]any{"name": "test-body", "image": "alpine"}}),
 	})
 
 	resp := h.readResponse(t)
-	rpcErr := resp["error"].(map[string]interface{})
+	rpcErr := resp["error"].(map[string]any)
 	msg := rpcErr["message"].(string)
 	if !strings.Contains(msg, "body service not available") {
 		t.Fatalf("error message = %q, want 'body service not available'", msg)
@@ -767,15 +767,15 @@ func TestDeleteBody(t *testing.T) {
 		JSONRPC: "2.0",
 		ID:      23,
 		Method:  "tools/call",
-		Params:  rawMessage(t, map[string]interface{}{"name": "delete_body", "arguments": map[string]interface{}{"id": created.ID}}),
+		Params:  rawMessage(t, map[string]any{"name": "delete_body", "arguments": map[string]any{"id": created.ID}}),
 	})
 
 	resp := h.readResponse(t)
-	result := resp["result"].(map[string]interface{})
-	content := result["content"].([]interface{})
-	text := content[0].(map[string]interface{})["text"].(string)
+	result := resp["result"].(map[string]any)
+	content := result["content"].([]any)
+	text := content[0].(map[string]any)["text"].(string)
 
-	var delResp map[string]interface{}
+	var delResp map[string]any
 	if err := json.Unmarshal([]byte(text), &delResp); err != nil {
 		t.Fatalf("unmarshal delete response: %v", err)
 	}
@@ -793,11 +793,11 @@ func TestDeleteBodyNoBodyManager(t *testing.T) {
 		JSONRPC: "2.0",
 		ID:      24,
 		Method:  "tools/call",
-		Params:  rawMessage(t, map[string]interface{}{"name": "delete_body", "arguments": map[string]interface{}{"id": "b1"}}),
+		Params:  rawMessage(t, map[string]any{"name": "delete_body", "arguments": map[string]any{"id": "b1"}}),
 	})
 
 	resp := h.readResponse(t)
-	rpcErr := resp["error"].(map[string]interface{})
+	rpcErr := resp["error"].(map[string]any)
 	msg := rpcErr["message"].(string)
 	if !strings.Contains(msg, "body service not available") {
 		t.Fatalf("error message = %q, want 'body service not available'", msg)
@@ -825,15 +825,15 @@ func TestMigrateBody(t *testing.T) {
 		JSONRPC: "2.0",
 		ID:      25,
 		Method:  "tools/call",
-		Params:  rawMessage(t, map[string]interface{}{"name": "migrate_body", "arguments": map[string]interface{}{"body_id": created.ID, "target_substrate": "local"}}),
+		Params:  rawMessage(t, map[string]any{"name": "migrate_body", "arguments": map[string]any{"body_id": created.ID, "target_substrate": "local"}}),
 	})
 
 	resp := h.readResponse(t)
-	result := resp["result"].(map[string]interface{})
-	content := result["content"].([]interface{})
-	text := content[0].(map[string]interface{})["text"].(string)
+	result := resp["result"].(map[string]any)
+	content := result["content"].([]any)
+	text := content[0].(map[string]any)["text"].(string)
 
-	var migResp map[string]interface{}
+	var migResp map[string]any
 	if err := json.Unmarshal([]byte(text), &migResp); err != nil {
 		t.Fatalf("unmarshal migrate response: %v", err)
 	}
@@ -851,11 +851,11 @@ func TestMigrateBodyNoMigrator(t *testing.T) {
 		JSONRPC: "2.0",
 		ID:      26,
 		Method:  "tools/call",
-		Params:  rawMessage(t, map[string]interface{}{"name": "migrate_body", "arguments": map[string]interface{}{"body_id": "b1", "target_substrate": "fleet"}}),
+		Params:  rawMessage(t, map[string]any{"name": "migrate_body", "arguments": map[string]any{"body_id": "b1", "target_substrate": "fleet"}}),
 	})
 
 	resp := h.readResponse(t)
-	rpcErr := resp["error"].(map[string]interface{})
+	rpcErr := resp["error"].(map[string]any)
 	msg := rpcErr["message"].(string)
 	if !strings.Contains(msg, "migration coordinator not available") {
 		t.Fatalf("error message = %q, want 'migration coordinator not available'", msg)
@@ -884,19 +884,19 @@ func TestStartBody(t *testing.T) {
 		JSONRPC: "2.0",
 		ID:      30,
 		Method:  "tools/call",
-		Params:  rawMessage(t, map[string]interface{}{"name": "start_body", "arguments": map[string]interface{}{"body_id": created.ID}}),
+		Params:  rawMessage(t, map[string]any{"name": "start_body", "arguments": map[string]any{"body_id": created.ID}}),
 	})
 
 	resp := h.readResponse(t)
 	if resp["error"] != nil {
-		rpcErr := resp["error"].(map[string]interface{})
+		rpcErr := resp["error"].(map[string]any)
 		t.Fatalf("unexpected error: code=%v msg=%v", rpcErr["code"], rpcErr["message"])
 	}
-	result := resp["result"].(map[string]interface{})
-	content := result["content"].([]interface{})
-	text := content[0].(map[string]interface{})["text"].(string)
+	result := resp["result"].(map[string]any)
+	content := result["content"].([]any)
+	text := content[0].(map[string]any)["text"].(string)
 
-	var startResp map[string]interface{}
+	var startResp map[string]any
 	if err := json.Unmarshal([]byte(text), &startResp); err != nil {
 		t.Fatalf("unmarshal start response: %v", err)
 	}
@@ -927,15 +927,15 @@ func TestStopBody(t *testing.T) {
 		JSONRPC: "2.0",
 		ID:      31,
 		Method:  "tools/call",
-		Params:  rawMessage(t, map[string]interface{}{"name": "stop_body", "arguments": map[string]interface{}{"body_id": created.ID}}),
+		Params:  rawMessage(t, map[string]any{"name": "stop_body", "arguments": map[string]any{"body_id": created.ID}}),
 	})
 
 	resp := h.readResponse(t)
-	result := resp["result"].(map[string]interface{})
-	content := result["content"].([]interface{})
-	text := content[0].(map[string]interface{})["text"].(string)
+	result := resp["result"].(map[string]any)
+	content := result["content"].([]any)
+	text := content[0].(map[string]any)["text"].(string)
 
-	var stopResp map[string]interface{}
+	var stopResp map[string]any
 	if err := json.Unmarshal([]byte(text), &stopResp); err != nil {
 		t.Fatalf("unmarshal stop response: %v", err)
 	}
@@ -966,11 +966,11 @@ func TestStartBodyAlreadyRunning(t *testing.T) {
 		JSONRPC: "2.0",
 		ID:      32,
 		Method:  "tools/call",
-		Params:  rawMessage(t, map[string]interface{}{"name": "start_body", "arguments": map[string]interface{}{"body_id": created.ID}}),
+		Params:  rawMessage(t, map[string]any{"name": "start_body", "arguments": map[string]any{"body_id": created.ID}}),
 	})
 
 	resp := h.readResponse(t)
-	rpcErr := resp["error"].(map[string]interface{})
+	rpcErr := resp["error"].(map[string]any)
 	msg := rpcErr["message"].(string)
 	if !strings.Contains(msg, "state conflict") {
 		t.Fatalf("error message = %q, want 'state conflict'", msg)
@@ -999,11 +999,11 @@ func TestStopBodyAlreadyStopped(t *testing.T) {
 		JSONRPC: "2.0",
 		ID:      33,
 		Method:  "tools/call",
-		Params:  rawMessage(t, map[string]interface{}{"name": "stop_body", "arguments": map[string]interface{}{"body_id": created.ID}}),
+		Params:  rawMessage(t, map[string]any{"name": "stop_body", "arguments": map[string]any{"body_id": created.ID}}),
 	})
 
 	resp := h.readResponse(t)
-	rpcErr := resp["error"].(map[string]interface{})
+	rpcErr := resp["error"].(map[string]any)
 	msg := rpcErr["message"].(string)
 	if !strings.Contains(msg, "state conflict") {
 		t.Fatalf("error message = %q, want 'state conflict'", msg)
@@ -1019,11 +1019,11 @@ func TestStartBodyNoBodyManager(t *testing.T) {
 		JSONRPC: "2.0",
 		ID:      34,
 		Method:  "tools/call",
-		Params:  rawMessage(t, map[string]interface{}{"name": "start_body", "arguments": map[string]interface{}{"body_id": "b1"}}),
+		Params:  rawMessage(t, map[string]any{"name": "start_body", "arguments": map[string]any{"body_id": "b1"}}),
 	})
 
 	resp := h.readResponse(t)
-	rpcErr := resp["error"].(map[string]interface{})
+	rpcErr := resp["error"].(map[string]any)
 	msg := rpcErr["message"].(string)
 	if !strings.Contains(msg, "body service not available") {
 		t.Fatalf("error message = %q, want 'body service not available'", msg)
@@ -1039,11 +1039,11 @@ func TestStopBodyNoBodyManager(t *testing.T) {
 		JSONRPC: "2.0",
 		ID:      35,
 		Method:  "tools/call",
-		Params:  rawMessage(t, map[string]interface{}{"name": "stop_body", "arguments": map[string]interface{}{"body_id": "b1"}}),
+		Params:  rawMessage(t, map[string]any{"name": "stop_body", "arguments": map[string]any{"body_id": "b1"}}),
 	})
 
 	resp := h.readResponse(t)
-	rpcErr := resp["error"].(map[string]interface{})
+	rpcErr := resp["error"].(map[string]any)
 	msg := rpcErr["message"].(string)
 	if !strings.Contains(msg, "body service not available") {
 		t.Fatalf("error message = %q, want 'body service not available'", msg)
@@ -1062,11 +1062,11 @@ func TestStartBodyMissingID(t *testing.T) {
 		JSONRPC: "2.0",
 		ID:      36,
 		Method:  "tools/call",
-		Params:  rawMessage(t, map[string]interface{}{"name": "start_body", "arguments": map[string]interface{}{}}),
+		Params:  rawMessage(t, map[string]any{"name": "start_body", "arguments": map[string]any{}}),
 	})
 
 	resp := h.readResponse(t)
-	rpcErr := resp["error"].(map[string]interface{})
+	rpcErr := resp["error"].(map[string]any)
 	msg := rpcErr["message"].(string)
 	if !strings.Contains(msg, "body_id") {
 		t.Fatalf("error message = %q, want mention of body_id", msg)
@@ -1085,11 +1085,11 @@ func TestStopBodyMissingID(t *testing.T) {
 		JSONRPC: "2.0",
 		ID:      37,
 		Method:  "tools/call",
-		Params:  rawMessage(t, map[string]interface{}{"name": "stop_body", "arguments": map[string]interface{}{}}),
+		Params:  rawMessage(t, map[string]any{"name": "stop_body", "arguments": map[string]any{}}),
 	})
 
 	resp := h.readResponse(t)
-	rpcErr := resp["error"].(map[string]interface{})
+	rpcErr := resp["error"].(map[string]any)
 	msg := rpcErr["message"].(string)
 	if !strings.Contains(msg, "body_id") {
 		t.Fatalf("error message = %q, want mention of body_id", msg)
@@ -1110,11 +1110,11 @@ func TestMigrateBodyMissingParams(t *testing.T) {
 		JSONRPC: "2.0",
 		ID:      27,
 		Method:  "tools/call",
-		Params:  rawMessage(t, map[string]interface{}{"name": "migrate_body", "arguments": map[string]interface{}{"body_id": "b1"}}),
+		Params:  rawMessage(t, map[string]any{"name": "migrate_body", "arguments": map[string]any{"body_id": "b1"}}),
 	})
 
 	resp := h.readResponse(t)
-	rpcErr := resp["error"].(map[string]interface{})
+	rpcErr := resp["error"].(map[string]any)
 	msg := rpcErr["message"].(string)
 	if !strings.Contains(msg, "body_id and target_substrate are required") {
 		t.Fatalf("error message = %q, want required fields message", msg)
@@ -1133,11 +1133,11 @@ func TestDeleteBodyMissingID(t *testing.T) {
 		JSONRPC: "2.0",
 		ID:      28,
 		Method:  "tools/call",
-		Params:  rawMessage(t, map[string]interface{}{"name": "delete_body", "arguments": map[string]interface{}{}}),
+		Params:  rawMessage(t, map[string]any{"name": "delete_body", "arguments": map[string]any{}}),
 	})
 
 	resp := h.readResponse(t)
-	rpcErr := resp["error"].(map[string]interface{})
+	rpcErr := resp["error"].(map[string]any)
 	msg := rpcErr["message"].(string)
 	if !strings.Contains(msg, "id") {
 		t.Fatalf("error message = %q, want mention of id", msg)
@@ -1163,15 +1163,15 @@ func TestCreateSnapshot(t *testing.T) {
 		JSONRPC: "2.0",
 		ID:      30,
 		Method:  "tools/call",
-		Params:  rawMessage(t, map[string]interface{}{"name": "create_snapshot", "arguments": map[string]interface{}{"body_id": created.ID, "label": "test-snap"}}),
+		Params:  rawMessage(t, map[string]any{"name": "create_snapshot", "arguments": map[string]any{"body_id": created.ID, "label": "test-snap"}}),
 	})
 
 	resp := h.readResponse(t)
-	result := resp["result"].(map[string]interface{})
-	content := result["content"].([]interface{})
-	text := content[0].(map[string]interface{})["text"].(string)
+	result := resp["result"].(map[string]any)
+	content := result["content"].([]any)
+	text := content[0].(map[string]any)["text"].(string)
 
-	var snapResp map[string]interface{}
+	var snapResp map[string]any
 	if err := json.Unmarshal([]byte(text), &snapResp); err != nil {
 		t.Fatalf("unmarshal snapshot response: %v", err)
 	}
@@ -1199,11 +1199,11 @@ func TestCreateSnapshotBodyNotFound(t *testing.T) {
 		JSONRPC: "2.0",
 		ID:      31,
 		Method:  "tools/call",
-		Params:  rawMessage(t, map[string]interface{}{"name": "create_snapshot", "arguments": map[string]interface{}{"body_id": "nonexistent"}}),
+		Params:  rawMessage(t, map[string]any{"name": "create_snapshot", "arguments": map[string]any{"body_id": "nonexistent"}}),
 	})
 
 	resp := h.readResponse(t)
-	rpcErr := resp["error"].(map[string]interface{})
+	rpcErr := resp["error"].(map[string]any)
 	msg := rpcErr["message"].(string)
 	if !strings.Contains(msg, "not found") {
 		t.Fatalf("error message = %q, want 'not found'", msg)
@@ -1230,11 +1230,11 @@ func TestCreateSnapshotBodyNotRunning(t *testing.T) {
 		JSONRPC: "2.0",
 		ID:      32,
 		Method:  "tools/call",
-		Params:  rawMessage(t, map[string]interface{}{"name": "create_snapshot", "arguments": map[string]interface{}{"body_id": created.ID}}),
+		Params:  rawMessage(t, map[string]any{"name": "create_snapshot", "arguments": map[string]any{"body_id": created.ID}}),
 	})
 
 	resp := h.readResponse(t)
-	rpcErr := resp["error"].(map[string]interface{})
+	rpcErr := resp["error"].(map[string]any)
 	msg := rpcErr["message"].(string)
 	if !strings.Contains(msg, "not running") {
 		t.Fatalf("error message = %q, want 'not running'", msg)
@@ -1250,11 +1250,11 @@ func TestCreateSnapshotNoBodyManager(t *testing.T) {
 		JSONRPC: "2.0",
 		ID:      33,
 		Method:  "tools/call",
-		Params:  rawMessage(t, map[string]interface{}{"name": "create_snapshot", "arguments": map[string]interface{}{"body_id": "b1"}}),
+		Params:  rawMessage(t, map[string]any{"name": "create_snapshot", "arguments": map[string]any{"body_id": "b1"}}),
 	})
 
 	resp := h.readResponse(t)
-	rpcErr := resp["error"].(map[string]interface{})
+	rpcErr := resp["error"].(map[string]any)
 	msg := rpcErr["message"].(string)
 	if !strings.Contains(msg, "body manager not available") {
 		t.Fatalf("error message = %q, want 'body manager not available'", msg)
@@ -1275,15 +1275,15 @@ func TestListSnapshots(t *testing.T) {
 		JSONRPC: "2.0",
 		ID:      34,
 		Method:  "tools/call",
-		Params:  rawMessage(t, map[string]interface{}{"name": "list_snapshots", "arguments": map[string]interface{}{"body_id": "b1"}}),
+		Params:  rawMessage(t, map[string]any{"name": "list_snapshots", "arguments": map[string]any{"body_id": "b1"}}),
 	})
 
 	resp := h.readResponse(t)
-	result := resp["result"].(map[string]interface{})
-	content := result["content"].([]interface{})
-	text := content[0].(map[string]interface{})["text"].(string)
+	result := resp["result"].(map[string]any)
+	content := result["content"].([]any)
+	text := content[0].(map[string]any)["text"].(string)
 
-	var snaps []interface{}
+	var snaps []any
 	if err := json.Unmarshal([]byte(text), &snaps); err != nil {
 		t.Fatalf("unmarshal snapshots: %v", err)
 	}
@@ -1307,15 +1307,15 @@ func TestListSnapshotsAllBodies(t *testing.T) {
 		JSONRPC: "2.0",
 		ID:      35,
 		Method:  "tools/call",
-		Params:  rawMessage(t, map[string]interface{}{"name": "list_snapshots", "arguments": map[string]interface{}{}}),
+		Params:  rawMessage(t, map[string]any{"name": "list_snapshots", "arguments": map[string]any{}}),
 	})
 
 	resp := h.readResponse(t)
-	result := resp["result"].(map[string]interface{})
-	content := result["content"].([]interface{})
-	text := content[0].(map[string]interface{})["text"].(string)
+	result := resp["result"].(map[string]any)
+	content := result["content"].([]any)
+	text := content[0].(map[string]any)["text"].(string)
 
-	var snaps []interface{}
+	var snaps []any
 	if err := json.Unmarshal([]byte(text), &snaps); err != nil {
 		t.Fatalf("unmarshal snapshots: %v", err)
 	}
@@ -1384,15 +1384,15 @@ func TestRestoreBody(t *testing.T) {
 		JSONRPC: "2.0",
 		ID:      36,
 		Method:  "tools/call",
-		Params:  rawMessage(t, map[string]interface{}{"name": "restore_body", "arguments": map[string]interface{}{"snapshot_id": snapID}}),
+		Params:  rawMessage(t, map[string]any{"name": "restore_body", "arguments": map[string]any{"snapshot_id": snapID}}),
 	})
 
 	resp := h.readResponse(t)
-	result := resp["result"].(map[string]interface{})
-	contentResult := result["content"].([]interface{})
-	text := contentResult[0].(map[string]interface{})["text"].(string)
+	result := resp["result"].(map[string]any)
+	contentResult := result["content"].([]any)
+	text := contentResult[0].(map[string]any)["text"].(string)
 
-	var restoreResp map[string]interface{}
+	var restoreResp map[string]any
 	if err := json.Unmarshal([]byte(text), &restoreResp); err != nil {
 		t.Fatalf("unmarshal restore response: %v", err)
 	}
@@ -1423,11 +1423,11 @@ func TestRestoreBodyNoBodyManager(t *testing.T) {
 		JSONRPC: "2.0",
 		ID:      37,
 		Method:  "tools/call",
-		Params:  rawMessage(t, map[string]interface{}{"name": "restore_body", "arguments": map[string]interface{}{"snapshot_id": "snap1"}}),
+		Params:  rawMessage(t, map[string]any{"name": "restore_body", "arguments": map[string]any{"snapshot_id": "snap1"}}),
 	})
 
 	resp := h.readResponse(t)
-	rpcErr := resp["error"].(map[string]interface{})
+	rpcErr := resp["error"].(map[string]any)
 	msg := rpcErr["message"].(string)
 	if !strings.Contains(msg, "body manager not available") {
 		t.Fatalf("error message = %q, want 'body manager not available'", msg)
@@ -1447,11 +1447,11 @@ func TestRestoreBodySnapshotNotFound(t *testing.T) {
 		JSONRPC: "2.0",
 		ID:      38,
 		Method:  "tools/call",
-		Params:  rawMessage(t, map[string]interface{}{"name": "restore_body", "arguments": map[string]interface{}{"snapshot_id": "nonexistent"}}),
+		Params:  rawMessage(t, map[string]any{"name": "restore_body", "arguments": map[string]any{"snapshot_id": "nonexistent"}}),
 	})
 
 	resp := h.readResponse(t)
-	rpcErr := resp["error"].(map[string]interface{})
+	rpcErr := resp["error"].(map[string]any)
 	msg := rpcErr["message"].(string)
 	if !strings.Contains(msg, "not found") {
 		t.Fatalf("error message = %q, want 'not found'", msg)
@@ -1477,18 +1477,18 @@ func TestGetBodyLogsRunningBody(t *testing.T) {
 		JSONRPC: "2.0",
 		ID:      50,
 		Method:  "tools/call",
-		Params: rawMessage(t, map[string]interface{}{
+		Params: rawMessage(t, map[string]any{
 			"name":      "get_body_logs",
-			"arguments": map[string]interface{}{"body_id": created.ID, "tail": 50},
+			"arguments": map[string]any{"body_id": created.ID, "tail": 50},
 		}),
 	})
 
 	resp := h.readResponse(t)
-	result := resp["result"].(map[string]interface{})
-	content := result["content"].([]interface{})
-	text := content[0].(map[string]interface{})["text"].(string)
+	result := resp["result"].(map[string]any)
+	content := result["content"].([]any)
+	text := content[0].(map[string]any)["text"].(string)
 
-	var logsResp map[string]interface{}
+	var logsResp map[string]any
 	if err := json.Unmarshal([]byte(text), &logsResp); err != nil {
 		t.Fatalf("unmarshal logs response: %v", err)
 	}
@@ -1522,14 +1522,14 @@ func TestGetBodyLogsStoppedBody(t *testing.T) {
 		JSONRPC: "2.0",
 		ID:      51,
 		Method:  "tools/call",
-		Params: rawMessage(t, map[string]interface{}{
+		Params: rawMessage(t, map[string]any{
 			"name":      "get_body_logs",
-			"arguments": map[string]interface{}{"body_id": created.ID},
+			"arguments": map[string]any{"body_id": created.ID},
 		}),
 	})
 
 	resp := h.readResponse(t)
-	rpcErr := resp["error"].(map[string]interface{})
+	rpcErr := resp["error"].(map[string]any)
 	msg := rpcErr["message"].(string)
 	if !strings.Contains(msg, "state conflict") {
 		t.Fatalf("error message = %q, want 'state conflict'", msg)
@@ -1549,14 +1549,14 @@ func TestGetBodyLogsBodyNotFound(t *testing.T) {
 		JSONRPC: "2.0",
 		ID:      52,
 		Method:  "tools/call",
-		Params: rawMessage(t, map[string]interface{}{
+		Params: rawMessage(t, map[string]any{
 			"name":      "get_body_logs",
-			"arguments": map[string]interface{}{"body_id": "nonexistent"},
+			"arguments": map[string]any{"body_id": "nonexistent"},
 		}),
 	})
 
 	resp := h.readResponse(t)
-	rpcErr := resp["error"].(map[string]interface{})
+	rpcErr := resp["error"].(map[string]any)
 	msg := rpcErr["message"].(string)
 	if !strings.Contains(msg, "not found") {
 		t.Fatalf("error message = %q, want 'not found'", msg)
@@ -1572,14 +1572,14 @@ func TestGetBodyLogsNoBodyManager(t *testing.T) {
 		JSONRPC: "2.0",
 		ID:      53,
 		Method:  "tools/call",
-		Params: rawMessage(t, map[string]interface{}{
+		Params: rawMessage(t, map[string]any{
 			"name":      "get_body_logs",
-			"arguments": map[string]interface{}{"body_id": "b1"},
+			"arguments": map[string]any{"body_id": "b1"},
 		}),
 	})
 
 	resp := h.readResponse(t)
-	rpcErr := resp["error"].(map[string]interface{})
+	rpcErr := resp["error"].(map[string]any)
 	msg := rpcErr["message"].(string)
 	if !strings.Contains(msg, "body service not available") {
 		t.Fatalf("error message = %q, want 'body service not available'", msg)
@@ -1605,18 +1605,18 @@ func TestGetBodyStatusRunningBody(t *testing.T) {
 		JSONRPC: "2.0",
 		ID:      54,
 		Method:  "tools/call",
-		Params: rawMessage(t, map[string]interface{}{
+		Params: rawMessage(t, map[string]any{
 			"name":      "get_body_status",
-			"arguments": map[string]interface{}{"body_id": created.ID},
+			"arguments": map[string]any{"body_id": created.ID},
 		}),
 	})
 
 	resp := h.readResponse(t)
-	result := resp["result"].(map[string]interface{})
-	content := result["content"].([]interface{})
-	text := content[0].(map[string]interface{})["text"].(string)
+	result := resp["result"].(map[string]any)
+	content := result["content"].([]any)
+	text := content[0].(map[string]any)["text"].(string)
 
-	var statusResp map[string]interface{}
+	var statusResp map[string]any
 	if err := json.Unmarshal([]byte(text), &statusResp); err != nil {
 		t.Fatalf("unmarshal status response: %v", err)
 	}
@@ -1644,14 +1644,14 @@ func TestGetBodyStatusBodyNotFound(t *testing.T) {
 		JSONRPC: "2.0",
 		ID:      55,
 		Method:  "tools/call",
-		Params: rawMessage(t, map[string]interface{}{
+		Params: rawMessage(t, map[string]any{
 			"name":      "get_body_status",
-			"arguments": map[string]interface{}{"body_id": "nonexistent"},
+			"arguments": map[string]any{"body_id": "nonexistent"},
 		}),
 	})
 
 	resp := h.readResponse(t)
-	rpcErr := resp["error"].(map[string]interface{})
+	rpcErr := resp["error"].(map[string]any)
 	msg := rpcErr["message"].(string)
 	if !strings.Contains(msg, "not found") {
 		t.Fatalf("error message = %q, want 'not found'", msg)
@@ -1667,14 +1667,14 @@ func TestGetBodyStatusNoBodyManager(t *testing.T) {
 		JSONRPC: "2.0",
 		ID:      56,
 		Method:  "tools/call",
-		Params: rawMessage(t, map[string]interface{}{
+		Params: rawMessage(t, map[string]any{
 			"name":      "get_body_status",
-			"arguments": map[string]interface{}{"body_id": "b1"},
+			"arguments": map[string]any{"body_id": "b1"},
 		}),
 	})
 
 	resp := h.readResponse(t)
-	rpcErr := resp["error"].(map[string]interface{})
+	rpcErr := resp["error"].(map[string]any)
 	msg := rpcErr["message"].(string)
 	if !strings.Contains(msg, "body service not available") {
 		t.Fatalf("error message = %q, want 'body service not available'", msg)
@@ -1693,15 +1693,15 @@ func TestListPlugins(t *testing.T) {
 		JSONRPC: "2.0",
 		ID:      60,
 		Method:  "tools/call",
-		Params:  rawMessage(t, map[string]interface{}{"name": "list_plugins", "arguments": map[string]interface{}{}}),
+		Params:  rawMessage(t, map[string]any{"name": "list_plugins", "arguments": map[string]any{}}),
 	})
 
 	resp := h.readResponse(t)
-	result := resp["result"].(map[string]interface{})
-	content := result["content"].([]interface{})
-	text := content[0].(map[string]interface{})["text"].(string)
+	result := resp["result"].(map[string]any)
+	content := result["content"].([]any)
+	text := content[0].(map[string]any)["text"].(string)
 
-	var plugins []interface{}
+	var plugins []any
 	if err := json.Unmarshal([]byte(text), &plugins); err != nil {
 		t.Fatalf("unmarshal plugins: %v", err)
 	}
@@ -1719,11 +1719,11 @@ func TestListPluginsNoManager(t *testing.T) {
 		JSONRPC: "2.0",
 		ID:      61,
 		Method:  "tools/call",
-		Params:  rawMessage(t, map[string]interface{}{"name": "list_plugins", "arguments": map[string]interface{}{}}),
+		Params:  rawMessage(t, map[string]any{"name": "list_plugins", "arguments": map[string]any{}}),
 	})
 
 	resp := h.readResponse(t)
-	rpcErr := resp["error"].(map[string]interface{})
+	rpcErr := resp["error"].(map[string]any)
 	msg := rpcErr["message"].(string)
 	if !strings.Contains(msg, "plugin manager not available") {
 		t.Fatalf("error message = %q, want 'plugin manager not available'", msg)
@@ -1743,11 +1743,11 @@ func TestPluginHealth(t *testing.T) {
 		JSONRPC: "2.0",
 		ID:      62,
 		Method:  "tools/call",
-		Params:  rawMessage(t, map[string]interface{}{"name": "plugin_health", "arguments": map[string]interface{}{"plugin_name": "nonexistent"}}),
+		Params:  rawMessage(t, map[string]any{"name": "plugin_health", "arguments": map[string]any{"plugin_name": "nonexistent"}}),
 	})
 
 	resp := h.readResponse(t)
-	rpcErr := resp["error"].(map[string]interface{})
+	rpcErr := resp["error"].(map[string]any)
 	msg := rpcErr["message"].(string)
 	if !strings.Contains(msg, "not found") {
 		t.Fatalf("error message = %q, want 'not found'", msg)
@@ -1763,11 +1763,11 @@ func TestPluginHealthNoManager(t *testing.T) {
 		JSONRPC: "2.0",
 		ID:      63,
 		Method:  "tools/call",
-		Params:  rawMessage(t, map[string]interface{}{"name": "plugin_health", "arguments": map[string]interface{}{"plugin_name": "test"}}),
+		Params:  rawMessage(t, map[string]any{"name": "plugin_health", "arguments": map[string]any{"plugin_name": "test"}}),
 	})
 
 	resp := h.readResponse(t)
-	rpcErr := resp["error"].(map[string]interface{})
+	rpcErr := resp["error"].(map[string]any)
 	msg := rpcErr["message"].(string)
 	if !strings.Contains(msg, "plugin manager not available") {
 		t.Fatalf("error message = %q, want 'plugin manager not available'", msg)
@@ -1786,11 +1786,11 @@ func TestPluginHealthMissingName(t *testing.T) {
 		JSONRPC: "2.0",
 		ID:      64,
 		Method:  "tools/call",
-		Params:  rawMessage(t, map[string]interface{}{"name": "plugin_health", "arguments": map[string]interface{}{}}),
+		Params:  rawMessage(t, map[string]any{"name": "plugin_health", "arguments": map[string]any{}}),
 	})
 
 	resp := h.readResponse(t)
-	rpcErr := resp["error"].(map[string]interface{})
+	rpcErr := resp["error"].(map[string]any)
 	msg := rpcErr["message"].(string)
 	if !strings.Contains(msg, "plugin_name") {
 		t.Fatalf("error message = %q, want mention of plugin_name", msg)
@@ -1805,12 +1805,12 @@ func TestToolsListIncludesPluginTools(t *testing.T) {
 	h.send(t, Request{JSONRPC: "2.0", ID: 65, Method: "tools/list"})
 
 	resp := h.readResponse(t)
-	result := resp["result"].(map[string]interface{})
-	tools := result["tools"].([]interface{})
+	result := resp["result"].(map[string]any)
+	tools := result["tools"].([]any)
 
 	names := map[string]bool{}
 	for _, tool := range tools {
-		name := tool.(map[string]interface{})["name"].(string)
+		name := tool.(map[string]any)["name"].(string)
 		names[name] = true
 	}
 	for _, want := range []string{"list_plugins", "plugin_health"} {
@@ -1836,18 +1836,18 @@ func TestMCPCreateBodySubstrate(t *testing.T) {
 		JSONRPC: "2.0",
 		ID:      100,
 		Method:  "tools/call",
-		Params: rawMessage(t, map[string]interface{}{
+		Params: rawMessage(t, map[string]any{
 			"name":      "create_body",
-			"arguments": map[string]interface{}{"name": "sub-test", "image": "alpine:latest", "substrate": "mock"},
+			"arguments": map[string]any{"name": "sub-test", "image": "alpine:latest", "substrate": "mock"},
 		}),
 	})
 
 	resp := h.readResponse(t)
-	result := resp["result"].(map[string]interface{})
-	content := result["content"].([]interface{})
-	text := content[0].(map[string]interface{})["text"].(string)
+	result := resp["result"].(map[string]any)
+	content := result["content"].([]any)
+	text := content[0].(map[string]any)["text"].(string)
 
-	var b map[string]interface{}
+	var b map[string]any
 	if err := json.Unmarshal([]byte(text), &b); err != nil {
 		t.Fatalf("unmarshal body: %v", err)
 	}
@@ -1878,18 +1878,18 @@ func TestMCPCreateBodyNoSubstrate(t *testing.T) {
 		JSONRPC: "2.0",
 		ID:      101,
 		Method:  "tools/call",
-		Params: rawMessage(t, map[string]interface{}{
+		Params: rawMessage(t, map[string]any{
 			"name":      "create_body",
-			"arguments": map[string]interface{}{"name": "auto-sub", "image": "alpine:latest"},
+			"arguments": map[string]any{"name": "auto-sub", "image": "alpine:latest"},
 		}),
 	})
 
 	resp := h.readResponse(t)
-	result := resp["result"].(map[string]interface{})
-	content := result["content"].([]interface{})
-	text := content[0].(map[string]interface{})["text"].(string)
+	result := resp["result"].(map[string]any)
+	content := result["content"].([]any)
+	text := content[0].(map[string]any)["text"].(string)
 
-	var b map[string]interface{}
+	var b map[string]any
 	if err := json.Unmarshal([]byte(text), &b); err != nil {
 		t.Fatalf("unmarshal body: %v", err)
 	}
@@ -1904,7 +1904,7 @@ func TestMCPCreateBodyNoSubstrate(t *testing.T) {
 	}
 }
 
-func rawMessage(t *testing.T, v interface{}) json.RawMessage {
+func rawMessage(t *testing.T, v any) json.RawMessage {
 	t.Helper()
 	data, err := json.Marshal(v)
 	if err != nil {

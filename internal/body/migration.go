@@ -215,7 +215,7 @@ func (mc *MigrationCoordinator) stepExport(ctx context.Context, mig *migrationCo
 	if err != nil {
 		return fmt.Errorf("export filesystem: %w", err)
 	}
-	defer rc.Close()
+	defer func() { _ = rc.Close() }()
 
 	snapID := uuid.New().String()
 	storagePath := fmt.Sprintf("/tmp/mesh-snapshot-%s.tar.zst", snapID)
@@ -387,7 +387,7 @@ func (mc *MigrationCoordinator) transferCrossMachine(ctx context.Context, mig *m
 	if pullErr != nil {
 		return fmt.Errorf("pull snapshot from registry: %w", pullErr)
 	}
-	defer pulled.Close()
+	defer func() { _ = pulled.Close() }()
 
 	if pulledSHA != "" && pulledSHA != mig.snapshotSHA {
 		return fmt.Errorf("sha256 mismatch after cross-machine transfer: source=%s pulled=%s", mig.snapshotSHA, pulledSHA)

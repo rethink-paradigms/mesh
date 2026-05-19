@@ -145,11 +145,11 @@ func (s *Server) registerTools() {
 	})
 }
 
-func (s *Server) handlePing(ctx context.Context, params json.RawMessage) (interface{}, error) {
+func (s *Server) handlePing(ctx context.Context, params json.RawMessage) (any, error) {
 	return map[string]bool{"pong": true}, nil
 }
 
-func (s *Server) handleListBodies(ctx context.Context, params json.RawMessage) (interface{}, error) {
+func (s *Server) handleListBodies(ctx context.Context, params json.RawMessage) (any, error) {
 	if s.svc == nil {
 		return nil, &RPCError{Code: -32603, Message: "body service not available"}
 	}
@@ -160,7 +160,7 @@ func (s *Server) handleListBodies(ctx context.Context, params json.RawMessage) (
 	return bodies, nil
 }
 
-func (s *Server) handleGetBody(ctx context.Context, params json.RawMessage) (interface{}, error) {
+func (s *Server) handleGetBody(ctx context.Context, params json.RawMessage) (any, error) {
 	if s.svc == nil {
 		return nil, &RPCError{Code: -32603, Message: "body service not available"}
 	}
@@ -177,7 +177,7 @@ func (s *Server) handleGetBody(ctx context.Context, params json.RawMessage) (int
 	return body, nil
 }
 
-func (s *Server) handleGetSnapshot(ctx context.Context, params json.RawMessage) (interface{}, error) {
+func (s *Server) handleGetSnapshot(ctx context.Context, params json.RawMessage) (any, error) {
 	var p struct {
 		ID string `json:"id"`
 	}
@@ -191,7 +191,7 @@ func (s *Server) handleGetSnapshot(ctx context.Context, params json.RawMessage) 
 	return snap, nil
 }
 
-func (s *Server) handleCreateBody(ctx context.Context, params json.RawMessage) (interface{}, error) {
+func (s *Server) handleCreateBody(ctx context.Context, params json.RawMessage) (any, error) {
 	if s.svc == nil {
 		return nil, &RPCError{Code: -32603, Message: "body service not available"}
 	}
@@ -223,7 +223,7 @@ func (s *Server) handleCreateBody(ctx context.Context, params json.RawMessage) (
 		return nil, mapServiceError(err)
 	}
 
-	return map[string]interface{}{
+	return map[string]any{
 		"id":        b.ID,
 		"name":      b.Name,
 		"state":     string(b.State),
@@ -232,7 +232,7 @@ func (s *Server) handleCreateBody(ctx context.Context, params json.RawMessage) (
 	}, nil
 }
 
-func (s *Server) handleDeleteBody(ctx context.Context, params json.RawMessage) (interface{}, error) {
+func (s *Server) handleDeleteBody(ctx context.Context, params json.RawMessage) (any, error) {
 	if s.svc == nil {
 		return nil, &RPCError{Code: -32603, Message: "body service not available"}
 	}
@@ -248,7 +248,7 @@ func (s *Server) handleDeleteBody(ctx context.Context, params json.RawMessage) (
 	return map[string]bool{"deleted": true}, nil
 }
 
-func (s *Server) handleMigrateBody(ctx context.Context, params json.RawMessage) (interface{}, error) {
+func (s *Server) handleMigrateBody(ctx context.Context, params json.RawMessage) (any, error) {
 	if s.migrator == nil {
 		return nil, &RPCError{Code: -32603, Message: "migration coordinator not available"}
 	}
@@ -266,7 +266,7 @@ func (s *Server) handleMigrateBody(ctx context.Context, params json.RawMessage) 
 	return map[string]string{"migration_id": migrationID}, nil
 }
 
-func (s *Server) handleExecCommand(ctx context.Context, params json.RawMessage) (interface{}, error) {
+func (s *Server) handleExecCommand(ctx context.Context, params json.RawMessage) (any, error) {
 	if s.svc == nil {
 		return nil, &RPCError{Code: -32603, Message: "body service not available"}
 	}
@@ -297,14 +297,14 @@ func (s *Server) handleExecCommand(ctx context.Context, params json.RawMessage) 
 		return nil, mapServiceError(err)
 	}
 
-	return map[string]interface{}{
+	return map[string]any{
 		"stdout":    result.Stdout,
 		"stderr":    result.Stderr,
 		"exit_code": result.ExitCode,
 	}, nil
 }
 
-func (s *Server) handleCreateSnapshot(ctx context.Context, params json.RawMessage) (interface{}, error) {
+func (s *Server) handleCreateSnapshot(ctx context.Context, params json.RawMessage) (any, error) {
 	if s.bodyMgr == nil {
 		return nil, &RPCError{Code: -32603, Message: "body manager not available"}
 	}
@@ -379,7 +379,7 @@ func (s *Server) handleCreateSnapshot(ctx context.Context, params json.RawMessag
 		return nil, &RPCError{Code: -32603, Message: fmt.Sprintf("persist snapshot: %v", err)}
 	}
 
-	return map[string]interface{}{
+	return map[string]any{
 		"id":         snapID,
 		"body_id":    p.BodyID,
 		"created_at": time.Now().UTC().Format(time.RFC3339),
@@ -388,7 +388,7 @@ func (s *Server) handleCreateSnapshot(ctx context.Context, params json.RawMessag
 	}, nil
 }
 
-func (s *Server) handleListSnapshots(ctx context.Context, params json.RawMessage) (interface{}, error) {
+func (s *Server) handleListSnapshots(ctx context.Context, params json.RawMessage) (any, error) {
 	var p struct {
 		BodyID string `json:"body_id,omitempty"`
 	}
@@ -420,7 +420,7 @@ func (s *Server) handleListSnapshots(ctx context.Context, params json.RawMessage
 	return allSnaps, nil
 }
 
-func (s *Server) handleRestoreBody(ctx context.Context, params json.RawMessage) (interface{}, error) {
+func (s *Server) handleRestoreBody(ctx context.Context, params json.RawMessage) (any, error) {
 	if s.bodyMgr == nil {
 		return nil, &RPCError{Code: -32603, Message: "body manager not available"}
 	}
@@ -447,7 +447,7 @@ func (s *Server) handleRestoreBody(ctx context.Context, params json.RawMessage) 
 		return nil, &RPCError{Code: -32603, Message: fmt.Sprintf("restore failed: %v", err)}
 	}
 
-	return map[string]interface{}{
+	return map[string]any{
 		"restored":         true,
 		"snapshot_id":      p.SnapshotID,
 		"body_id":          snap.BodyID,
@@ -456,7 +456,7 @@ func (s *Server) handleRestoreBody(ctx context.Context, params json.RawMessage) 
 	}, nil
 }
 
-func (s *Server) handleStartBody(ctx context.Context, params json.RawMessage) (interface{}, error) {
+func (s *Server) handleStartBody(ctx context.Context, params json.RawMessage) (any, error) {
 	if s.svc == nil {
 		return nil, &RPCError{Code: -32603, Message: "body service not available"}
 	}
@@ -476,14 +476,14 @@ func (s *Server) handleStartBody(ctx context.Context, params json.RawMessage) (i
 		return nil, mapServiceError(err)
 	}
 
-	return map[string]interface{}{
+	return map[string]any{
 		"id":    b.ID,
 		"name":  b.Name,
 		"state": string(b.State),
 	}, nil
 }
 
-func (s *Server) handleStopBody(ctx context.Context, params json.RawMessage) (interface{}, error) {
+func (s *Server) handleStopBody(ctx context.Context, params json.RawMessage) (any, error) {
 	if s.svc == nil {
 		return nil, &RPCError{Code: -32603, Message: "body service not available"}
 	}
@@ -503,14 +503,14 @@ func (s *Server) handleStopBody(ctx context.Context, params json.RawMessage) (in
 		return nil, mapServiceError(err)
 	}
 
-	return map[string]interface{}{
+	return map[string]any{
 		"id":    b.ID,
 		"name":  b.Name,
 		"state": string(b.State),
 	}, nil
 }
 
-func (s *Server) handleGetBodyLogs(ctx context.Context, params json.RawMessage) (interface{}, error) {
+func (s *Server) handleGetBodyLogs(ctx context.Context, params json.RawMessage) (any, error) {
 	if s.svc == nil {
 		return nil, &RPCError{Code: -32603, Message: "body service not available"}
 	}
@@ -532,14 +532,14 @@ func (s *Server) handleGetBodyLogs(ctx context.Context, params json.RawMessage) 
 		return nil, mapServiceError(err)
 	}
 
-	return map[string]interface{}{
+	return map[string]any{
 		"body_id": p.BodyID,
 		"logs":    result.Stdout,
 		"tail":    tailLines,
 	}, nil
 }
 
-func (s *Server) handleGetBodyStatus(ctx context.Context, params json.RawMessage) (interface{}, error) {
+func (s *Server) handleGetBodyStatus(ctx context.Context, params json.RawMessage) (any, error) {
 	if s.svc == nil {
 		return nil, &RPCError{Code: -32603, Message: "body service not available"}
 	}
@@ -560,7 +560,7 @@ func (s *Server) handleGetBodyStatus(ctx context.Context, params json.RawMessage
 		return nil, mapServiceError(err)
 	}
 
-	return map[string]interface{}{
+	return map[string]any{
 		"id":         body.ID,
 		"name":       body.Name,
 		"state":      string(status.State),
@@ -570,19 +570,19 @@ func (s *Server) handleGetBodyStatus(ctx context.Context, params json.RawMessage
 	}, nil
 }
 
-func (s *Server) handleListPlugins(ctx context.Context, params json.RawMessage) (interface{}, error) {
+func (s *Server) handleListPlugins(ctx context.Context, params json.RawMessage) (any, error) {
 	if s.pluginMgr == nil {
 		return nil, &RPCError{Code: -32603, Message: "plugin manager not available"}
 	}
 
 	names := s.pluginMgr.List()
-	plugins := make([]map[string]interface{}, 0, len(names))
+	plugins := make([]map[string]any, 0, len(names))
 	for _, name := range names {
 		rec := s.pluginMgr.Get(name)
 		if rec == nil {
 			continue
 		}
-		plugins = append(plugins, map[string]interface{}{
+		plugins = append(plugins, map[string]any{
 			"name":    rec.Meta.Name,
 			"version": rec.Meta.Version,
 			"state":   string(rec.GetState()),
@@ -592,7 +592,7 @@ func (s *Server) handleListPlugins(ctx context.Context, params json.RawMessage) 
 	return plugins, nil
 }
 
-func (s *Server) handlePluginHealth(ctx context.Context, params json.RawMessage) (interface{}, error) {
+func (s *Server) handlePluginHealth(ctx context.Context, params json.RawMessage) (any, error) {
 	if s.pluginMgr == nil {
 		return nil, &RPCError{Code: -32603, Message: "plugin manager not available"}
 	}
@@ -608,7 +608,7 @@ func (s *Server) handlePluginHealth(ctx context.Context, params json.RawMessage)
 		return nil, &RPCError{Code: -32603, Message: fmt.Sprintf("plugin not found: %s", p.PluginName)}
 	}
 
-	return map[string]interface{}{
+	return map[string]any{
 		"name":        rec.Meta.Name,
 		"version":     rec.Meta.Version,
 		"state":       string(rec.GetState()),
@@ -620,20 +620,20 @@ func (s *Server) handlePluginHealth(ctx context.Context, params json.RawMessage)
 	}, nil
 }
 
-func (s *Server) handleListCapabilities(ctx context.Context, params json.RawMessage) (interface{}, error) {
-	var orchCaps []map[string]interface{}
+func (s *Server) handleListCapabilities(ctx context.Context, params json.RawMessage) (any, error) {
+	var orchCaps []map[string]any
 	if s.orchRegistry != nil {
 		for _, name := range s.orchRegistry.List() {
 			adapter, err := s.orchRegistry.Open(name)
 			healthy := err == nil && adapter.IsHealthy(ctx)
-			orchCaps = append(orchCaps, map[string]interface{}{
+			orchCaps = append(orchCaps, map[string]any{
 				"name":    name,
 				"healthy": healthy,
 			})
 		}
 	}
 	if orchCaps == nil {
-		orchCaps = []map[string]interface{}{}
+		orchCaps = []map[string]any{}
 	}
 
 	providers := getMCPProviders()
@@ -657,7 +657,7 @@ func (s *Server) handleListCapabilities(ctx context.Context, params json.RawMess
 		maxSnapshots = 5
 	}
 
-	return map[string]interface{}{
+	return map[string]any{
 		"version":       s.version,
 		"tier":          tier,
 		"orchestrators": orchCaps,
@@ -670,8 +670,8 @@ func (s *Server) handleListCapabilities(ctx context.Context, params json.RawMess
 	}, nil
 }
 
-func (s *Server) handleDaemonStatus(ctx context.Context, params json.RawMessage) (interface{}, error) {
-	status := map[string]interface{}{}
+func (s *Server) handleDaemonStatus(ctx context.Context, params json.RawMessage) (any, error) {
+	status := map[string]any{}
 
 	// Daemon info
 	uptimeSec := int64(0)
@@ -680,7 +680,7 @@ func (s *Server) handleDaemonStatus(ctx context.Context, params json.RawMessage)
 		uptimeSec = int64(time.Since(s.startedAt).Seconds())
 		startTime = s.startedAt.Format(time.RFC3339)
 	}
-	status["daemon"] = map[string]interface{}{
+	status["daemon"] = map[string]any{
 		"version":        s.version,
 		"uptime_seconds": uptimeSec,
 		"start_time":     startTime,
@@ -694,18 +694,18 @@ func (s *Server) handleDaemonStatus(ctx context.Context, params json.RawMessage)
 	status["tier"] = tier
 
 	// Bodies
-	bodiesInfo := map[string]interface{}{
+	bodiesInfo := map[string]any{
 		"total":   0,
 		"running": 0,
 		"stopped": 0,
 		"error":   0,
-		"list":    []map[string]interface{}{},
+		"list":    []map[string]any{},
 	}
 	if s.store != nil {
 		records, err := s.store.ListBodies(ctx)
 		if err == nil {
 			running, stopped, errorCount := 0, 0, 0
-			list := make([]map[string]interface{}, 0, len(records))
+			list := make([]map[string]any, 0, len(records))
 			for _, rec := range records {
 				switch rec.State {
 				case orchestrator.StateRunning:
@@ -715,13 +715,13 @@ func (s *Server) handleDaemonStatus(ctx context.Context, params json.RawMessage)
 				case orchestrator.StateError:
 					errorCount++
 				}
-				list = append(list, map[string]interface{}{
+				list = append(list, map[string]any{
 					"id":    rec.ID,
 					"name":  rec.Name,
 					"state": string(rec.State),
 				})
 			}
-			bodiesInfo = map[string]interface{}{
+			bodiesInfo = map[string]any{
 				"total":   len(records),
 				"running": running,
 				"stopped": stopped,
@@ -733,7 +733,7 @@ func (s *Server) handleDaemonStatus(ctx context.Context, params json.RawMessage)
 	status["bodies"] = bodiesInfo
 
 	// Ports
-	status["ports"] = map[string]interface{}{
+	status["ports"] = map[string]any{
 		"used":       0,
 		"free":       0,
 		"pool_start": 9000,
@@ -747,7 +747,7 @@ func (s *Server) handleDaemonStatus(ctx context.Context, params json.RawMessage)
 			routeCount = len(routes)
 		}
 	}
-	status["ingress"] = map[string]interface{}{
+	status["ingress"] = map[string]any{
 		"route_count": routeCount,
 	}
 
@@ -757,7 +757,7 @@ func (s *Server) handleDaemonStatus(ctx context.Context, params json.RawMessage)
 	return status, nil
 }
 
-func collectMCPCapacity() map[string]interface{} {
+func collectMCPCapacity() map[string]any {
 	var m runtime.MemStats
 	runtime.ReadMemStats(&m)
 
@@ -786,7 +786,7 @@ func collectMCPCapacity() map[string]interface{} {
 		diskGBUsed = float64(totalBytes-availBytes) / (1024 * 1024 * 1024)
 	}
 
-	return map[string]interface{}{
+	return map[string]any{
 		"cpu_percent":     0.0,
 		"memory_mb_used":  int64(m.Alloc) / 1024 / 1024,
 		"memory_mb_total": memTotalMB,
@@ -804,9 +804,9 @@ func getMCPProviders() json.RawMessage {
 	cmd.Stderr = &stderr
 
 	if err := cmd.Run(); err != nil {
-		fallback, _ := json.Marshal(map[string]interface{}{
+		fallback, _ := json.Marshal(map[string]any{
 			"status":    "unavailable",
-			"providers": []interface{}{},
+			"providers": []any{},
 		})
 		return fallback
 	}
@@ -814,7 +814,7 @@ func getMCPProviders() json.RawMessage {
 	return json.RawMessage(stdout.Bytes())
 }
 
-func (s *Server) handleInstallAgent(ctx context.Context, params json.RawMessage) (interface{}, error) {
+func (s *Server) handleInstallAgent(ctx context.Context, params json.RawMessage) (any, error) {
 	if s.installer == nil {
 		return nil, &RPCError{Code: -32603, Message: "installer not available"}
 	}
@@ -836,7 +836,7 @@ func (s *Server) handleInstallAgent(ctx context.Context, params json.RawMessage)
 		return nil, mapServiceError(err)
 	}
 
-	return map[string]interface{}{
+	return map[string]any{
 		"body_id":         result.BodyID,
 		"name":            result.Name,
 		"access_urls":     result.AccessURLs,

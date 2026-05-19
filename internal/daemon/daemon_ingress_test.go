@@ -50,7 +50,7 @@ func TestDaemon_IngressAdapter_NoopDefault(t *testing.T) {
 		t.Fatalf("status = %d, want %d", resp.StatusCode, http.StatusOK)
 	}
 
-	var body map[string]interface{}
+	var body map[string]any
 	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
 		cancel()
 		t.Fatalf("decode response: %v", err)

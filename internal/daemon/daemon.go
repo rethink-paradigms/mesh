@@ -2,21 +2,18 @@ package daemon
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net"
 	"net/http"
 	"net/url"
 	"os"
 	"os/signal"
-	"path/filepath"
-	"strconv"
 	"sync"
 	"syscall"
 	"time"
 
 	"github.com/rethink-paradigms/mesh/internal/agent"
-	"github.com/rethink-paradigms/mesh/internal/api"
 	"github.com/rethink-paradigms/mesh/internal/body"
 	"github.com/rethink-paradigms/mesh/internal/config"
 	"github.com/rethink-paradigms/mesh/internal/docker"
@@ -25,7 +22,6 @@ import (
 	"github.com/rethink-paradigms/mesh/internal/nomad"
 	"github.com/rethink-paradigms/mesh/internal/orchestrator"
 	"github.com/rethink-paradigms/mesh/internal/plugin"
-	"github.com/rethink-paradigms/mesh/internal/registry"
 	"github.com/rethink-paradigms/mesh/internal/service"
 	"github.com/rethink-paradigms/mesh/internal/store"
 	"github.com/rethink-paradigms/mesh/internal/version"
@@ -100,7 +96,7 @@ func (d *Daemon) SetMCP(srv interface{ Stop(context.Context) error }) {
 			SetAuth(string, string, string) error
 		}); ok {
 			if err := ms.SetAuth(d.cfg.Daemon.Auth0Domain, d.cfg.Daemon.Auth0Audience, d.cfg.Daemon.ClusterOwnerID); err != nil {
-				fmt.Fprintf(os.Stderr, "daemon: mcp set auth: %v\n", err)
+				slog.Warn("mcp set auth", "error", err)
 			}
 		}
 	}
@@ -112,140 +108,6 @@ func (d *Daemon) SetMCP(srv interface{ Stop(context.Context) error }) {
 			ms.SetMigrator(d.migrator)
 		}
 	}
-}
-
-// ─── Registry Management ──────────────────────────────────────────────────
-
-// ConfigureS3 validates S3 credentials and hot-swaps the registry plugin at runtime.
-// Implements api.RegistryManager.
-func (d *Daemon) ConfigureS3(ctx context.Context, cfg api.S3RegistryConfig) error {
-	d.registryMu.Lock()
-	defer d.registryMu.Unlock()
-
-	// Create the S3 plugin — validates config is syntactically correct
-	p, err := registry.NewS3RegistryPlugin(registry.RegistryConfig{
-		Bucket:          cfg.Bucket,
-		Region:          cfg.Region,
-		Endpoint:        cfg.Endpoint,
-		AccessKeyID:     cfg.AccessKeyID,
-		SecretAccessKey: cfg.SecretAccessKey,
-	})
-	if err != nil {
-		return fmt.Errorf("invalid S3 config: %w", err)
-	}
-
-	d.registry = p
-	if d.migrator != nil {
-		d.migrator.SetRegistry(p)
-	}
-
-	// Persist to store so it survives daemon restart
-	if err := d.persistRegistryConfig(ctx, &cfg); err != nil {
-		fmt.Fprintf(os.Stderr, "daemon: warn: failed to persist registry config: %v\n", err)
-	}
-
-	fmt.Fprintf(os.Stderr, "daemon: S3 registry configured: bucket=%s region=%s\n", cfg.Bucket, cfg.Region)
-	return nil
-}
-
-// DisconnectS3 clears the registry plugin. Falls back to same-machine migration.
-// Implements api.RegistryManager.
-func (d *Daemon) DisconnectS3(ctx context.Context) error {
-	d.registryMu.Lock()
-	defer d.registryMu.Unlock()
-
-	d.registry = nil
-	if d.migrator != nil {
-		d.migrator.SetRegistry(nil)
-	}
-
-	if err := d.clearRegistryConfig(ctx); err != nil {
-		fmt.Fprintf(os.Stderr, "daemon: warn: failed to clear persisted registry config: %v\n", err)
-	}
-
-	fmt.Fprintf(os.Stderr, "daemon: S3 registry disconnected, fallback to same-machine migration\n")
-	return nil
-}
-
-// RegistryStatus returns the current registry state.
-// Implements api.RegistryManager.
-func (d *Daemon) RegistryStatus(_ context.Context) map[string]interface{} {
-	d.registryMu.Lock()
-	defer d.registryMu.Unlock()
-
-	if d.registry == nil {
-		return map[string]interface{}{
-			"configured": false,
-			"type":       "none",
-		}
-	}
-
-	// Try to extract bucket/region from the plugin if possible
-	// S3RegistryPlugin doesn't expose its config, so we return basic info
-	return map[string]interface{}{
-		"configured": true,
-		"type":       "s3",
-		"healthy":    true,
-	}
-}
-
-// persistRegistryConfig stores the S3 config as JSON in the config table.
-func (d *Daemon) persistRegistryConfig(ctx context.Context, cfg *api.S3RegistryConfig) error {
-	if d.store == nil {
-		return nil
-	}
-	data, err := json.Marshal(cfg)
-	if err != nil {
-		return fmt.Errorf("marshal registry config: %w", err)
-	}
-	return d.store.SetConfig(ctx, "registry_s3", string(data))
-}
-
-// clearRegistryConfig removes persisted S3 config.
-func (d *Daemon) clearRegistryConfig(ctx context.Context) error {
-	if d.store == nil {
-		return nil
-	}
-	return d.store.SetConfig(ctx, "registry_s3", "")
-}
-
-// restoreRegistryConfig loads a previously persisted S3 config from the store
-// and initializes the registry plugin. Called at daemon startup.
-func (d *Daemon) restoreRegistryConfig(ctx context.Context) {
-	if d.store == nil {
-		return
-	}
-	val, err := d.store.GetConfig(ctx, "registry_s3")
-	if err != nil || val == "" {
-		return // no persisted config
-	}
-
-	var cfg api.S3RegistryConfig
-	if err := json.Unmarshal([]byte(val), &cfg); err != nil {
-		fmt.Fprintf(os.Stderr, "daemon: warn: invalid persisted registry config: %v\n", err)
-		return
-	}
-	if cfg.Bucket == "" || cfg.Region == "" {
-		return // incomplete config, skip
-	}
-
-	p, err := registry.NewS3RegistryPlugin(registry.RegistryConfig{
-		Bucket:          cfg.Bucket,
-		Region:          cfg.Region,
-		Endpoint:        cfg.Endpoint,
-		AccessKeyID:     cfg.AccessKeyID,
-		SecretAccessKey: cfg.SecretAccessKey,
-	})
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "daemon: warn: failed to restore S3 registry: %v\n", err)
-		return
-	}
-
-	d.registry = p
-	if d.migrator != nil {
-		d.migrator.SetRegistry(p)
-	}
-	fmt.Fprintf(os.Stderr, "daemon: restored S3 registry: bucket=%s region=%s\n", cfg.Bucket, cfg.Region)
 }
 
 func (d *Daemon) SetVersion(v string) {
@@ -285,13 +147,23 @@ func (d *Daemon) Start(ctx context.Context) error {
 	orchRegistry := orchestrator.NewRegistry()
 	d.orchRegistry = orchRegistry
 
-	dockerAdp := docker.New(docker.Config{})
+	// Docker adapter: read socket_path from orchestrators config
+	dockerCfg := docker.Config{}
+	if dockerSettings, ok := d.cfg.Orchestrators["docker"]; ok {
+		if sp, ok := dockerSettings["socket_path"]; ok {
+			dockerCfg.SocketPath = sp
+		}
+	}
+	dockerAdp := docker.New(dockerCfg)
 	if err := orchRegistry.Register("docker", dockerAdp); err != nil {
-		fmt.Fprintf(os.Stderr, "daemon: register docker orchestrator: %v\n", err)
+		slog.Warn("register docker orchestrator", "error", err)
 	}
 
 	for name, settings := range d.cfg.Orchestrators {
 		switch name {
+		case "docker":
+			// already registered above
+			continue
 		case "nomad":
 			adp := nomad.New(nomad.Config{
 				Address:   settings["address"],
@@ -300,7 +172,7 @@ func (d *Daemon) Start(ctx context.Context) error {
 				Namespace: settings["namespace"],
 			})
 			if err := orchRegistry.Register("nomad", adp); err != nil {
-				fmt.Fprintf(os.Stderr, "daemon: register orchestrator %q: %v\n", name, err)
+				slog.Warn("register orchestrator", "name", name, "error", err)
 			}
 		}
 	}
@@ -327,7 +199,7 @@ func (d *Daemon) Start(ctx context.Context) error {
 
 	pm := plugin.NewPluginManager(d.cfg.Plugin.Dir, d.cfg.Plugin.Enabled)
 	if err := pm.StartScanAndLoad(); err != nil {
-		fmt.Fprintf(os.Stderr, "daemon: plugin scan and load: %v\n", err)
+		slog.Warn("plugin scan and load", "error", err)
 	}
 	pm.StartHealthChecks()
 	d.pluginMgr = pm
@@ -343,7 +215,7 @@ func (d *Daemon) Start(ctx context.Context) error {
 				d.cfg.Ingress.AdminURL = "http://127.0.0.1:2019"
 			}
 			d.cfg.Ingress.Adapter = "caddy"
-			fmt.Fprintf(os.Stderr, "daemon: info: caddy detected at %s, using caddy ingress adapter\n", d.cfg.Ingress.AdminURL)
+			slog.Info("caddy detected, using caddy ingress adapter", "admin_url", d.cfg.Ingress.AdminURL)
 		}
 	}
 
@@ -354,12 +226,12 @@ func (d *Daemon) Start(ctx context.Context) error {
 	if d.cfg.AgentsDir != "" {
 		descriptors, err := agent.LoadDescriptors(d.cfg.AgentsDir)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "daemon: load agent descriptors from %s: %v\n", d.cfg.AgentsDir, err)
+			slog.Warn("load agent descriptors", "dir", d.cfg.AgentsDir, "error", err)
 			// Not fatal — daemon can operate without agent installer
 		} else if len(descriptors) > 0 {
 			d.installer = agent.NewInstaller(d.bodyMgr, d.ingress, d.orchRegistry, descriptors)
 		} else {
-			fmt.Fprintf(os.Stderr, "daemon: info: no agent descriptors found in %s\n", d.cfg.AgentsDir)
+			slog.Info("no agent descriptors found", "dir", d.cfg.AgentsDir)
 		}
 	}
 
@@ -395,12 +267,12 @@ func (d *Daemon) Start(ctx context.Context) error {
 	}
 	defer d.removeAddrFile()
 
-	fmt.Fprintf(os.Stderr, "daemon: API server listening on %s\n", d.httpAddr)
+	slog.Info("API server listening", "addr", d.httpAddr)
 
 	// Start heartbeat goroutine if gateway URL is configured
 	if d.cfg.Daemon.GatewayURL != "" && d.cfg.Daemon.HeartbeatIntervalSeconds > 0 {
 		if d.cfg.Daemon.AuthMode == "jwt" && d.cfg.Daemon.AuthToken == "" {
-			fmt.Fprintf(os.Stderr, "daemon: heartbeat disabled: JWT-only mode requires auth_token for heartbeat\n")
+			slog.Info("heartbeat disabled: JWT-only mode requires auth_token for heartbeat")
 		} else {
 			var orchName string
 			if defOrch, err := d.orchRegistry.Default(); err == nil {
@@ -459,7 +331,7 @@ func (d *Daemon) Start(ctx context.Context) error {
 			)
 			interval := time.Duration(d.cfg.Daemon.HeartbeatIntervalSeconds) * time.Second
 			d.heartbeat.Start(ctx, interval)
-			fmt.Fprintf(os.Stderr, "daemon: heartbeat started to %s every %v\n", d.cfg.Daemon.GatewayURL, interval)
+			slog.Info("heartbeat started", "gateway_url", d.cfg.Daemon.GatewayURL, "interval", interval)
 		}
 	}
 
@@ -471,7 +343,7 @@ func (d *Daemon) Start(ctx context.Context) error {
 
 	select {
 	case sig := <-d.sigs:
-		fmt.Fprintf(os.Stderr, "daemon: received signal %v, shutting down\n", sig)
+		slog.Info("received signal, shutting down", "signal", sig)
 	case <-ctx.Done():
 	}
 
@@ -495,7 +367,7 @@ func (d *Daemon) Stop(ctx context.Context) error {
 	d.mcpServerMu.Lock()
 	if d.mcpServer != nil {
 		if err := d.mcpServer.Stop(ctx); err != nil {
-			fmt.Fprintf(os.Stderr, "daemon: mcp stop: %v\n", err)
+			slog.Warn("mcp stop", "error", err)
 		}
 	}
 	d.mcpServerMu.Unlock()
@@ -515,299 +387,4 @@ func (d *Daemon) Stop(ctx context.Context) error {
 	return nil
 }
 
-func (d *Daemon) reconcile(ctx context.Context) error {
-	bodies, err := d.store.ListBodies(ctx)
-	if err != nil {
-		if ctx.Err() == context.Canceled {
-			return nil
-		}
-		return fmt.Errorf("reconcile: list bodies: %w", err)
-	}
 
-	for _, rec := range bodies {
-		if rec.InstanceID == "" {
-			continue
-		}
-
-		adp, err := d.orchRegistry.Open(rec.Substrate)
-		if err != nil {
-			switch rec.State {
-			case orchestrator.StateRunning, orchestrator.StateStarting, orchestrator.StateStopping:
-				fmt.Fprintf(os.Stderr, "reconcile: body %s substrate %q not found, transitioning to Error\n", rec.ID, rec.Substrate)
-				if transErr := d.bodyMgr.TransitionBody(ctx, rec.ID, orchestrator.StateError); transErr != nil {
-					fmt.Fprintf(os.Stderr, "reconcile: failed to transition body %s to Error: %v\n", rec.ID, transErr)
-				}
-				d.mu.Lock()
-				d.reconcileSteps++
-				d.mu.Unlock()
-			default:
-				fmt.Fprintf(os.Stderr, "reconcile: body %s substrate %q not found, skipping\n", rec.ID, rec.Substrate)
-			}
-			continue
-		}
-
-		_, err = adp.GetBodyStatus(ctx, orchestrator.Handle(rec.InstanceID))
-		containerExists := err == nil
-
-		switch rec.State {
-		case orchestrator.StateRunning, orchestrator.StateStarting, orchestrator.StateStopping:
-			if !containerExists {
-				if transErr := d.bodyMgr.TransitionBody(ctx, rec.ID, orchestrator.StateError); transErr != nil {
-					fmt.Fprintf(os.Stderr, "reconcile: failed to transition body %s to Error: %v\n", rec.ID, transErr)
-				} else {
-					fmt.Fprintf(os.Stderr, "reconcile: body %s container not found, transitioned to Error\n", rec.ID)
-				}
-				d.mu.Lock()
-				d.reconcileSteps++
-				d.mu.Unlock()
-			}
-
-		case orchestrator.StateError:
-			if containerExists {
-				status, _ := adp.GetBodyStatus(ctx, orchestrator.Handle(rec.InstanceID))
-				if status.State == orchestrator.StateRunning {
-					if transErr := d.bodyMgr.TransitionBody(ctx, rec.ID, orchestrator.StateRunning); transErr != nil {
-						fmt.Fprintf(os.Stderr, "reconcile: failed to transition body %s to Running: %v\n", rec.ID, transErr)
-					} else {
-						fmt.Fprintf(os.Stderr, "reconcile: body %s verified running, transitioned to Running\n", rec.ID)
-					}
-					d.mu.Lock()
-					d.reconcileSteps++
-					d.mu.Unlock()
-				}
-			}
-
-		case orchestrator.StateMigrating:
-			if !d.hasActiveMigration(ctx, rec.ID) {
-				if transErr := d.bodyMgr.TransitionBody(ctx, rec.ID, orchestrator.StateError); transErr != nil {
-					fmt.Fprintf(os.Stderr, "reconcile: failed to transition body %s from Migrating to Error: %v\n", rec.ID, transErr)
-				} else {
-					fmt.Fprintf(os.Stderr, "reconcile: body %s migration record missing, transitioned to Error\n", rec.ID)
-				}
-				d.mu.Lock()
-				d.reconcileSteps++
-				d.mu.Unlock()
-			}
-		}
-	}
-
-	return nil
-}
-
-func (d *Daemon) hasActiveMigration(ctx context.Context, bodyID string) bool {
-	var count int
-	err := d.store.QueryRow(ctx, `SELECT COUNT(*) FROM migrations WHERE body_id = ? AND error = ''`, bodyID).Scan(&count)
-	if err != nil {
-		return false
-	}
-	return count > 0
-}
-
-func (d *Daemon) createIngressAdapter() ingress.IngressAdapter {
-	switch d.cfg.Ingress.Adapter {
-	case "caddy":
-		return ingress.NewCaddyAdapter(ingress.CaddyConfig{
-			AdminURL:      d.cfg.Ingress.AdminURL,
-			PortPoolStart: d.cfg.Ingress.PortPoolStart,
-			PortPoolEnd:   d.cfg.Ingress.PortPoolEnd,
-			DomainSuffix:  d.cfg.Ingress.DomainSuffix,
-			PublicDomain:  d.cfg.Ingress.PublicDomain,
-		})
-	case "noop", "":
-		return ingress.NewNoopAdapter()
-	default:
-		fmt.Fprintf(os.Stderr, "daemon: unknown ingress adapter %q, falling back to noop\n", d.cfg.Ingress.Adapter)
-		return ingress.NewNoopAdapter()
-	}
-}
-
-func (d *Daemon) startAPIServer() error {
-	var primaryOrch orchestrator.OrchestratorAdapter
-	if adp, err := d.orchRegistry.Default(); err == nil {
-		primaryOrch = adp
-	}
-
-	if d.ingress == nil {
-		d.ingress = d.createIngressAdapter()
-	}
-
-	// Build heartbeat status function. d.heartbeat may be nil at router
-	// creation time but is set later by Start() before the loop runs.
-	// The closure captures d (not d.heartbeat), so it reads the current
-	// value on each call.
-	heartbeatStatusFn := func() api.GatewayHeartbeatStatus {
-		if d.heartbeat == nil {
-			return api.GatewayHeartbeatStatus{}
-		}
-		s := d.heartbeat.Status()
-		return api.GatewayHeartbeatStatus{
-			Reachable:           s.Reachable,
-			LastSuccess:         s.LastSuccess,
-			ConsecutiveFailures: s.ConsecutiveFailures,
-			LastError:           s.LastError,
-		}
-	}
-
-	router := api.NewRouter(api.RouterConfig{
-		BodyManager:              d.bodyMgr,
-		BodyService:              d.bodySvc,
-		Store:                    d.store,
-		Orchestrator:             primaryOrch,
-		Ingress:                  d.ingress,
-		AuthToken:                d.cfg.Daemon.AuthToken,
-		AuthMode:                 d.cfg.Daemon.AuthMode,
-		Auth0Domain:              d.cfg.Daemon.Auth0Domain,
-		Auth0Audience:            d.cfg.Daemon.Auth0Audience,
-		ClusterOwnerID:           d.cfg.Daemon.ClusterOwnerID,
-		ClusterID:                d.cfg.Daemon.ClusterID,
-		Version:                  d.version,
-		Tier:                     d.tier,
-		OrchRegistry:             d.orchRegistry,
-		Features:                 d.cfg.Features,
-		Uptime:                   d.startedAt,
-		Installer:                d.installer,
-		GatewayURL:               d.cfg.Daemon.GatewayURL,
-		HeartbeatIntervalSeconds: d.cfg.Daemon.HeartbeatIntervalSeconds,
-		RegistryManager:          d, // Daemon implements api.RegistryManager
-		StopDaemon:               d.Stop,
-		HeartbeatStatusFn:        heartbeatStatusFn,
-	})
-
-	listenAddr := d.cfg.Daemon.ListenAddr
-	if listenAddr == "" {
-		port := os.Getenv("MESH_PORT")
-		if port == "" {
-			port = "8080"
-		}
-		listenAddr = "127.0.0.1:" + port
-	}
-
-	srv := &http.Server{Addr: listenAddr, Handler: router}
-
-	ln, err := net.Listen("tcp", listenAddr)
-	if err != nil {
-		return fmt.Errorf("api listen on %s: %w", listenAddr, err)
-	}
-
-	d.mu.Lock()
-	d.httpServer = srv
-	d.httpAddr = ln.Addr().String()
-	d.mu.Unlock()
-
-	go func() { _ = srv.Serve(ln) }()
-	return nil
-}
-
-func (d *Daemon) stopAPIServer() {
-	if d.httpServer != nil {
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		if err := d.httpServer.Shutdown(ctx); err != nil {
-			fmt.Fprintf(os.Stderr, "daemon: api server shutdown: %v\n", err)
-		}
-	}
-}
-
-func (d *Daemon) checkPIDConflict() error {
-	if d.cfg.Daemon.PIDFile == "" {
-		return nil
-	}
-	data, err := os.ReadFile(d.cfg.Daemon.PIDFile)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil
-		}
-		return fmt.Errorf("read PID file: %w", err)
-	}
-	pid, err := strconv.Atoi(string(data))
-	if err != nil {
-		return nil
-	}
-	if pid == os.Getpid() {
-		return nil
-	}
-	proc, err := os.FindProcess(pid)
-	if err != nil {
-		return nil
-	}
-	if err := proc.Signal(syscall.Signal(0)); err != nil {
-		return nil
-	}
-	return fmt.Errorf("daemon already running (pid %d)", pid)
-}
-
-func (d *Daemon) writePIDFile() error {
-	if d.cfg.Daemon.PIDFile == "" {
-		return nil
-	}
-	return os.WriteFile(d.cfg.Daemon.PIDFile, []byte(fmt.Sprintf("%d", os.Getpid())), 0644)
-}
-
-func (d *Daemon) removePIDFile() {
-	if d.cfg.Daemon.PIDFile != "" {
-		os.Remove(d.cfg.Daemon.PIDFile)
-	}
-}
-
-func (d *Daemon) addrFilePath() string {
-	if d.cfg.Daemon.PIDFile == "" {
-		return ""
-	}
-	return filepath.Join(filepath.Dir(d.cfg.Daemon.PIDFile), "daemon.addr")
-}
-
-func (d *Daemon) writeAddrFile() error {
-	path := d.addrFilePath()
-	if path == "" {
-		return nil
-	}
-	return os.WriteFile(path, []byte(d.httpAddr), 0o644)
-}
-
-func (d *Daemon) removeAddrFile() {
-	path := d.addrFilePath()
-	if path != "" {
-		os.Remove(path)
-	}
-}
-
-// detectTier determines the cluster tier for this daemon.
-// Priority: 1) explicit config, 2) Nomad node count, 3) default "solo".
-func (d *Daemon) detectTier(ctx context.Context, primaryOrch orchestrator.OrchestratorAdapter) string {
-	// Explicit config tier takes precedence
-	if d.cfg.Tier != "" {
-		fmt.Fprintf(os.Stderr, "daemon: tier from config: %s\n", d.cfg.Tier)
-		return d.cfg.Tier
-	}
-
-	// Derive from Nomad: count nodes; 1 node → solo, >1 → cluster
-	if lister, ok := primaryOrch.(orchestrator.NodeLister); ok {
-		nodes, err := lister.ListNodes(ctx)
-		if err == nil {
-			if len(nodes) > 1 {
-				fmt.Fprintf(os.Stderr, "daemon: tier auto-detected (%d nodes): cluster\n", len(nodes))
-				return "CLUSTER"
-			}
-			fmt.Fprintf(os.Stderr, "daemon: tier auto-detected (%d nodes): solo\n", len(nodes))
-			return "SOLO"
-		}
-		fmt.Fprintf(os.Stderr, "daemon: tier: failed to list nodes: %v, defaulting to solo\n", err)
-	}
-
-	return "SOLO"
-}
-
-// caddyDetected checks whether a Caddy instance is running on this host
-// by querying the Caddy admin API at http://127.0.0.1:2019/config/.
-// Returns true only when the API responds with HTTP 200.
-func caddyDetected() bool {
-	client := &http.Client{
-		Timeout: 2 * time.Second,
-	}
-	resp, err := client.Get("http://127.0.0.1:2019/config/")
-	if err != nil {
-		return false
-	}
-	defer resp.Body.Close()
-	return resp.StatusCode == http.StatusOK
-}

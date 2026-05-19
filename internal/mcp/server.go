@@ -23,7 +23,7 @@ import (
 )
 
 // ToolHandler is a function that handles a tool call with given params.
-type ToolHandler func(ctx context.Context, params json.RawMessage) (interface{}, error)
+type ToolHandler func(ctx context.Context, params json.RawMessage) (any, error)
 
 // ToolDefinition describes a registered tool for tools/list responses.
 type ToolDefinition struct {
@@ -35,7 +35,7 @@ type ToolDefinition struct {
 // Request is a JSON-RPC 2.0 request.
 type Request struct {
 	JSONRPC string          `json:"jsonrpc"`
-	ID      interface{}     `json:"id"`
+	ID      any             `json:"id"`
 	Method  string          `json:"method"`
 	Params  json.RawMessage `json:"params,omitempty"`
 }
@@ -43,8 +43,8 @@ type Request struct {
 // Response is a JSON-RPC 2.0 response.
 type Response struct {
 	JSONRPC string      `json:"jsonrpc"`
-	ID      interface{} `json:"id"`
-	Result  interface{} `json:"result,omitempty"`
+	ID      any         `json:"id"`
+	Result  any         `json:"result,omitempty"`
 	Error   *RPCError   `json:"error,omitempty"`
 }
 
@@ -274,12 +274,12 @@ func (s *Server) Stop(ctx context.Context) error {
 func (s *Server) handle(ctx context.Context, req Request) {
 	switch req.Method {
 	case "initialize":
-		s.writeResult(req.ID, map[string]interface{}{
+		s.writeResult(req.ID, map[string]any{
 			"protocolVersion": "2024-11-05",
-			"capabilities": map[string]interface{}{
-				"tools": map[string]interface{}{},
+			"capabilities": map[string]any{
+				"tools": map[string]any{},
 			},
-			"serverInfo": map[string]interface{}{
+			"serverInfo": map[string]any{
 				"name":    "mesh",
 				"version": s.version,
 			},
@@ -292,7 +292,7 @@ func (s *Server) handle(ctx context.Context, req Request) {
 			tools = append(tools, def)
 		}
 		s.mu.Unlock()
-		s.writeResult(req.ID, map[string]interface{}{
+		s.writeResult(req.ID, map[string]any{
 			"tools": tools,
 		})
 
@@ -342,8 +342,8 @@ func (s *Server) handleToolCall(ctx context.Context, req Request) {
 	}
 
 	// Wrap result in MCP content format
-	s.writeResult(req.ID, map[string]interface{}{
-		"content": []map[string]interface{}{
+	s.writeResult(req.ID, map[string]any{
+		"content": []map[string]any{
 			{"type": "text", "text": marshalJSON(result)},
 		},
 	})
@@ -382,7 +382,7 @@ func (s *Server) validateAuth() error {
 }
 
 // writeResult writes a successful JSON-RPC response.
-func (s *Server) writeResult(id interface{}, result interface{}) {
+func (s *Server) writeResult(id any, result any) {
 	s.writeResponse(Response{
 		JSONRPC: "2.0",
 		ID:      id,
@@ -391,7 +391,7 @@ func (s *Server) writeResult(id interface{}, result interface{}) {
 }
 
 // writeError writes an error JSON-RPC response.
-func (s *Server) writeError(id interface{}, code int, message string) {
+func (s *Server) writeError(id any, code int, message string) {
 	s.writeResponse(Response{
 		JSONRPC: "2.0",
 		ID:      id,
@@ -409,7 +409,7 @@ func (s *Server) writeResponse(resp Response) {
 }
 
 // marshalJSON converts a value to JSON string, returning "{}" on error.
-func marshalJSON(v interface{}) string {
+func marshalJSON(v any) string {
 	data, err := json.Marshal(v)
 	if err != nil {
 		return "{}"

@@ -148,19 +148,19 @@ func TestStructTagsAlignWithSchema(t *testing.T) {
 	if err != nil {
 		t.Skipf("read schema: %v (expected when running outside full workspace)", err)
 	}
-	var schema map[string]interface{}
+	var schema map[string]any
 	if err := json.Unmarshal(schemaRaw, &schema); err != nil {
 		t.Fatalf("parse schema: %v", err)
 	}
 
-	props, ok := schema["properties"].(map[string]interface{})
+	props, ok := schema["properties"].(map[string]any)
 	if !ok {
 		t.Fatal("schema.properties is not an object")
 	}
 
 	// Map of struct type name → expected top-level schema property
 	structs := []struct {
-		typ            interface{}
+		typ            any
 		schemaProperty string
 	}{
 		{DaemonConfig{}, "daemon"},
@@ -178,24 +178,24 @@ func TestStructTagsAlignWithSchema(t *testing.T) {
 			if !ok {
 				t.Fatalf("schema has no property %q", s.schemaProperty)
 			}
-			propObj, ok := propDef.(map[string]interface{})
+			propObj, ok := propDef.(map[string]any)
 			if !ok {
 				t.Fatalf("schema property %q is not an object", s.schemaProperty)
 			}
 
 			// For "bodies" (array), look at items.properties
-			var nestedProps map[string]interface{}
+			var nestedProps map[string]any
 			if s.schemaProperty == "bodies" {
-				items, ok := propObj["items"].(map[string]interface{})
+				items, ok := propObj["items"].(map[string]any)
 				if !ok {
 					t.Fatal("schema.bodies.items is not an object")
 				}
-				nestedProps, ok = items["properties"].(map[string]interface{})
+				nestedProps, ok = items["properties"].(map[string]any)
 				if !ok {
 					t.Fatal("schema.bodies.items.properties is not an object")
 				}
 			} else {
-				nestedProps, ok = propObj["properties"].(map[string]interface{})
+				nestedProps, ok = propObj["properties"].(map[string]any)
 				if !ok {
 					t.Fatalf("schema.%s.properties is not an object", s.schemaProperty)
 				}
