@@ -509,13 +509,13 @@ func TestSchemaMigrationV1ToV2(t *testing.T) {
 		t.Errorf("v1 body cluster_id = %q, want empty string (NULL)", b.ClusterID)
 	}
 
-	// Verify schema version is now 3 (v1→v2→v3)
+	// Verify schema version is now 4 (v1→v2→v3→v4)
 	version, err := s.GetConfig(ctx, "schema_version")
 	if err != nil {
 		t.Fatalf("GetConfig schema_version: %v", err)
 	}
-	if version != "3" {
-		t.Errorf("schema_version = %q, want 3", version)
+	if version != "4" {
+		t.Errorf("schema_version = %q, want 4", version)
 	}
 
 	// Verify new bodies can be created with substrate

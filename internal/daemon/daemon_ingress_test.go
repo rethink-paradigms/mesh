@@ -74,6 +74,12 @@ func TestDaemon_IngressAdapter_NoopDefault(t *testing.T) {
 }
 
 func TestDaemon_IngressAdapter_CaddyConfigured(t *testing.T) {
+	// Start a fake Caddy admin API so caddyDetected() returns true.
+	srv := startCaddyTestServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
 	cfg := testConfig(t)
 	cfg.Ingress.Adapter = "caddy"
 	cfg.Ingress.AdminURL = "http://127.0.0.1:2099"
@@ -192,6 +198,12 @@ func TestDaemon_IngressAdapter_UnknownAdapter(t *testing.T) {
 // Regression test for ME-003: installer must receive the real ingress adapter,
 // not a fresh NoopAdapter instance.
 func TestDaemon_InstallerWiresRealIngressAdapter(t *testing.T) {
+	// Start a fake Caddy admin API so caddyDetected() returns true.
+	srv := startCaddyTestServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
 	agentsDir := filepath.Join(t.TempDir(), "agents")
 	if err := os.MkdirAll(agentsDir, 0755); err != nil {
 		t.Fatalf("mkdir agents: %v", err)

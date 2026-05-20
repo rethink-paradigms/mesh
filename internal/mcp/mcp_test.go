@@ -27,6 +27,7 @@ type mockOrchAdapter struct {
 	handle      orchestrator.Handle
 	status      orchestrator.BodyStatus
 	execOutputs map[string]orchestrator.ExecResult
+	substrate   string
 }
 
 func (m *mockOrchAdapter) ScheduleBody(_ context.Context, _ orchestrator.BodySpec) (orchestrator.Handle, error) {
@@ -44,7 +45,12 @@ func (m *mockOrchAdapter) GetBodyStatus(_ context.Context, _ orchestrator.Handle
 	}
 	return orchestrator.BodyStatus{State: orchestrator.StateRunning}, nil
 }
-func (m *mockOrchAdapter) Name() string                     { return "mock" }
+func (m *mockOrchAdapter) Name() string {
+	if m.substrate != "" {
+		return m.substrate
+	}
+	return "mock"
+}
 func (m *mockOrchAdapter) IsHealthy(_ context.Context) bool { return true }
 
 func (m *mockOrchAdapter) ExportFilesystem(_ context.Context, _ orchestrator.Handle) (io.ReadCloser, error) {
@@ -806,7 +812,8 @@ func TestDeleteBodyNoBodyManager(t *testing.T) {
 
 func TestMigrateBody(t *testing.T) {
 	s := tempStore(t)
-	bm := testBodyManager(t, s)
+	ma := &mockOrchAdapter{substrate: "local"}
+	bm := body.NewBodyManager(s, ma, "")
 	mig := testMigrator(t, s, bm)
 
 	ctx := context.Background()

@@ -181,9 +181,11 @@ func TestDaemonInstallerNotConfigured(t *testing.T) {
 		t.Fatal("daemon never became ready")
 	}
 
-	if d.installer != nil {
+	// Installer is always created so the install_agent MCP tool works,
+	// even when agents_dir is not configured (inline descriptors).
+	if d.installer == nil {
 		cancel()
-		t.Fatal("installer should be nil when agents_dir is empty")
+		t.Fatal("installer should be initialized even when agents_dir is empty")
 	}
 
 	cancel()

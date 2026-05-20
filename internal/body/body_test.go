@@ -37,7 +37,8 @@ type mockOrchAdapter struct {
 
 func newMockOrchAdapter() *mockOrchAdapter {
 	return &mockOrchAdapter{
-		statuses: make(map[string]orchestrator.BodyStatus),
+		statuses:  make(map[string]orchestrator.BodyStatus),
+		substrate: "local",
 	}
 }
 
@@ -1281,7 +1282,7 @@ func TestMigrationSameMachineIgnoresRegistry(t *testing.T) {
 		Image:   "alpine:latest",
 		Workdir: "/app",
 	}
-	ma.substrate = "docker"
+	ma.substrate = "local"
 	bm := NewBodyManager(s, ma, "")
 	ctx := context.Background()
 
@@ -1301,7 +1302,7 @@ func TestMigrationSameMachineIgnoresRegistry(t *testing.T) {
 	pushedCount := len(reg.pushed)
 	reg.mu.Unlock()
 	if pushedCount != 0 {
-		t.Errorf("pushed snapshots = %d, want 0 (same-machine should not use registry)", pushedCount)
+		t.Errorf("pushed snapshots = %d, want 0 (same-substrate should not use registry)", pushedCount)
 	}
 }
 
