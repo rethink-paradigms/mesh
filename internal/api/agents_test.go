@@ -10,6 +10,7 @@ import (
 
 	"github.com/rethink-paradigms/mesh/internal/agent"
 	"github.com/rethink-paradigms/mesh/internal/body"
+	"github.com/rethink-paradigms/mesh/internal/ingress"
 	"github.com/rethink-paradigms/mesh/internal/service"
 )
 
@@ -29,6 +30,10 @@ func (m *mockInstaller) Uninstall(ctx context.Context, agentName string) error {
 	if m.uninstallFunc != nil {
 		return m.uninstallFunc(ctx, agentName)
 	}
+	return nil
+}
+
+func (m *mockInstaller) IngressAdapter() ingress.IngressAdapter {
 	return nil
 }
 

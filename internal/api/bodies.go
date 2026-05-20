@@ -236,6 +236,52 @@ func (h *Handler) DestroyBody(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// @Summary Bulk destroy bodies
+// @Description Permanently destroys multiple agent bodies and their associated resources.
+// @Tags bodies
+// @Security BearerAuth
+// @Param body body BulkDestroyBodiesRequest true "Bulk destroy request"
+// @Success 200 {object} BulkDestroyBodiesResponse
+// @Failure 400 {object} ErrorResponse
+// @Failure 401 {object} ErrorResponse
+// @Failure 500 {object} ErrorResponse
+// @Router /api/v1/bodies [delete]
+func (h *Handler) BulkDestroyBodies(w http.ResponseWriter, r *http.Request) {
+	var req BulkDestroyBodiesRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		WriteError(w, ErrCodeBadRequest, fmt.Sprintf("decode request: %v", err), http.StatusBadRequest)
+		return
+	}
+
+	if len(req.IDs) == 0 {
+		WriteError(w, ErrCodeBadRequest, "no body IDs provided", http.StatusBadRequest)
+		return
+	}
+
+	clusterID := ClusterIDFromContext(r.Context())
+
+	var resp BulkDestroyBodiesResponse
+	for _, id := range req.IDs {
+		var err error
+		if clusterID != "" {
+			err = h.cfg.BodyService.DestroyByCluster(r.Context(), id, clusterID)
+		} else {
+			err = h.cfg.BodyService.Destroy(r.Context(), id)
+		}
+		if err != nil {
+			resp.Failed++
+			resp.Failures = append(resp.Failures, BulkDestroyFailure{
+				ID:    id,
+				Error: err.Error(),
+			})
+		} else {
+			resp.Destroyed++
+		}
+	}
+
+	WriteJSON(w, http.StatusOK, resp)
+}
+
 func bodyToResponse(b *body.Body, status orchestrator.BodyStatus) BodyResponse {
 	resp := BodyResponse{
 		ID:        b.ID,
@@ -266,6 +312,15 @@ func bodyToResponse(b *body.Body, status orchestrator.BodyStatus) BodyResponse {
 }
 
 func requestToSpec(req CreateBodyRequest) orchestrator.BodySpec {
+	ports := make([]orchestrator.BodyPort, len(req.Ports))
+	for i, p := range req.Ports {
+		ports[i] = orchestrator.BodyPort{
+			Name:          p.Name,
+			ContainerPort: p.ContainerPort,
+			Protocol:      p.Protocol,
+			Expose:        p.Expose,
+		}
+	}
 	return orchestrator.BodySpec{
 		Image:     req.Image,
 		Workdir:   "/workspace",
@@ -273,5 +328,6 @@ func requestToSpec(req CreateBodyRequest) orchestrator.BodySpec {
 		Cmd:       req.Command,
 		MemoryMB:  req.Resources.MemoryMB,
 		CPUShares: req.Resources.CPUMHZ,
+		Ports:     ports,
 	}
 }

@@ -42,7 +42,7 @@ func NewInstaller(bodyMgr *body.BodyManager, ing ingress.IngressAdapter, orchReg
 }
 
 // Install installs an agent from a descriptor.
-// Flow: resolve descriptor → validate env → create body → allocate ports → start → health check → create routes.
+// Flow: resolve descriptor → validate env → allocate ports → create body → routes → health check.
 func (i *Installer) Install(ctx context.Context, agentType, name string, env map[string]string, descriptorYAML string) (*InstallResult, error) {
 	// 1. Resolve descriptor
 	var descriptor *Descriptor
@@ -87,12 +87,31 @@ func (i *Installer) Install(ctx context.Context, agentType, name string, env map
 		mergedEnv[k] = v
 	}
 
-	// 5. Build BodySpec from descriptor
+	// 5. Allocate ports from ingress pool BEFORE building body spec.
+	// This ensures HostPort is set on BodyPort so Docker binds to the correct port,
+	// not a random dynamic port.
+	allocatedPorts := make(map[string]int)
+	if i.ingress != nil {
+		for _, p := range descriptor.Ports {
+			if !p.Expose {
+				continue
+			}
+			hostPort, err := i.ingress.AllocPort(ctx, p.ContainerPort)
+			if err != nil {
+				// Best effort: log and continue
+				continue
+			}
+			allocatedPorts[p.Name] = hostPort
+		}
+	}
+
+	// 6. Build BodySpec from descriptor (with HostPort set from allocation)
 	ports := make([]orchestrator.BodyPort, len(descriptor.Ports))
 	for i, p := range descriptor.Ports {
 		ports[i] = orchestrator.BodyPort{
 			Name:          p.Name,
 			ContainerPort: p.ContainerPort,
+			HostPort:      allocatedPorts[p.Name],
 			Protocol:      p.Protocol,
 			Expose:        p.Expose,
 		}
@@ -108,29 +127,23 @@ func (i *Installer) Install(ctx context.Context, agentType, name string, env map
 		Ports:     ports,
 	}
 
-	// 6. Create body
+	// 7. Create body (Docker creates container with correct HostPort now)
 	b, err := i.bodyMgr.Create(ctx, name, spec)
 	if err != nil {
 		return nil, fmt.Errorf("create body: %w", err)
 	}
 
-	// 7. Allocate ports for exposed ports
-	allocatedPorts := make(map[string]int)
+	// 8. Build access URLs and create ingress routes from allocated ports
 	var accessURLs []string
-
 	if i.ingress != nil {
 		for _, p := range descriptor.Ports {
 			if !p.Expose {
 				continue
 			}
-			hostPort, err := i.ingress.AllocPort(ctx, p.ContainerPort)
-			if err != nil {
-				// Best effort: log and continue
+			hostPort, ok := allocatedPorts[p.Name]
+			if !ok {
 				continue
 			}
-			allocatedPorts[p.Name] = hostPort
-
-			// 8. Create ingress route
 			url := i.ingress.BuildURL(name, hostPort)
 			if url != "" {
 				accessURLs = append(accessURLs, url)

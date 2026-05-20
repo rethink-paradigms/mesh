@@ -78,6 +78,39 @@ func TestCaddyAdapterPoolExhaustion(t *testing.T) {
 	}
 }
 
+func TestPortPoolReserve(t *testing.T) {
+	pool := NewPortPool(9000, 9002)
+
+	// Reserve a valid port
+	if err := pool.Reserve(9001); err != nil {
+		t.Fatalf("Reserve(9001): %v", err)
+	}
+
+	// Alloc should skip reserved port
+	port, err := pool.Alloc()
+	if err != nil {
+		t.Fatalf("Alloc: %v", err)
+	}
+	if port == 9001 {
+		t.Fatal("Alloc returned reserved port 9001")
+	}
+
+	// Reserve already-allocated port should fail
+	if err := pool.Reserve(port); err == nil {
+		t.Fatal("expected error reserving already-allocated port, got nil")
+	}
+
+	// Reserve out-of-range port should fail
+	if err := pool.Reserve(9999); err == nil {
+		t.Fatal("expected error reserving out-of-range port, got nil")
+	}
+
+	// Reserve already-reserved port should fail
+	if err := pool.Reserve(9001); err == nil {
+		t.Fatal("expected error reserving already-reserved port, got nil")
+	}
+}
+
 func TestCaddyAdapterPortPoolStats(t *testing.T) {
 	ca := NewCaddyAdapter(CaddyConfig{
 		PortPoolStart: 9000,

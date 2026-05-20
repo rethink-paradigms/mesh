@@ -11,7 +11,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/rethink-paradigms/mesh/internal/agent"
 	"github.com/rethink-paradigms/mesh/internal/api"
 	"github.com/rethink-paradigms/mesh/internal/body"
 	"github.com/rethink-paradigms/mesh/internal/ingress"
@@ -71,7 +70,7 @@ type Server struct {
 	pluginMgr    *plugin.PluginManager
 	orchRegistry *orchestrator.Registry
 	svc          *service.BodyService
-	installer    *agent.Installer
+	installer    api.Installer
 
 	version      string
 	tier         string
@@ -146,7 +145,7 @@ func (s *Server) SetStartedAt(t time.Time) {
 	s.startedAt = t
 }
 
-func (s *Server) SetInstaller(i *agent.Installer) {
+func (s *Server) SetInstaller(i api.Installer) {
 	s.installer = i
 }
 

@@ -75,6 +75,7 @@ func (bm *BodyManager) Create(ctx context.Context, name string, spec orchestrato
 		Cmd:       spec.Cmd,
 		MemoryMB:  spec.MemoryMB,
 		CPUShares: spec.CPUShares,
+		Ports:     spec.Ports,
 	}
 	handle, err := bm.orch.ScheduleBody(ctx, orchSpec)
 	if err != nil {
@@ -82,7 +83,7 @@ func (bm *BodyManager) Create(ctx context.Context, name string, spec orchestrato
 	}
 
 	specJSON := specToJSON(spec)
-	if err := bm.store.CreateBodyWithCluster(ctx, id, name, orchestrator.StateCreated, specJSON, "local", string(handle), bm.clusterID); err != nil {
+	if err := bm.store.CreateBodyWithCluster(ctx, id, name, orchestrator.StateCreated, specJSON, bm.orch.Name(), string(handle), bm.clusterID); err != nil {
 		return nil, fmt.Errorf("store create body: %w", err)
 	}
 
@@ -91,7 +92,7 @@ func (bm *BodyManager) Create(ctx context.Context, name string, spec orchestrato
 	b.State = orchestrator.StateCreated
 	b.InstanceID = orchestrator.Handle(handle)
 	b.Spec = spec
-	b.Substrate = "local"
+	b.Substrate = bm.orch.Name()
 
 	if err := bm.transitionPersisted(ctx, b, orchestrator.StateStarting); err != nil {
 		return nil, err
@@ -107,6 +108,19 @@ func (bm *BodyManager) Create(ctx context.Context, name string, spec orchestrato
 	}
 
 	bm.postStart(ctx, b)
+
+	// Persist port allocations so they survive daemon restart
+	// and can warm the port pool on next startup.
+	if len(b.PortAllocations) > 0 {
+		portsJSON, err := json.Marshal(b.PortAllocations)
+		if err == nil {
+			if saveErr := bm.store.UpdateBodyAllocatedPorts(ctx, b.ID, string(portsJSON)); saveErr != nil {
+				slog.Warn("failed to persist port allocations", "body_id", b.ID, "error", saveErr)
+			}
+		} else {
+			slog.Warn("failed to marshal port allocations", "body_id", b.ID, "error", err)
+		}
+	}
 
 	return b, nil
 }
@@ -208,7 +222,7 @@ func (bm *BodyManager) Destroy(ctx context.Context, bodyID string) error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
-	if b.State != orchestrator.StateStopped && b.State != orchestrator.StateError {
+	if b.State != orchestrator.StateStopped && b.State != orchestrator.StateError && b.State != orchestrator.StateExited {
 		return fmt.Errorf("cannot destroy body in state %s (must be Stopped or Error)", b.State)
 	}
 
@@ -216,6 +230,16 @@ func (bm *BodyManager) Destroy(ctx context.Context, bodyID string) error {
 
 	if err := bm.orch.DestroyBody(ctx, orchestrator.Handle(b.InstanceID)); err != nil {
 		return fmt.Errorf("orchestrator destroy body: %w", err)
+	}
+
+	// Free allocated ports before removing body record so the port pool
+	// is available for new bodies immediately.
+	for _, alloc := range b.PortAllocations {
+		if alloc.HostPort > 0 && bm.ingress != nil {
+			if err := bm.ingress.FreePort(alloc.HostPort); err != nil {
+				slog.Warn("free port", "body_id", bodyID, "port", alloc.HostPort, "error", err)
+			}
+		}
 	}
 
 	if err := bm.transitionPersisted(ctx, b, orchestrator.StateDestroyed); err != nil {
@@ -242,7 +266,7 @@ func (bm *BodyManager) DestroyByCluster(ctx context.Context, bodyID, clusterID s
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
-	if b.State != orchestrator.StateStopped && b.State != orchestrator.StateError {
+	if b.State != orchestrator.StateStopped && b.State != orchestrator.StateError && b.State != orchestrator.StateExited {
 		return fmt.Errorf("cannot destroy body in state %s (must be Stopped or Error)", b.State)
 	}
 
@@ -250,6 +274,14 @@ func (bm *BodyManager) DestroyByCluster(ctx context.Context, bodyID, clusterID s
 
 	if err := bm.orch.DestroyBody(ctx, orchestrator.Handle(b.InstanceID)); err != nil {
 		return fmt.Errorf("orchestrator destroy body: %w", err)
+	}
+
+	for _, alloc := range b.PortAllocations {
+		if alloc.HostPort > 0 && bm.ingress != nil {
+			if err := bm.ingress.FreePort(alloc.HostPort); err != nil {
+				slog.Warn("free port", "body_id", bodyID, "port", alloc.HostPort, "error", err)
+			}
+		}
 	}
 
 	if err := bm.store.UpdateBodyStateByCluster(ctx, b.ID, orchestrator.StateDestroyed, clusterID); err != nil {

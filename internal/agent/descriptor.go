@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/rethink-paradigms/mesh/internal/service"
 	"gopkg.in/yaml.v3"
 )
 
@@ -109,10 +110,10 @@ func ValidateEnv(descriptor *Descriptor, provided map[string]string) error {
 
 func validateDescriptor(m *Descriptor) error {
 	if m.Name == "" {
-		return fmt.Errorf("name is required")
+		return &service.ValidationError{Field: "name", Message: "name is required"}
 	}
 	if m.Image == "" {
-		return fmt.Errorf("image is required")
+		return &service.ValidationError{Field: "image", Message: "image is required"}
 	}
 	return nil
 }

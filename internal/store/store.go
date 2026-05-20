@@ -13,15 +13,16 @@ import (
 
 // BodyRecord represents a row in the bodies table.
 type BodyRecord struct {
-	ID         string
-	Name       string
-	State      orchestrator.BodyState
-	SpecJSON   string
-	Substrate  string
-	InstanceID string
-	ClusterID  string
-	CreatedAt  string
-	UpdatedAt  string
+	ID                 string
+	Name               string
+	State              orchestrator.BodyState
+	SpecJSON           string
+	Substrate          string
+	InstanceID         string
+	ClusterID          string
+	AllocatedPortsJSON string
+	CreatedAt          string
+	UpdatedAt          string
 }
 
 // SnapshotRecord represents a row in the snapshots table.
@@ -146,50 +147,61 @@ func migrate(db *sql.DB) error {
 		return fmt.Errorf("read schema_version: %w", err)
 	}
 
-	if version == "3" {
+	switch version {
+	case "4":
 		return nil // already at latest
-	}
 
-	if version == "" {
+	case "":
 		// Version 0 or missing: create all tables fresh
 		_, err = db.Exec(schemaV1)
 		if err != nil {
 			return fmt.Errorf("apply schema v1: %w", err)
 		}
-		_, err = db.Exec("INSERT OR REPLACE INTO config (key, value) VALUES ('schema_version', '2')")
-		if err != nil {
-			return fmt.Errorf("set schema_version: %w", err)
-		}
-	}
+		version = "2"
+		fallthrough
 
-	if version == "1" {
+	case "1":
 		// v1 → v2: add substrate column with default "docker"
-		_, err = db.Exec(`ALTER TABLE bodies ADD COLUMN substrate TEXT DEFAULT 'docker'`)
-		if err != nil {
-			return fmt.Errorf("migrate v1→v2 add substrate column: %w", err)
+		if version == "1" {
+			_, err = db.Exec(`ALTER TABLE bodies ADD COLUMN substrate TEXT DEFAULT 'docker'`)
+			if err != nil {
+				return fmt.Errorf("migrate v1→v2 add substrate column: %w", err)
+			}
 		}
-		_, err = db.Exec("INSERT OR REPLACE INTO config (key, value) VALUES ('schema_version', '2')")
-		if err != nil {
-			return fmt.Errorf("set schema_version to 2: %w", err)
-		}
-	}
+		version = "2"
+		fallthrough
 
-	// v2 → v3: add cluster_id column to bodies, snapshots, migrations
-	_, err = db.Exec(`ALTER TABLE bodies ADD COLUMN cluster_id TEXT DEFAULT NULL`)
-	if err != nil {
-		return fmt.Errorf("migrate v2→v3 add cluster_id to bodies: %w", err)
-	}
-	_, err = db.Exec(`ALTER TABLE snapshots ADD COLUMN cluster_id TEXT DEFAULT NULL`)
-	if err != nil {
-		return fmt.Errorf("migrate v2→v3 add cluster_id to snapshots: %w", err)
-	}
-	_, err = db.Exec(`ALTER TABLE migrations ADD COLUMN cluster_id TEXT DEFAULT NULL`)
-	if err != nil {
-		return fmt.Errorf("migrate v2→v3 add cluster_id to migrations: %w", err)
-	}
-	_, err = db.Exec("INSERT OR REPLACE INTO config (key, value) VALUES ('schema_version', '3')")
-	if err != nil {
-		return fmt.Errorf("set schema_version to 3: %w", err)
+	case "2":
+		// v2 → v3: add cluster_id column to bodies, snapshots, migrations
+		_, err = db.Exec(`ALTER TABLE bodies ADD COLUMN cluster_id TEXT DEFAULT NULL`)
+		if err != nil {
+			return fmt.Errorf("migrate v2→v3 add cluster_id to bodies: %w", err)
+		}
+		_, err = db.Exec(`ALTER TABLE snapshots ADD COLUMN cluster_id TEXT DEFAULT NULL`)
+		if err != nil {
+			return fmt.Errorf("migrate v2→v3 add cluster_id to snapshots: %w", err)
+		}
+		_, err = db.Exec(`ALTER TABLE migrations ADD COLUMN cluster_id TEXT DEFAULT NULL`)
+		if err != nil {
+			return fmt.Errorf("migrate v2→v3 add cluster_id to migrations: %w", err)
+		}
+		version = "3"
+		fallthrough
+
+	case "3":
+		// v3 → v4: add allocated_ports_json column to bodies
+		_, err = db.Exec(`ALTER TABLE bodies ADD COLUMN allocated_ports_json TEXT DEFAULT ''`)
+		if err != nil {
+			return fmt.Errorf("migrate v3→v4 add allocated_ports_json: %w", err)
+		}
+		version = "4"
+		fallthrough
+
+	default:
+		_, err = db.Exec("INSERT OR REPLACE INTO config (key, value) VALUES ('schema_version', ?)", version)
+		if err != nil {
+			return fmt.Errorf("set schema_version to %s: %w", version, err)
+		}
 	}
 
 	return nil

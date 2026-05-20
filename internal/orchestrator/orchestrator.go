@@ -24,6 +24,7 @@ const (
 	StateStopping  BodyState = "Stopping"
 	StateStopped   BodyState = "Stopped"
 	StateError     BodyState = "Error"
+	StateExited    BodyState = "Exited"
 	StateMigrating BodyState = "Migrating"
 	StateDestroyed BodyState = "Destroyed"
 )
@@ -55,6 +56,7 @@ type BodyStatus struct {
 	MemoryMB   int64
 	CPUPercent float64
 	StartedAt  time.Time
+	ExitCode   int  // container exit code (only meaningful for Stopped/Exited states)
 }
 
 // StopOpts controls how a body is stopped.

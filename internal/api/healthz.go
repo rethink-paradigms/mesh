@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/rethink-paradigms/mesh/internal/orchestrator"
+	"github.com/rethink-paradigms/mesh/internal/version"
 )
 
 // @Summary Health check
@@ -92,6 +93,8 @@ func (h *Handler) Healthz(w http.ResponseWriter, r *http.Request) {
 	WriteJSON(w, http.StatusOK, HealthzResponse{
 		Status:                       status,
 		Version:                      h.cfg.Version,
+		Commit:                       version.Commit,
+		BuildTime:                    version.BuildTime,
 		NomadConnected:               nomadConnected,
 		BodiesCount:                  bodiesCount,
 		NodesCount:                   nodesCount,

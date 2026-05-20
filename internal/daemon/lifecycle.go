@@ -80,6 +80,7 @@ func (d *Daemon) startAPIServer() error {
 		Features:                 d.cfg.Features,
 		Uptime:                   d.startedAt,
 		Installer:                d.installer,
+		AgentVaultToken:          d.cfg.Daemon.AgentVaultToken,
 		GatewayURL:               d.cfg.Daemon.GatewayURL,
 		HeartbeatIntervalSeconds: d.cfg.Daemon.HeartbeatIntervalSeconds,
 		RegistryManager:          d, // Daemon implements api.RegistryManager

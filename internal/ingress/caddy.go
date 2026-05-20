@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"sync"
 	"time"
@@ -55,6 +56,23 @@ func (p *PortPool) Free(port int) error {
 		return fmt.Errorf("port %d not allocated", port)
 	}
 	delete(p.used, port)
+	return nil
+}
+
+// Reserve marks a port as in-use without allocating it.
+// Used on daemon restart to pre-populate the pool from existing port allocations.
+// Returns an error if the port is already reserved or out of range.
+func (p *PortPool) Reserve(port int) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	if port < p.start || port > p.end {
+		return fmt.Errorf("port %d outside pool range (%d-%d)", port, p.start, p.end)
+	}
+	if p.used[port] {
+		return fmt.Errorf("port %d already reserved", port)
+	}
+	p.used[port] = true
 	return nil
 }
 
@@ -181,6 +199,16 @@ func (c *CaddyAdapter) AllocPort(ctx context.Context, containerPort int) (int, e
 
 func (c *CaddyAdapter) FreePort(hostPort int) error {
 	return c.pool.Free(hostPort)
+}
+
+// WarmPorts pre-populates the port pool from existing port allocations.
+// Called on daemon restart to prevent port conflicts with running containers.
+func (c *CaddyAdapter) WarmPorts(ports []int) {
+	for _, port := range ports {
+		if err := c.pool.Reserve(port); err != nil {
+			slog.Warn("warm port pool: skip", "port", port, "reason", err)
+		}
+	}
 }
 
 func (c *CaddyAdapter) AddRoute(ctx context.Context, domain, upstream string, port int) error {

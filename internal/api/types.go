@@ -90,6 +90,24 @@ type ActionResponse struct {
 	State string `json:"state"`
 }
 
+// BulkDestroyBodiesRequest is the request payload for DELETE /api/v1/bodies.
+type BulkDestroyBodiesRequest struct {
+	IDs []string `json:"ids"`
+}
+
+// BulkDestroyBodiesResponse is the response payload for bulk body destroy.
+type BulkDestroyBodiesResponse struct {
+	Destroyed int               `json:"destroyed"`
+	Failed    int               `json:"failed"`
+	Failures  []BulkDestroyFailure `json:"failures,omitempty"`
+}
+
+// BulkDestroyFailure describes a single body that could not be destroyed.
+type BulkDestroyFailure struct {
+	ID    string `json:"id"`
+	Error string `json:"error"`
+}
+
 // NodeResponse is the response payload for a single node.
 // @Description Response payload for a single node
 type NodeResponse struct {
@@ -122,6 +140,8 @@ type ListNodesResponse struct {
 type HealthzResponse struct {
 	Status                       string `json:"status"`
 	Version                      string `json:"version"`
+	Commit                       string `json:"commit"`
+	BuildTime                    string `json:"build_time"`
 	NomadConnected               bool   `json:"nomad_connected"`
 	BodiesCount                  int    `json:"bodies_count"`
 	NodesCount                   int    `json:"nodes_count"`

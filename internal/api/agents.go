@@ -8,12 +8,14 @@ import (
 	"net/http"
 
 	"github.com/rethink-paradigms/mesh/internal/agent"
+	"github.com/rethink-paradigms/mesh/internal/ingress"
 	"github.com/rethink-paradigms/mesh/internal/service"
 )
 
 type Installer interface {
 	Install(ctx context.Context, agentType, name string, env map[string]string, descriptorYAML string) (*agent.InstallResult, error)
 	Uninstall(ctx context.Context, agentName string) error
+	IngressAdapter() ingress.IngressAdapter
 }
 
 // InstallAgentRequest is the request payload for POST /api/v1/agents/install.

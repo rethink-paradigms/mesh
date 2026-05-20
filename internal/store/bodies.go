@@ -41,9 +41,9 @@ func (s *Store) GetBody(ctx context.Context, id string) (*BodyRecord, error) {
 	var b BodyRecord
 	var clusterID sql.NullString
 	err := s.db.QueryRowContext(ctx,
-		`SELECT id, name, state, spec_json, substrate, instance_id, cluster_id, created_at, updated_at
+		`SELECT id, name, state, spec_json, substrate, instance_id, cluster_id, allocated_ports_json, created_at, updated_at
 		 FROM bodies WHERE id = ?`, id,
-	).Scan(&b.ID, &b.Name, &b.State, &b.SpecJSON, &b.Substrate, &b.InstanceID, &clusterID, &b.CreatedAt, &b.UpdatedAt)
+	).Scan(&b.ID, &b.Name, &b.State, &b.SpecJSON, &b.Substrate, &b.InstanceID, &clusterID, &b.AllocatedPortsJSON, &b.CreatedAt, &b.UpdatedAt)
 	b.ClusterID = clusterID.String
 	if err == sql.ErrNoRows {
 		return nil, fmt.Errorf("body %s: not found", id)
@@ -57,7 +57,7 @@ func (s *Store) GetBody(ctx context.Context, id string) (*BodyRecord, error) {
 // ListBodiesBySubstrate returns all body records with the given substrate.
 func (s *Store) ListBodiesBySubstrate(ctx context.Context, substrate string) ([]*BodyRecord, error) {
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT id, name, state, spec_json, substrate, instance_id, cluster_id, created_at, updated_at
+		`SELECT id, name, state, spec_json, substrate, instance_id, cluster_id, allocated_ports_json, created_at, updated_at
 		 FROM bodies WHERE substrate = ? ORDER BY created_at`, substrate)
 	if err != nil {
 		return nil, fmt.Errorf("list bodies by substrate %s: %w", substrate, err)
@@ -68,7 +68,7 @@ func (s *Store) ListBodiesBySubstrate(ctx context.Context, substrate string) ([]
 	for rows.Next() {
 		var b BodyRecord
 		var clusterID sql.NullString
-		if err := rows.Scan(&b.ID, &b.Name, &b.State, &b.SpecJSON, &b.Substrate, &b.InstanceID, &clusterID, &b.CreatedAt, &b.UpdatedAt); err != nil {
+		if err := rows.Scan(&b.ID, &b.Name, &b.State, &b.SpecJSON, &b.Substrate, &b.InstanceID, &clusterID, &b.AllocatedPortsJSON, &b.CreatedAt, &b.UpdatedAt); err != nil {
 			return nil, fmt.Errorf("scan body: %w", err)
 		}
 		b.ClusterID = clusterID.String
@@ -80,7 +80,7 @@ func (s *Store) ListBodiesBySubstrate(ctx context.Context, substrate string) ([]
 // ListBodies returns all body records.
 func (s *Store) ListBodies(ctx context.Context) ([]*BodyRecord, error) {
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT id, name, state, spec_json, substrate, instance_id, cluster_id, created_at, updated_at
+		`SELECT id, name, state, spec_json, substrate, instance_id, cluster_id, allocated_ports_json, created_at, updated_at
 		 FROM bodies ORDER BY created_at`)
 	if err != nil {
 		return nil, fmt.Errorf("list bodies: %w", err)
@@ -91,7 +91,7 @@ func (s *Store) ListBodies(ctx context.Context) ([]*BodyRecord, error) {
 	for rows.Next() {
 		var b BodyRecord
 		var clusterID sql.NullString
-		if err := rows.Scan(&b.ID, &b.Name, &b.State, &b.SpecJSON, &b.Substrate, &b.InstanceID, &clusterID, &b.CreatedAt, &b.UpdatedAt); err != nil {
+		if err := rows.Scan(&b.ID, &b.Name, &b.State, &b.SpecJSON, &b.Substrate, &b.InstanceID, &clusterID, &b.AllocatedPortsJSON, &b.CreatedAt, &b.UpdatedAt); err != nil {
 			return nil, fmt.Errorf("scan body: %w", err)
 		}
 		b.ClusterID = clusterID.String
@@ -105,7 +105,7 @@ func (s *Store) ListBodiesByCluster(ctx context.Context, clusterID string) ([]*B
 		return s.ListBodies(ctx)
 	}
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT id, name, state, spec_json, substrate, instance_id, cluster_id, created_at, updated_at
+		`SELECT id, name, state, spec_json, substrate, instance_id, cluster_id, allocated_ports_json, created_at, updated_at
 		 FROM bodies WHERE cluster_id = ? OR cluster_id IS NULL ORDER BY created_at`, clusterID)
 	if err != nil {
 		return nil, fmt.Errorf("list bodies by cluster %s: %w", clusterID, err)
@@ -116,7 +116,7 @@ func (s *Store) ListBodiesByCluster(ctx context.Context, clusterID string) ([]*B
 	for rows.Next() {
 		var b BodyRecord
 		var cid sql.NullString
-		if err := rows.Scan(&b.ID, &b.Name, &b.State, &b.SpecJSON, &b.Substrate, &b.InstanceID, &cid, &b.CreatedAt, &b.UpdatedAt); err != nil {
+		if err := rows.Scan(&b.ID, &b.Name, &b.State, &b.SpecJSON, &b.Substrate, &b.InstanceID, &cid, &b.AllocatedPortsJSON, &b.CreatedAt, &b.UpdatedAt); err != nil {
 			return nil, fmt.Errorf("scan body: %w", err)
 		}
 		b.ClusterID = cid.String
@@ -132,9 +132,9 @@ func (s *Store) GetBodyByCluster(ctx context.Context, id, clusterID string) (*Bo
 	var b BodyRecord
 	var cid sql.NullString
 	err := s.db.QueryRowContext(ctx,
-		`SELECT id, name, state, spec_json, substrate, instance_id, cluster_id, created_at, updated_at
+		`SELECT id, name, state, spec_json, substrate, instance_id, cluster_id, allocated_ports_json, created_at, updated_at
 		 FROM bodies WHERE id = ? AND (cluster_id = ? OR cluster_id IS NULL)`, id, clusterID,
-	).Scan(&b.ID, &b.Name, &b.State, &b.SpecJSON, &b.Substrate, &b.InstanceID, &cid, &b.CreatedAt, &b.UpdatedAt)
+	).Scan(&b.ID, &b.Name, &b.State, &b.SpecJSON, &b.Substrate, &b.InstanceID, &cid, &b.AllocatedPortsJSON, &b.CreatedAt, &b.UpdatedAt)
 	b.ClusterID = cid.String
 	if err == sql.ErrNoRows {
 		return nil, fmt.Errorf("body %s: not found", id)
@@ -290,6 +290,26 @@ func (s *Store) UpdateBodySubstrate(ctx context.Context, id, substrate string) e
 	)
 	if err != nil {
 		return fmt.Errorf("update body substrate %s: %w", id, err)
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		return fmt.Errorf("body %s: not found", id)
+	}
+	return nil
+}
+
+// UpdateBodyAllocatedPorts persists the allocated ports JSON for a body.
+// Used to warm the port pool on daemon restart.
+func (s *Store) UpdateBodyAllocatedPorts(ctx context.Context, id, portsJSON string) error {
+	unlock := s.bodyLock(id)
+	defer unlock.Unlock()
+
+	res, err := s.db.ExecContext(ctx,
+		`UPDATE bodies SET allocated_ports_json = ?, updated_at = ? WHERE id = ?`,
+		portsJSON, now(), id,
+	)
+	if err != nil {
+		return fmt.Errorf("update body allocated_ports %s: %w", id, err)
 	}
 	n, _ := res.RowsAffected()
 	if n == 0 {

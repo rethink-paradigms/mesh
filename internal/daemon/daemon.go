@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"net"
@@ -14,6 +15,7 @@ import (
 	"time"
 
 	"github.com/rethink-paradigms/mesh/internal/agent"
+	"github.com/rethink-paradigms/mesh/internal/api"
 	"github.com/rethink-paradigms/mesh/internal/body"
 	"github.com/rethink-paradigms/mesh/internal/config"
 	"github.com/rethink-paradigms/mesh/internal/docker"
@@ -35,7 +37,7 @@ type Daemon struct {
 	bodyMgr      *body.BodyManager
 	bodySvc      *service.BodyService
 	pluginMgr    *plugin.PluginManager
-	installer    *agent.Installer
+	installer    api.Installer
 	migrator     *body.MigrationCoordinator
 
 	registryMu sync.Mutex
@@ -108,6 +110,12 @@ func (d *Daemon) SetMCP(srv interface{ Stop(context.Context) error }) {
 			ms.SetMigrator(d.migrator)
 		}
 	}
+	// Wire up the agent installer so install_agent MCP tool works
+	if d.installer != nil {
+		if ms, ok := srv.(interface{ SetInstaller(api.Installer) }); ok {
+			ms.SetInstaller(d.installer)
+		}
+	}
 }
 
 func (d *Daemon) SetVersion(v string) {
@@ -130,7 +138,11 @@ func (d *Daemon) Done() <-chan struct{} {
 	return d.done
 }
 
-func (d *Daemon) Start(ctx context.Context) error {
+// wire sets up all daemon dependencies: store, orchestrator adapters,
+// body manager, plugin manager, ingress, and installer.
+// It is called once at startup by Start(). Extracted from Start() to make
+// the dependency graph explicit and testable.
+func (d *Daemon) wire(ctx context.Context) error {
 	if err := d.checkPIDConflict(); err != nil {
 		return fmt.Errorf("daemon: PID conflict: %w", err)
 	}
@@ -147,7 +159,6 @@ func (d *Daemon) Start(ctx context.Context) error {
 	orchRegistry := orchestrator.NewRegistry()
 	d.orchRegistry = orchRegistry
 
-	// Docker adapter: read socket_path from orchestrators config
 	dockerCfg := docker.Config{}
 	if dockerSettings, ok := d.cfg.Orchestrators["docker"]; ok {
 		if sp, ok := dockerSettings["socket_path"]; ok {
@@ -162,7 +173,6 @@ func (d *Daemon) Start(ctx context.Context) error {
 	for name, settings := range d.cfg.Orchestrators {
 		switch name {
 		case "docker":
-			// already registered above
 			continue
 		case "nomad":
 			adp := nomad.New(nomad.Config{
@@ -186,15 +196,12 @@ func (d *Daemon) Start(ctx context.Context) error {
 		primaryOrch = dockerAdp
 	}
 
-	// Determine tier: explicit config wins, otherwise derive from Nomad node count
 	d.tier = d.detectTier(ctx, primaryOrch)
 
 	d.bodyMgr = body.NewBodyManager(d.store, primaryOrch, d.cfg.Daemon.ClusterID)
 	d.bodySvc = service.NewBodyService(d.bodyMgr, d.store, d.orchRegistry)
 
-	// Create migration coordinator (registry starts nil — hot-swapped later)
 	d.migrator = body.NewMigrationCoordinator(d.store, d.bodyMgr, d.orchRegistry, nil)
-	// Restore any previously persisted S3 registry config
 	d.restoreRegistryConfig(ctx)
 
 	pm := plugin.NewPluginManager(d.cfg.Plugin.Dir, d.cfg.Plugin.Enabled)
@@ -208,31 +215,41 @@ func (d *Daemon) Start(ctx context.Context) error {
 		return fmt.Errorf("daemon: reconcile: %w", err)
 	}
 
-	// Auto-detect Caddy ingress adapter when not explicitly configured
+	caddyOnSystem := caddyDetected()
 	if d.cfg.Ingress.Adapter == "" || d.cfg.Ingress.Adapter == "noop" {
-		if caddyDetected() {
+		if caddyOnSystem {
 			if d.cfg.Ingress.AdminURL == "" {
 				d.cfg.Ingress.AdminURL = "http://127.0.0.1:2019"
 			}
 			d.cfg.Ingress.Adapter = "caddy"
 			slog.Info("caddy detected, using caddy ingress adapter", "admin_url", d.cfg.Ingress.AdminURL)
 		}
+	} else if d.cfg.Ingress.Adapter == "caddy" && !caddyOnSystem {
+		slog.Warn("caddy configured but not installed, falling back to noop ingress adapter")
+		d.cfg.Ingress.Adapter = "noop"
 	}
 
-	// Create ingress adapter early so both installer and API server share it
 	d.ingress = d.createIngressAdapter()
+	d.bodyMgr.SetIngress(d.ingress)
 
-	// Wire agent installer from agents directory
+	// Warm the port pool from existing body allocations so restarts don't
+	// conflict with ports already bound by running Docker containers.
+	d.warmPortPool(ctx)
+
 	if d.cfg.AgentsDir != "" {
 		descriptors, err := agent.LoadDescriptors(d.cfg.AgentsDir)
 		if err != nil {
 			slog.Warn("load agent descriptors", "dir", d.cfg.AgentsDir, "error", err)
-			// Not fatal — daemon can operate without agent installer
-		} else if len(descriptors) > 0 {
-			d.installer = agent.NewInstaller(d.bodyMgr, d.ingress, d.orchRegistry, descriptors)
-		} else {
-			slog.Info("no agent descriptors found", "dir", d.cfg.AgentsDir)
 		}
+		d.installer = agent.NewInstaller(d.bodyMgr, d.ingress, d.orchRegistry, descriptors)
+	}
+
+	return nil
+}
+
+func (d *Daemon) Start(ctx context.Context) error {
+	if err := d.wire(ctx); err != nil {
+		return err
 	}
 
 	if err := d.writePIDFile(); err != nil {
@@ -341,6 +358,9 @@ func (d *Daemon) Start(ctx context.Context) error {
 	d.ready = true
 	d.mu.Unlock()
 
+	// Start background reconciler to sync Docker container state back to store.
+	go d.reconcileLoop(ctx)
+
 	select {
 	case sig := <-d.sigs:
 		slog.Info("received signal, shutting down", "signal", sig)
@@ -350,6 +370,44 @@ func (d *Daemon) Start(ctx context.Context) error {
 	stopCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	return d.Stop(stopCtx)
+}
+
+// warmPortPool pre-populates the port pool from persisted body port allocations.
+// This prevents port conflicts after a daemon restart when Docker containers
+// are still running with ports bound.
+func (d *Daemon) warmPortPool(ctx context.Context) {
+	warmable, ok := d.ingress.(interface{ WarmPorts([]int) })
+	if !ok {
+		return // only adapters with an in-memory port pool need warming
+	}
+
+	bodies, err := d.store.ListBodies(ctx)
+	if err != nil {
+		slog.Warn("warm port pool: list bodies", "error", err)
+		return
+	}
+
+	var ports []int
+	for _, rec := range bodies {
+		if rec.AllocatedPortsJSON == "" {
+			continue
+		}
+		var allocs []body.AllocatedPort
+		if err := json.Unmarshal([]byte(rec.AllocatedPortsJSON), &allocs); err != nil {
+			slog.Warn("warm port pool: parse allocations", "body_id", rec.ID, "error", err)
+			continue
+		}
+		for _, alloc := range allocs {
+			if alloc.HostPort > 0 {
+				ports = append(ports, alloc.HostPort)
+			}
+		}
+	}
+
+	if len(ports) > 0 {
+		warmable.WarmPorts(ports)
+		slog.Info("warmed port pool from existing bodies", "ports", len(ports), "bodies", len(bodies))
+	}
 }
 
 func (d *Daemon) PluginManager() *plugin.PluginManager {

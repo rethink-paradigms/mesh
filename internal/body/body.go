@@ -9,11 +9,11 @@ import (
 )
 
 type AllocatedPort struct {
-	Name          string
-	ContainerPort int
-	HostPort      int
-	Protocol      string
-	AccessURL     string
+	Name          string `json:"name"`
+	ContainerPort int    `json:"container_port"`
+	HostPort      int    `json:"host_port"`
+	Protocol      string `json:"protocol"`
+	AccessURL     string `json:"access_url,omitempty"`
 }
 
 type Body struct {
@@ -30,10 +30,11 @@ type Body struct {
 var validTransitions = map[orchestrator.BodyState][]orchestrator.BodyState{
 	orchestrator.StateCreated:   {orchestrator.StateStarting, orchestrator.StateError},
 	orchestrator.StateStarting:  {orchestrator.StateRunning, orchestrator.StateError},
-	orchestrator.StateRunning:   {orchestrator.StateStopping, orchestrator.StateMigrating, orchestrator.StateError, orchestrator.StateRunning},
+	orchestrator.StateRunning:   {orchestrator.StateStopping, orchestrator.StateMigrating, orchestrator.StateError, orchestrator.StateRunning, orchestrator.StateExited},
 	orchestrator.StateStopping:  {orchestrator.StateStopped, orchestrator.StateError},
 	orchestrator.StateStopped:   {orchestrator.StateStarting, orchestrator.StateDestroyed},
 	orchestrator.StateError:     {orchestrator.StateStarting, orchestrator.StateDestroyed, orchestrator.StateMigrating},
+	orchestrator.StateExited:    {orchestrator.StateStarting, orchestrator.StateDestroyed, orchestrator.StateStopped},
 	orchestrator.StateMigrating: {orchestrator.StateRunning, orchestrator.StateError},
 	orchestrator.StateDestroyed: {},
 }

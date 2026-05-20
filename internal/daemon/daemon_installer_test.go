@@ -98,9 +98,11 @@ func TestDaemonInstallerNoManifests(t *testing.T) {
 		t.Fatal("daemon never became ready")
 	}
 
-	if d.installer != nil {
+	// Installer should be created even without descriptor files —
+	// it handles inline descriptor YAML from API requests.
+	if d.installer == nil {
 		cancel()
-		t.Fatal("installer should be nil when no descriptors are present")
+		t.Fatal("installer should be initialized when agents_dir is configured, even with no descriptors")
 	}
 
 	cancel()
@@ -138,9 +140,11 @@ func TestDaemonInstallerNonexistentDir(t *testing.T) {
 		t.Fatal("daemon never became ready")
 	}
 
-	if d.installer != nil {
+	// Installer should still be created even when LoadDescriptors fails —
+	// inline descriptor YAML from API requests does not depend on disk files.
+	if d.installer == nil {
 		cancel()
-		t.Fatal("installer should be nil when agents dir does not exist")
+		t.Fatal("installer should be initialized when agents_dir is configured, even if the dir is unreadable")
 	}
 
 	cancel()

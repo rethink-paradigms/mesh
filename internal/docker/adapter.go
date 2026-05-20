@@ -1,6 +1,7 @@
 package docker
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -126,7 +127,50 @@ func (a *Adapter) doRequest(ctx context.Context, method, url string, body io.Rea
 	return resp, nil
 }
 
+// pullImage pulls a Docker image before creating a container.
+// Uses Docker Engine API: POST /images/create?fromImage=<name>&tag=<tag>
+func (a *Adapter) pullImage(ctx context.Context, image string) error {
+	parts := strings.SplitN(image, ":", 2)
+	fromImage := parts[0]
+	tag := "latest"
+	if len(parts) == 2 && parts[1] != "" {
+		tag = parts[1]
+	}
+
+	url := a.apiURL(fmt.Sprintf("/images/create?fromImage=%s&tag=%s", fromImage, tag))
+	resp, err := a.doRequest(ctx, "POST", url, nil)
+	if err != nil {
+		return fmt.Errorf("pull %s:%s: %w", fromImage, tag, err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode >= 400 {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("pull %s:%s: status %d: %s", fromImage, tag, resp.StatusCode, string(body))
+	}
+
+	// Drain the NDJSON response stream. Each line is a JSON object with
+	// optional "error" field. Accumulate any errors found.
+	scanner := bufio.NewScanner(resp.Body)
+	// Increase buffer for large progress messages
+	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
+	for scanner.Scan() {
+		var msg struct {
+			Error string `json:"error"`
+		}
+		if err := json.Unmarshal(scanner.Bytes(), &msg); err == nil && msg.Error != "" {
+			return fmt.Errorf("pull %s:%s: %s", fromImage, tag, msg.Error)
+		}
+	}
+	return nil
+}
+
 func (a *Adapter) ScheduleBody(ctx context.Context, spec orchestrator.BodySpec) (orchestrator.Handle, error) {
+	// Pull image first so we never fail with "No such image"
+	if err := a.pullImage(ctx, spec.Image); err != nil {
+		return "", fmt.Errorf("docker: pull image: %w", err)
+	}
+
 	bodyUUID := uuid.New().String()
 	containerName := "mesh-" + bodyUUID
 
@@ -299,6 +343,7 @@ func (a *Adapter) GetBodyStatus(ctx context.Context, id orchestrator.Handle) (or
 	status := orchestrator.BodyStatus{
 		State:    mapDockerState(inspect.State.Status),
 		MemoryMB: inspect.HostConfig.Memory / (1024 * 1024),
+		ExitCode: inspect.State.ExitCode,
 	}
 
 	if inspect.State.Running && !inspect.State.StartedAt.IsZero() {

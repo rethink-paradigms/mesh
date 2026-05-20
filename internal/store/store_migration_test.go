@@ -11,7 +11,8 @@ import (
 )
 
 // TestStore_MigrationV2toV3 creates a v2 database, opens it through the
-// migration chain, and verifies the cluster_id columns exist on all tables.
+// migration chain, and verifies the cluster_id and allocated_ports_json
+// columns exist on all tables.
 func TestStore_MigrationV2toV3(t *testing.T) {
 	f, err := os.CreateTemp("", "mesh-store-v2-*.db")
 	if err != nil {
@@ -97,8 +98,8 @@ func TestStore_MigrationV2toV3(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetConfig schema_version: %v", err)
 	}
-	if version != "3" {
-		t.Errorf("schema_version = %q, want 3", version)
+	if version != "4" {
+		t.Errorf("schema_version = %q, want 4", version)
 	}
 
 	// Verify the migrated body has cluster_id = "" (NULL)

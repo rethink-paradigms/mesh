@@ -46,6 +46,7 @@ type RouterConfig struct {
 	Uptime                   time.Time // daemon start time, used for uptime calculation
 	Installer                Installer
 	JWTValidator             *JWTValidator
+	AgentVaultToken          string
 	GatewayURL               string
 	HeartbeatIntervalSeconds int
 	RegistryManager          RegistryManager // hot-swappable S3 registry (optional)
@@ -88,6 +89,7 @@ func NewRouter(cfg RouterConfig) http.Handler {
 	apiMux.HandleFunc("GET /api/v1/bodies/{id}", h.GetBody)
 	apiMux.HandleFunc("POST /api/v1/bodies/{id}/stop", h.StopBody)
 	apiMux.HandleFunc("POST /api/v1/bodies/{id}/start", h.StartBody)
+	apiMux.HandleFunc("DELETE /api/v1/bodies", h.BulkDestroyBodies)
 	apiMux.HandleFunc("DELETE /api/v1/bodies/{id}", h.DestroyBody)
 	apiMux.HandleFunc("GET /api/v1/nodes", h.ListNodes)
 	apiMux.HandleFunc("GET /api/v1/capabilities", h.Capabilities)
@@ -95,6 +97,9 @@ func NewRouter(cfg RouterConfig) http.Handler {
 	apiMux.HandleFunc("POST /api/v1/stop", h.StopDaemon)
 	apiMux.HandleFunc("POST /api/v1/agents/install", h.InstallAgent)
 	apiMux.HandleFunc("DELETE /api/v1/agents/{name}", h.UninstallAgent)
+
+	// Vault proxy: forwards to local Agent Vault API (:14321)
+	apiMux.HandleFunc("/api/v1/vault/", vaultProxyHandler(h))
 
 	apiMux.HandleFunc("POST /api/v1/registry/s3", h.configureS3Registry)
 	apiMux.HandleFunc("DELETE /api/v1/registry/s3", h.disconnectS3Registry)
