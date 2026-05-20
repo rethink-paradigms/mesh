@@ -172,7 +172,7 @@ func (i *Installer) IngressAdapter() ingress.IngressAdapter {
 	return i.ingress
 }
 
-// Uninstall uninstalls an agent by name, destroying its body.
+// Uninstall uninstalls an agent by name, stopping it first if running, then destroying its body.
 func (i *Installer) Uninstall(ctx context.Context, agentName string) error {
 	if i.bodyMgr == nil {
 		return fmt.Errorf("body manager not configured")
@@ -183,6 +183,12 @@ func (i *Installer) Uninstall(ctx context.Context, agentName string) error {
 	}
 	for _, b := range bodies {
 		if b.Name == agentName {
+			// Stop first if running — Destroy requires Stopped/Error state
+			if b.State == orchestrator.StateRunning || b.State == orchestrator.StateStarting {
+				if stopErr := i.bodyMgr.Stop(ctx, b.ID, orchestrator.StopOpts{}); stopErr != nil {
+					return fmt.Errorf("stop body before destroy: %w", stopErr)
+				}
+			}
 			return i.bodyMgr.Destroy(ctx, b.ID)
 		}
 	}

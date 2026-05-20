@@ -236,13 +236,15 @@ func (d *Daemon) wire(ctx context.Context) error {
 	// conflict with ports already bound by running Docker containers.
 	d.warmPortPool(ctx)
 
+	var descriptors map[string]*agent.Descriptor
 	if d.cfg.AgentsDir != "" {
-		descriptors, err := agent.LoadDescriptors(d.cfg.AgentsDir)
+		loaded, err := agent.LoadDescriptors(d.cfg.AgentsDir)
 		if err != nil {
 			slog.Warn("load agent descriptors", "dir", d.cfg.AgentsDir, "error", err)
 		}
-		d.installer = agent.NewInstaller(d.bodyMgr, d.ingress, d.orchRegistry, descriptors)
+		descriptors = loaded
 	}
+	d.installer = agent.NewInstaller(d.bodyMgr, d.ingress, d.orchRegistry, descriptors)
 
 	return nil
 }

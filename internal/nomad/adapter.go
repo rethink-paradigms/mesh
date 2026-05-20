@@ -51,6 +51,13 @@ func NewFromEnv() *Adapter {
 	return New(cfg)
 }
 
+func (a *Adapter) namespace() string {
+	if a.config.Namespace != "" {
+		return a.config.Namespace
+	}
+	return "mesh-bodies"
+}
+
 func (a *Adapter) getClient() (*api.Client, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
@@ -105,11 +112,19 @@ func (a *Adapter) ScheduleBody(ctx context.Context, spec orchestrator.BodySpec) 
 					{
 						Name:   "body",
 						Driver: "docker",
-						Config: map[string]any{
-							"image":    spec.Image,
-							"command":  spec.Cmd,
-							"work_dir": spec.Workdir,
-						},
+						Config: func() map[string]any {
+							cfg := map[string]any{
+								"image":    spec.Image,
+								"work_dir": spec.Workdir,
+							}
+							if len(spec.Cmd) > 0 {
+								cfg["command"] = spec.Cmd[0]
+								if len(spec.Cmd) > 1 {
+									cfg["args"] = spec.Cmd[1:]
+								}
+							}
+							return cfg
+						}(),
 						Env: spec.Env,
 						Resources: &api.Resources{
 							CPU:      intToPtr(spec.CPUShares),
@@ -140,7 +155,7 @@ func (a *Adapter) StartBody(ctx context.Context, id orchestrator.Handle) error {
 
 	jobID := string(id)
 	count := 1
-	_, _, err = client.Jobs().Scale(jobID, "mesh", &count, "", false, nil, nil)
+	_, _, err = client.Jobs().Scale(jobID, "mesh", &count, "", false, nil, &api.WriteOptions{Namespace: a.namespace()})
 	if err != nil {
 		return fmt.Errorf("nomad: start job %s: %w", jobID, err)
 	}
@@ -155,7 +170,7 @@ func (a *Adapter) StopBody(ctx context.Context, id orchestrator.Handle) error {
 
 	jobID := string(id)
 	count := 0
-	_, _, err = client.Jobs().Scale(jobID, "mesh", &count, "", false, nil, nil)
+	_, _, err = client.Jobs().Scale(jobID, "mesh", &count, "", false, nil, &api.WriteOptions{Namespace: a.namespace()})
 	if err != nil {
 		return fmt.Errorf("nomad: stop job %s: %w", jobID, err)
 	}
@@ -169,7 +184,7 @@ func (a *Adapter) DestroyBody(ctx context.Context, id orchestrator.Handle) error
 	}
 
 	jobID := string(id)
-	_, _, err = client.Jobs().Deregister(jobID, true, nil)
+	_, _, err = client.Jobs().Deregister(jobID, true, &api.WriteOptions{Namespace: a.namespace()})
 	if err != nil {
 		return fmt.Errorf("nomad: destroy job %s: %w", jobID, err)
 	}
@@ -183,7 +198,7 @@ func (a *Adapter) GetBodyStatus(ctx context.Context, id orchestrator.Handle) (or
 	}
 
 	jobID := string(id)
-	allocs, _, err := client.Jobs().Allocations(jobID, true, nil)
+	allocs, _, err := client.Jobs().Allocations(jobID, true, &api.QueryOptions{Namespace: a.namespace()})
 	if err != nil {
 		return orchestrator.BodyStatus{}, fmt.Errorf("nomad: get allocations for %s: %w", jobID, err)
 	}
@@ -231,7 +246,7 @@ func (a *Adapter) Exec(ctx context.Context, id orchestrator.Handle, cmd []string
 	}
 
 	jobID := string(id)
-	allocs, _, err := client.Jobs().Allocations(jobID, true, nil)
+	allocs, _, err := client.Jobs().Allocations(jobID, true, &api.QueryOptions{Namespace: a.namespace()})
 	if err != nil {
 		return orchestrator.ExecResult{}, fmt.Errorf("nomad: get allocations for %s: %w", jobID, err)
 	}
@@ -344,7 +359,7 @@ func (a *Adapter) Inspect(ctx context.Context, id orchestrator.Handle) (orchestr
 	}
 
 	jobID := string(id)
-	job, _, err := client.Jobs().Info(jobID, nil)
+	job, _, err := client.Jobs().Info(jobID, &api.QueryOptions{Namespace: a.namespace()})
 	if err != nil {
 		return orchestrator.ContainerMetadata{}, fmt.Errorf("nomad: inspect job %s: %w", jobID, err)
 	}
@@ -356,8 +371,11 @@ func (a *Adapter) Inspect(ctx context.Context, id orchestrator.Handle) (orchestr
 			meta.Image = img
 		}
 		meta.Env = task.Env
-		if cmd, ok := task.Config["command"].([]string); ok {
-			meta.Cmd = cmd
+		if cmdStr, ok := task.Config["command"].(string); ok {
+			meta.Cmd = []string{cmdStr}
+			if args, ok := task.Config["args"].([]string); ok {
+				meta.Cmd = append(meta.Cmd, args...)
+			}
 		}
 		if wd, ok := task.Config["work_dir"].(string); ok {
 			meta.Workdir = wd
@@ -411,7 +429,7 @@ func (a *Adapter) GetAllocations(ctx context.Context, jobID string) ([]orchestra
 	if err != nil {
 		return nil, err
 	}
-	allocs, _, err := client.Jobs().Allocations(jobID, false, nil)
+	allocs, _, err := client.Jobs().Allocations(jobID, false, &api.QueryOptions{Namespace: a.namespace()})
 	if err != nil {
 		return nil, fmt.Errorf("nomad: get allocations for %s: %w", jobID, err)
 	}
