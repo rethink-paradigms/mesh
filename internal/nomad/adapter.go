@@ -100,7 +100,7 @@ func (a *Adapter) ScheduleBody(ctx context.Context, spec orchestrator.BodySpec) 
 
 	// Build port mappings from spec
 	var dynPorts []api.Port
-	portMap := make([]map[string]int, 0)
+	portLabels := make([]string, 0)
 	for _, p := range spec.Ports {
 		if !p.Expose {
 			continue
@@ -114,13 +114,12 @@ func (a *Adapter) ScheduleBody(ctx context.Context, spec orchestrator.BodySpec) 
 			Value: p.HostPort,
 			To:    p.ContainerPort,
 		})
-		portMap = append(portMap, map[string]int{label: p.ContainerPort})
+		portLabels = append(portLabels, label)
 	}
 
 	var networks []*api.NetworkResource
 	if len(dynPorts) > 0 {
 		networks = append(networks, &api.NetworkResource{
-			Mode:         "bridge",
 			DynamicPorts: dynPorts,
 		})
 	}
@@ -136,8 +135,8 @@ func (a *Adapter) ScheduleBody(ctx context.Context, spec orchestrator.BodySpec) 
 			dockerConfig["args"] = spec.Cmd[1:]
 		}
 	}
-	if len(portMap) > 0 {
-		dockerConfig["port_map"] = portMap
+	if len(portLabels) > 0 {
+		dockerConfig["ports"] = portLabels
 	}
 
 	job := &api.Job{
