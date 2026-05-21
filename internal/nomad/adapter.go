@@ -98,6 +98,48 @@ func (a *Adapter) ScheduleBody(ctx context.Context, spec orchestrator.BodySpec) 
 		ns = "mesh-bodies"
 	}
 
+	// Build port mappings from spec
+	var dynPorts []api.Port
+	portMap := make([]map[string]int, 0)
+	for _, p := range spec.Ports {
+		if !p.Expose {
+			continue
+		}
+		label := p.Name
+		if label == "" {
+			label = fmt.Sprintf("port-%d", p.ContainerPort)
+		}
+		dynPorts = append(dynPorts, api.Port{
+			Label: label,
+			Value: p.HostPort,
+			To:    p.ContainerPort,
+		})
+		portMap = append(portMap, map[string]int{label: p.ContainerPort})
+	}
+
+	var networks []*api.NetworkResource
+	if len(dynPorts) > 0 {
+		networks = append(networks, &api.NetworkResource{
+			Mode:         "bridge",
+			DynamicPorts: dynPorts,
+		})
+	}
+
+	// Build Docker driver config
+	dockerConfig := map[string]any{
+		"image":    spec.Image,
+		"work_dir": spec.Workdir,
+	}
+	if len(spec.Cmd) > 0 {
+		dockerConfig["command"] = spec.Cmd[0]
+		if len(spec.Cmd) > 1 {
+			dockerConfig["args"] = spec.Cmd[1:]
+		}
+	}
+	if len(portMap) > 0 {
+		dockerConfig["port_map"] = portMap
+	}
+
 	job := &api.Job{
 		ID:          &jobID,
 		Name:        &jobID,
@@ -106,26 +148,15 @@ func (a *Adapter) ScheduleBody(ctx context.Context, spec orchestrator.BodySpec) 
 		Datacenters: []string{"dc1"},
 		TaskGroups: []*api.TaskGroup{
 			{
-				Name:  strPtr("mesh"),
-				Count: intPtr(0),
+				Name:     strPtr("mesh"),
+				Count:    intPtr(0),
+				Networks: networks,
 				Tasks: []*api.Task{
 					{
 						Name:   "body",
 						Driver: "docker",
-						Config: func() map[string]any {
-							cfg := map[string]any{
-								"image":    spec.Image,
-								"work_dir": spec.Workdir,
-							}
-							if len(spec.Cmd) > 0 {
-								cfg["command"] = spec.Cmd[0]
-								if len(spec.Cmd) > 1 {
-									cfg["args"] = spec.Cmd[1:]
-								}
-							}
-							return cfg
-						}(),
-						Env: spec.Env,
+						Config: dockerConfig,
+						Env:    spec.Env,
 						Resources: &api.Resources{
 							CPU:      intToPtr(spec.CPUShares),
 							MemoryMB: intToPtr(spec.MemoryMB),
