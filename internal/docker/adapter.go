@@ -1,6 +1,7 @@
 package docker
 
 import (
+	"archive/tar"
 	"bufio"
 	"bytes"
 	"context"
@@ -10,6 +11,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -241,6 +243,36 @@ func (a *Adapter) ScheduleBody(ctx context.Context, spec orchestrator.BodySpec) 
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 		return "", fmt.Errorf("docker: decode create response: %w", err)
+	}
+
+	// Inject config files into the container before starting.
+	// This solves the volume mount shadow problem (item 9) and config file
+	// injection (item 10) — files written here survive any volume mount
+	// because they're injected into the container's writable layer after
+	// the image is extracted but before the process starts.
+	// Uses Docker archive API: PUT /containers/{id}/archive?path={dir}
+	for path, content := range spec.Files {
+		dir := filepath.Dir(path)
+		name := filepath.Base(path)
+		tarBuf, err := buildSingleFileTar(name, content)
+		if err != nil {
+			return "", fmt.Errorf("docker: build tar for %s: %w", path, err)
+		}
+
+		archiveURL := a.apiURL(fmt.Sprintf("/containers/%s/archive?path=%s", containerName, dir))
+		archiveResp, err := a.doRequest(ctx, "PUT", archiveURL, bytes.NewReader(tarBuf))
+		if err != nil {
+			return "", fmt.Errorf("docker: inject file %s: %w", path, err)
+		}
+		// Drain and close
+		_, _ = io.Copy(io.Discard, archiveResp.Body) //nolint:errcheck
+		archiveResp.Body.Close()                     //nolint:errcheck
+
+		if archiveResp.StatusCode != http.StatusOK && archiveResp.StatusCode != http.StatusNoContent {
+			// Non-fatal: log but continue — the container will still start,
+			// it just may not have the config file.
+			_ = fmt.Errorf("docker: inject file %s: unexpected status %d", path, archiveResp.StatusCode)
+		}
 	}
 
 	return orchestrator.Handle(containerName), nil
@@ -514,6 +546,31 @@ func (a *Adapter) resolveContainerID(ctx context.Context, id orchestrator.Handle
 
 	body, _ := io.ReadAll(resp.Body)
 	return "", fmt.Errorf("docker: resolve container %q: status %d: %s", name, resp.StatusCode, string(body))
+}
+
+// buildSingleFileTar creates a tar archive in memory containing a single file
+// at the root of the archive. Used by the Docker archive API to inject files
+// into a container filesystem before starting it.
+func buildSingleFileTar(name, content string) ([]byte, error) {
+	var buf bytes.Buffer
+	tw := tar.NewWriter(&buf)
+
+	hdr := &tar.Header{
+		Name:     name,
+		Mode:     0644,
+		Size:     int64(len(content)),
+		Typeflag: tar.TypeReg,
+	}
+	if err := tw.WriteHeader(hdr); err != nil {
+		return nil, fmt.Errorf("tar header: %w", err)
+	}
+	if _, err := tw.Write([]byte(content)); err != nil {
+		return nil, fmt.Errorf("tar content: %w", err)
+	}
+	if err := tw.Close(); err != nil {
+		return nil, fmt.Errorf("tar close: %w", err)
+	}
+	return buf.Bytes(), nil
 }
 
 func mapDockerState(status string) orchestrator.BodyState {

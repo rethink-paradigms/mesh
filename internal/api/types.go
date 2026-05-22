@@ -16,6 +16,7 @@ type CreateBodyRequest struct {
 	VolumeMount *VolumeMountSpec  `json:"volume_mount,omitempty"`
 	Command     []string          `json:"command,omitempty"`
 	Env         map[string]string `json:"env,omitempty"`
+	ConfigFiles map[string]string `json:"config_files,omitempty"`
 	Resources   ResourceSpec      `json:"resources,omitempty"`
 	HealthCheck *HealthCheckSpec  `json:"health_check,omitempty"`
 }
@@ -97,8 +98,8 @@ type BulkDestroyBodiesRequest struct {
 
 // BulkDestroyBodiesResponse is the response payload for bulk body destroy.
 type BulkDestroyBodiesResponse struct {
-	Destroyed int               `json:"destroyed"`
-	Failed    int               `json:"failed"`
+	Destroyed int                  `json:"destroyed"`
+	Failed    int                  `json:"failed"`
 	Failures  []BulkDestroyFailure `json:"failures,omitempty"`
 }
 

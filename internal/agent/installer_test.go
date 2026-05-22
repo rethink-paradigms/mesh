@@ -99,7 +99,7 @@ func TestInstallAgent(t *testing.T) {
 	installer.healthPoll = func(context.Context, *Descriptor, string, map[string]int) {}
 	ctx := context.Background()
 
-	result, err := installer.Install(ctx, "test-agent", "my-test", map[string]string{"API_KEY": "secret"}, "")
+	result, err := installer.Install(ctx, "test-agent", "my-test", map[string]string{"API_KEY": "secret"}, nil, "")
 	if err != nil {
 		t.Fatalf("Install: %v", err)
 	}
@@ -136,7 +136,7 @@ func TestInstallAgentMissingEnvVar(t *testing.T) {
 	installer := NewInstaller(bm, nil, nil, manifests)
 	ctx := context.Background()
 
-	_, err := installer.Install(ctx, "test-agent", "my-test", map[string]string{}, "")
+	_, err := installer.Install(ctx, "test-agent", "my-test", map[string]string{}, nil, "")
 	if err == nil {
 		t.Fatal("expected error for missing env var, got nil")
 	}
@@ -164,13 +164,13 @@ func TestInstallAgentDuplicateName(t *testing.T) {
 	ctx := context.Background()
 
 	// First install
-	_, err := installer.Install(ctx, "test-agent", "my-test", map[string]string{"API_KEY": "secret"}, "")
+	_, err := installer.Install(ctx, "test-agent", "my-test", map[string]string{"API_KEY": "secret"}, nil, "")
 	if err != nil {
 		t.Fatalf("first install: %v", err)
 	}
 
 	// Second install with same name
-	_, err = installer.Install(ctx, "test-agent", "my-test", map[string]string{"API_KEY": "secret"}, "")
+	_, err = installer.Install(ctx, "test-agent", "my-test", map[string]string{"API_KEY": "secret"}, nil, "")
 	if err == nil {
 		t.Fatal("expected error for duplicate name, got nil")
 	}
@@ -189,7 +189,7 @@ func TestInstallAgentUnknownType(t *testing.T) {
 	installer := NewInstaller(bm, nil, nil, map[string]*Descriptor{})
 	ctx := context.Background()
 
-	_, err := installer.Install(ctx, "unknown-agent", "my-test", map[string]string{}, "")
+	_, err := installer.Install(ctx, "unknown-agent", "my-test", map[string]string{}, nil, "")
 	if err == nil {
 		t.Fatal("expected error for unknown type, got nil")
 	}
@@ -226,7 +226,7 @@ resources:
   cpu_shares: 128
 `
 
-	result, err := installer.Install(ctx, "inline-agent", "my-inline", map[string]string{"API_KEY": "secret"}, inlineYAML)
+	result, err := installer.Install(ctx, "inline-agent", "my-inline", map[string]string{"API_KEY": "secret"}, nil, inlineYAML)
 	if err != nil {
 		t.Fatalf("Install with inline descriptor: %v", err)
 	}
@@ -253,7 +253,7 @@ name: [broken
 image: test
 `
 
-	_, err := installer.Install(ctx, "anything", "my-test", map[string]string{}, invalidYAML)
+	_, err := installer.Install(ctx, "anything", "my-test", map[string]string{}, nil, invalidYAML)
 	if err == nil {
 		t.Fatal("expected error for invalid inline YAML, got nil")
 	}
@@ -276,7 +276,7 @@ env:
   required: [API_KEY]
 `
 
-	_, err := installer.Install(ctx, "inline-agent", "my-test", map[string]string{}, inlineYAML)
+	_, err := installer.Install(ctx, "inline-agent", "my-test", map[string]string{}, nil, inlineYAML)
 	if err == nil {
 		t.Fatal("expected error for missing env var, got nil")
 	}
@@ -303,7 +303,7 @@ func TestInstallAgentEmptyManifestFallsBackToLocal(t *testing.T) {
 	installer := NewInstaller(bm, nil, nil, manifests)
 	ctx := context.Background()
 
-	_, err := installer.Install(ctx, "test-agent", "my-test", map[string]string{"API_KEY": "secret"}, "")
+	_, err := installer.Install(ctx, "test-agent", "my-test", map[string]string{"API_KEY": "secret"}, nil, "")
 	if err != nil {
 		t.Fatalf("Install with empty descriptor (fallback): %v", err)
 	}
@@ -331,7 +331,7 @@ env:
   required: [API_KEY]
 `
 
-	_, err := installer.Install(ctx, "test-agent", "my-test", map[string]string{"API_KEY": "secret"}, inlineYAML)
+	_, err := installer.Install(ctx, "test-agent", "my-test", map[string]string{"API_KEY": "secret"}, nil, inlineYAML)
 	if err != nil {
 		t.Fatalf("Install with inline descriptor (precedence): %v", err)
 	}

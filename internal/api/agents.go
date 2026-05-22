@@ -13,7 +13,7 @@ import (
 )
 
 type Installer interface {
-	Install(ctx context.Context, agentType, name string, env map[string]string, descriptorYAML string) (*agent.InstallResult, error)
+	Install(ctx context.Context, agentType, name string, env map[string]string, configFiles map[string]string, descriptorYAML string) (*agent.InstallResult, error)
 	Uninstall(ctx context.Context, agentName string) error
 	IngressAdapter() ingress.IngressAdapter
 }
@@ -23,6 +23,7 @@ type InstallAgentRequest struct {
 	AgentType      string            `json:"agent_type"`
 	Name           string            `json:"name"`
 	Env            map[string]string `json:"env,omitempty"`
+	ConfigFiles    map[string]string `json:"config_files,omitempty"`
 	DescriptorYAML string            `json:"descriptor,omitempty"`
 }
 
@@ -59,7 +60,7 @@ func (h *Handler) InstallAgent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	result, err := h.cfg.Installer.Install(r.Context(), req.AgentType, req.Name, req.Env, req.DescriptorYAML)
+	result, err := h.cfg.Installer.Install(r.Context(), req.AgentType, req.Name, req.Env, req.ConfigFiles, req.DescriptorYAML)
 	if err != nil {
 		code, status := mapAgentInstallError(err)
 		WriteError(w, code, fmt.Sprintf("install agent: %v", err), status)

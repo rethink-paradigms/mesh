@@ -12,13 +12,14 @@ import (
 
 // Descriptor describes a built-in agent that can be installed on Mesh.
 type Descriptor struct {
-	Name        string         `yaml:"name"`
-	Image       string         `yaml:"image"`
-	Command     []string       `yaml:"command"`
-	Ports       []PortMapping  `yaml:"ports"`
-	Env         EnvConfig      `yaml:"env"`
-	HealthCheck *HealthCheck   `yaml:"health_check"`
-	Resources   ResourceLimits `yaml:"resources"`
+	Name        string            `yaml:"name"`
+	Image       string            `yaml:"image"`
+	Command     []string          `yaml:"command"`
+	Ports       []PortMapping     `yaml:"ports"`
+	Env         EnvConfig         `yaml:"env"`
+	ConfigFiles map[string]string `yaml:"config_files,omitempty"`
+	HealthCheck *HealthCheck      `yaml:"health_check"`
+	Resources   ResourceLimits    `yaml:"resources"`
 }
 
 // PortMapping describes a single port mapping for an agent descriptor.

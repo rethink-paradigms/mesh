@@ -43,7 +43,7 @@ func NewInstaller(bodyMgr *body.BodyManager, ing ingress.IngressAdapter, orchReg
 
 // Install installs an agent from a descriptor.
 // Flow: resolve descriptor → validate env → allocate ports → create body → routes → health check.
-func (i *Installer) Install(ctx context.Context, agentType, name string, env map[string]string, descriptorYAML string) (*InstallResult, error) {
+func (i *Installer) Install(ctx context.Context, agentType, name string, env map[string]string, configFiles map[string]string, descriptorYAML string) (*InstallResult, error) {
 	// 1. Resolve descriptor
 	var descriptor *Descriptor
 	if descriptorYAML != "" {
@@ -117,10 +117,21 @@ func (i *Installer) Install(ctx context.Context, agentType, name string, env map
 		}
 	}
 
+	// Merge config files from the request (runtime-generated, e.g. Agent Vault proxy)
+	// with static files from the descriptor manifest. Request files take precedence.
+	mergedFiles := make(map[string]string)
+	for k, v := range descriptor.ConfigFiles {
+		mergedFiles[k] = v
+	}
+	for k, v := range configFiles {
+		mergedFiles[k] = v
+	}
+
 	spec := orchestrator.BodySpec{
 		Image:     descriptor.Image,
 		Workdir:   "/workspace",
 		Env:       mergedEnv,
+		Files:     mergedFiles,
 		Cmd:       descriptor.Command,
 		MemoryMB:  descriptor.Resources.MemoryMB,
 		CPUShares: descriptor.Resources.CPUShares,

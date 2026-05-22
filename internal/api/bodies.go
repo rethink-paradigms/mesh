@@ -325,6 +325,7 @@ func requestToSpec(req CreateBodyRequest) orchestrator.BodySpec {
 		Image:     req.Image,
 		Workdir:   "/workspace",
 		Env:       req.Env,
+		Files:     req.ConfigFiles,
 		Cmd:       req.Command,
 		MemoryMB:  req.Resources.MemoryMB,
 		CPUShares: req.Resources.CPUMHZ,

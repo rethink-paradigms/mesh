@@ -43,6 +43,7 @@ type BodySpec struct {
 	Image     string
 	Workdir   string
 	Env       map[string]string
+	Files     map[string]string // container path → file content, injected before start
 	Cmd       []string
 	MemoryMB  int
 	CPUShares int
@@ -56,7 +57,7 @@ type BodyStatus struct {
 	MemoryMB   int64
 	CPUPercent float64
 	StartedAt  time.Time
-	ExitCode   int  // container exit code (only meaningful for Stopped/Exited states)
+	ExitCode   int // container exit code (only meaningful for Stopped/Exited states)
 }
 
 // StopOpts controls how a body is stopped.
