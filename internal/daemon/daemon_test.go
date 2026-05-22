@@ -352,11 +352,11 @@ func TestReconcileStateMismatch(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetBody: %v", err)
 	}
-	if rec.State != orchestrator.StateRunning {
-		t.Fatalf("state = %q, want Running (unchanged, no instance_id)", rec.State)
+	if rec.State != orchestrator.StateError {
+		t.Fatalf("state = %q, want Error (empty instance_id means container is gone)", rec.State)
 	}
-	if d.reconcileSteps != 0 {
-		t.Fatalf("reconcileSteps = %d, want 0", d.reconcileSteps)
+	if d.reconcileSteps != 1 {
+		t.Fatalf("reconcileSteps = %d, want 1", d.reconcileSteps)
 	}
 }
 

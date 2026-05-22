@@ -166,6 +166,35 @@ func (a *Adapter) ScheduleBody(ctx context.Context, spec orchestrator.BodySpec) 
 		},
 	}
 
+	// Inject config files as Nomad template blocks.
+	// Nomad renders templates into the task working directory before
+	// starting the Docker container. Files are written to local/<path>
+	// and can be mounted to arbitrary container paths via Docker bind mounts
+	// or read from ${NOMAD_TASK_DIR}/local/<path> by the agent.
+	if len(spec.Files) > 0 {
+		task := job.TaskGroups[0].Tasks[0]
+		for targetPath, content := range spec.Files {
+			// Strip leading slash for local path
+			localPath := strings.TrimPrefix(targetPath, "/")
+			task.Templates = append(task.Templates, &api.Template{
+				EmbeddedTmpl: &content,
+				DestPath:     &localPath,
+			})
+
+			// Add a Docker bind mount to make the file available at the
+			// agent's expected path. Bind from local/<path> to target path.
+			// Nomad automatically maps "local" to ${NOMAD_TASK_DIR}/local.
+			dockerConfig["mount"] = append(
+				toMountSlice(dockerConfig["mount"]),
+				map[string]any{
+					"type":   "bind",
+					"source": localPath,
+					"target": targetPath,
+				},
+			)
+		}
+	}
+
 	resp, _, err := client.Jobs().Register(job, nil)
 	if err != nil {
 		return "", fmt.Errorf("nomad: submit job: %w", err)
@@ -471,6 +500,17 @@ func (a *Adapter) GetAllocations(ctx context.Context, jobID string) ([]orchestra
 			NodeID: alloc.NodeID,
 			State:  alloc.ClientStatus,
 		}
+		// Fetch full allocation details to populate port mappings
+		if detail, _, err := client.Allocations().Info(alloc.ID, nil); err == nil && detail != nil {
+			if detail.AllocatedResources != nil {
+				for _, pm := range detail.AllocatedResources.Shared.Ports {
+					al.Ports = append(al.Ports, orchestrator.AllocPort{
+						Label:    pm.Label,
+						HostPort: pm.Value,
+					})
+				}
+			}
+		}
 		result = append(result, al)
 	}
 	return result, nil
@@ -500,6 +540,18 @@ func mapNomadClientStatus(status string) orchestrator.BodyState {
 	default:
 		return orchestrator.StateCreated
 	}
+}
+
+// toMountSlice extracts a []map[string]any from an interface{} value,
+// returning an empty slice if nil or not the right type.
+func toMountSlice(v any) []map[string]any {
+	if v == nil {
+		return nil
+	}
+	if slice, ok := v.([]map[string]any); ok {
+		return slice
+	}
+	return nil
 }
 
 func strPtr(s string) *string {

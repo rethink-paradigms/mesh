@@ -29,8 +29,8 @@ type DaemonConfig struct {
 	ClusterOwnerID string `yaml:"cluster_owner_id"` // Auth0 user ID that owns this cluster
 	ClusterID      string `yaml:"cluster_id"`       // Cluster UUID assigned by gateway
 
-	AgentVaultToken   string `yaml:"agent_vault_token"`    // Admin token for Agent Vault API
-	AgentVaultEnabled bool   `yaml:"agent_vault_enabled"`  // Enable Agent Vault credential proxy
+	AgentVaultToken   string `yaml:"agent_vault_token"`   // Admin token for Agent Vault API
+	AgentVaultEnabled bool   `yaml:"agent_vault_enabled"` // Enable Agent Vault credential proxy
 
 	GatewayURL               string `yaml:"gateway_url"`
 	HeartbeatIntervalSeconds int    `yaml:"heartbeat_interval_seconds"`
@@ -251,12 +251,18 @@ func applyDefaults(cfg *Config) {
 		}
 	}
 
-	// Default nomad address if not set
-	if cfg.Orchestrators["nomad"] == nil {
-		cfg.Orchestrators["nomad"] = make(map[string]string)
-	}
-	if cfg.Orchestrators["nomad"]["address"] == "" {
-		cfg.Orchestrators["nomad"]["address"] = "http://127.0.0.1:4646"
+	// Only default Nomad if it was explicitly configured or legacy [nomad] section exists.
+	// If the user never mentions Nomad, do not register it.
+	hasExplicitNomad := len(cfg.Orchestrators["nomad"]) > 0
+	hasLegacyNomad := cfg.Nomad.Address != "" || cfg.Nomad.Token != "" || cfg.Nomad.Region != "" || cfg.Nomad.Namespace != ""
+
+	if hasExplicitNomad || hasLegacyNomad {
+		if cfg.Orchestrators["nomad"] == nil {
+			cfg.Orchestrators["nomad"] = make(map[string]string)
+		}
+		if cfg.Orchestrators["nomad"]["address"] == "" {
+			cfg.Orchestrators["nomad"]["address"] = "http://127.0.0.1:4646"
+		}
 	}
 
 	for i := range cfg.Bodies {

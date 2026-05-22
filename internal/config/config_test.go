@@ -616,8 +616,9 @@ bodies:
 		t.Errorf("Registry.Type = %q, want %q", cfg.Registry.Type, "s3")
 	}
 
-	if cfg.Orchestrators["nomad"]["address"] != "http://127.0.0.1:4646" {
-		t.Errorf("Orchestrators[nomad][address] = %q, want %q", cfg.Orchestrators["nomad"]["address"], "http://127.0.0.1:4646")
+	// Nomad default is NOT applied when no explicit nomad config is present.
+	if cfg.Orchestrators["nomad"] != nil {
+		t.Errorf("Orchestrators[nomad] = %v, want nil when no explicit nomad config", cfg.Orchestrators["nomad"])
 	}
 
 	if cfg.Bodies[0].Substrate != "docker" {
@@ -883,9 +884,9 @@ bodies:
 	if cfg.Orchestrators == nil {
 		t.Fatal("Orchestrators is nil, want initialized map")
 	}
-	// Nomad address default should be set
-	if cfg.Orchestrators["nomad"]["address"] != "http://127.0.0.1:4646" {
-		t.Errorf("Orchestrators[nomad][address] = %q, want %q", cfg.Orchestrators["nomad"]["address"], "http://127.0.0.1:4646")
+	// Nomad default is NOT applied when no explicit nomad config is present.
+	if cfg.Orchestrators["nomad"] != nil {
+		t.Errorf("Orchestrators[nomad] = %v, want nil when no explicit nomad config", cfg.Orchestrators["nomad"])
 	}
 }
 

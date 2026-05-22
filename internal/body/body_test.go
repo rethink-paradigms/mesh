@@ -295,7 +295,6 @@ func TestInvalidTransitions(t *testing.T) {
 		{orchestrator.StateStopped, orchestrator.StateRunning},
 		{orchestrator.StateDestroyed, orchestrator.StateRunning},
 		{orchestrator.StateDestroyed, orchestrator.StateCreated},
-		{orchestrator.StateRunning, orchestrator.StateStarting},
 		{orchestrator.StateMigrating, orchestrator.StateStopped},
 	}
 	for _, tt := range tests {
@@ -767,8 +766,8 @@ func TestCanTransitionMethod(t *testing.T) {
 	if b.CanTransition(orchestrator.StateDestroyed) {
 		t.Error("Running → Destroyed should be invalid")
 	}
-	if b.CanTransition(orchestrator.StateStarting) {
-		t.Error("Running → Starting should be invalid")
+	if !b.CanTransition(orchestrator.StateStarting) {
+		t.Error("Running → Starting should be valid")
 	}
 }
 

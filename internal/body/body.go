@@ -30,7 +30,7 @@ type Body struct {
 var validTransitions = map[orchestrator.BodyState][]orchestrator.BodyState{
 	orchestrator.StateCreated:   {orchestrator.StateStarting, orchestrator.StateError},
 	orchestrator.StateStarting:  {orchestrator.StateRunning, orchestrator.StateError},
-	orchestrator.StateRunning:   {orchestrator.StateStopping, orchestrator.StateMigrating, orchestrator.StateError, orchestrator.StateRunning, orchestrator.StateExited},
+	orchestrator.StateRunning:   {orchestrator.StateStarting, orchestrator.StateStopping, orchestrator.StateMigrating, orchestrator.StateError, orchestrator.StateRunning, orchestrator.StateExited},
 	orchestrator.StateStopping:  {orchestrator.StateStopped, orchestrator.StateError},
 	orchestrator.StateStopped:   {orchestrator.StateStarting, orchestrator.StateDestroyed},
 	orchestrator.StateError:     {orchestrator.StateStarting, orchestrator.StateDestroyed, orchestrator.StateMigrating},

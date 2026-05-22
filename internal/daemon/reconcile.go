@@ -20,6 +20,15 @@ func (d *Daemon) reconcile(ctx context.Context) error {
 
 	for _, rec := range bodies {
 		if rec.InstanceID == "" {
+			if rec.State == orchestrator.StateRunning || rec.State == orchestrator.StateStarting || rec.State == orchestrator.StateStopping {
+				slog.Warn("reconcile: body has empty instance ID, transitioning to Error", "body_id", rec.ID)
+				if transErr := d.bodyMgr.TransitionBody(ctx, rec.ID, orchestrator.StateError); transErr != nil {
+					slog.Warn("reconcile: failed to transition body to Error", "body_id", rec.ID, "error", transErr)
+				}
+				d.mu.Lock()
+				d.reconcileSteps++
+				d.mu.Unlock()
+			}
 			continue
 		}
 
@@ -70,6 +79,40 @@ func (d *Daemon) reconcile(ctx context.Context) error {
 							target = orchestrator.StateExited
 						} else {
 							target = orchestrator.StateError
+						}
+					}
+					// If orchestrator says Created for a previously-active body, the job was purged.
+					if target == orchestrator.StateCreated &&
+						(rec.State == orchestrator.StateRunning || rec.State == orchestrator.StateStarting || rec.State == orchestrator.StateStopping) {
+						target = orchestrator.StateError
+					}
+					// If reconcile promotes Starting → Running, set up ports and routes.
+					// For Nomad bodies, read real ports from allocation status.
+					// For Docker bodies, allocate from the daemon pool.
+					if rec.State == orchestrator.StateStarting && target == orchestrator.StateRunning {
+						if b, getErr := d.bodyMgr.Get(ctx, rec.ID); getErr == nil {
+							if rec.Substrate == "nomad" {
+								if allocer, ok := adp.(orchestrator.AllocQuerier); ok {
+									allocs, allocErr := allocer.GetAllocations(ctx, rec.InstanceID)
+									if allocErr == nil {
+										portMap := make(map[string]int)
+										for _, alloc := range allocs {
+											if alloc.State == "running" {
+												for _, p := range alloc.Ports {
+													portMap[p.Label] = p.HostPort
+												}
+												break
+											}
+										}
+										if len(portMap) > 0 {
+											d.bodyMgr.SetupPorts(ctx, b, portMap)
+										}
+									}
+								}
+							} else {
+								// Docker substrate — use daemon pool
+								d.bodyMgr.PostStart(ctx, b)
+							}
 						}
 					}
 					slog.Info("reconcile: container state changed",

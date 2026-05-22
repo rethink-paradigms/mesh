@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"strings"
 	"sync"
 
 	"github.com/google/uuid"
@@ -72,6 +73,7 @@ func (bm *BodyManager) Create(ctx context.Context, name string, spec orchestrato
 		Image:     spec.Image,
 		Workdir:   spec.Workdir,
 		Env:       spec.Env,
+		Files:     spec.Files,
 		Cmd:       spec.Cmd,
 		MemoryMB:  spec.MemoryMB,
 		CPUShares: spec.CPUShares,
@@ -103,26 +105,36 @@ func (bm *BodyManager) Create(ctx context.Context, name string, spec orchestrato
 		return nil, fmt.Errorf("orchestrator start body: %w", err)
 	}
 
-	if err := bm.transitionPersisted(ctx, b, orchestrator.StateRunning); err != nil {
-		return nil, err
-	}
-
-	bm.postStart(ctx, b)
-
-	// Persist port allocations so they survive daemon restart
-	// and can warm the port pool on next startup.
-	if len(b.PortAllocations) > 0 {
-		portsJSON, err := json.Marshal(b.PortAllocations)
-		if err == nil {
-			if saveErr := bm.store.UpdateBodyAllocatedPorts(ctx, b.ID, string(portsJSON)); saveErr != nil {
-				slog.Warn("failed to persist port allocations", "body_id", b.ID, "error", saveErr)
+	// Only promote to Running if the orchestrator confirms it synchronously.
+	// Docker StartBody blocks until the container is running; Nomad StartBody
+	// returns immediately while the allocation is still pending.
+	status, _ := bm.orch.GetBodyStatus(ctx, handle)
+	if status.State == orchestrator.StateRunning {
+		if err := bm.transitionPersisted(ctx, b, orchestrator.StateRunning); err != nil {
+			return nil, err
+		}
+		bm.postStart(ctx, b)
+		// Persist port allocations so they survive daemon restart
+		// and can warm the port pool on next startup.
+		if len(b.PortAllocations) > 0 {
+			portsJSON, err := json.Marshal(b.PortAllocations)
+			if err == nil {
+				if saveErr := bm.store.UpdateBodyAllocatedPorts(ctx, b.ID, string(portsJSON)); saveErr != nil {
+					slog.Warn("failed to persist port allocations", "body_id", b.ID, "error", saveErr)
+				}
+			} else {
+				slog.Warn("failed to marshal port allocations", "body_id", b.ID, "error", err)
 			}
-		} else {
-			slog.Warn("failed to marshal port allocations", "body_id", b.ID, "error", err)
 		}
 	}
+	// If status is not Running (Nomad async case), body stays at Starting.
+	// Reconcile will promote to Running later and call postStart then.
 
 	return b, nil
+}
+
+func (bm *BodyManager) PostStart(ctx context.Context, b *Body) {
+	bm.postStart(ctx, b)
 }
 
 func (bm *BodyManager) postStart(ctx context.Context, b *Body) {
@@ -149,6 +161,47 @@ func (bm *BodyManager) postStart(ctx context.Context, b *Body) {
 			domain := fmt.Sprintf("%s.%s", b.Name, bm.ingress.PublicDomain())
 			if err := bm.ingress.AddRoute(ctx, domain, "127.0.0.1", hostPort); err != nil {
 				slog.Warn("failed to add ingress route for body", "body_id", b.ID, "domain", domain, "error", err)
+			}
+		}
+	}
+}
+
+// SetupPorts sets up port allocations and routes using pre-determined host ports
+// (e.g., from Nomad allocation status) instead of allocating from the daemon pool.
+// allocPorts is a map of port label (e.g. "api") → host port.
+func (bm *BodyManager) SetupPorts(ctx context.Context, b *Body, allocPorts map[string]int) {
+	if bm.ingress == nil || len(b.Spec.Ports) == 0 {
+		return
+	}
+	for _, p := range b.Spec.Ports {
+		if !p.Expose {
+			continue
+		}
+		hostPort, ok := allocPorts[p.Name]
+		if !ok {
+			slog.Warn("no pre-allocated port for body port", "body_id", b.ID, "port_name", p.Name)
+			continue
+		}
+		b.PortAllocations = append(b.PortAllocations, AllocatedPort{
+			Name:          p.Name,
+			ContainerPort: p.ContainerPort,
+			HostPort:      hostPort,
+			Protocol:      p.Protocol,
+			AccessURL:     bm.ingress.BuildURL(b.Name, hostPort),
+		})
+		if bm.ingress.PublicDomain() != "" {
+			domain := fmt.Sprintf("%s.%s", b.Name, bm.ingress.PublicDomain())
+			if err := bm.ingress.AddRoute(ctx, domain, "127.0.0.1", hostPort); err != nil {
+				slog.Warn("failed to add ingress route for body", "body_id", b.ID, "domain", domain, "error", err)
+			}
+		}
+	}
+	// Persist port allocations so they survive daemon restart
+	if len(b.PortAllocations) > 0 {
+		portsJSON, err := json.Marshal(b.PortAllocations)
+		if err == nil {
+			if saveErr := bm.store.UpdateBodyAllocatedPorts(ctx, b.ID, string(portsJSON)); saveErr != nil {
+				slog.Warn("failed to persist port allocations", "body_id", b.ID, "error", saveErr)
 			}
 		}
 	}
@@ -190,11 +243,16 @@ func (bm *BodyManager) Start(ctx context.Context, bodyID string) error {
 		return fmt.Errorf("orchestrator start body: %w", err)
 	}
 
-	if err := bm.transitionPersisted(ctx, b, orchestrator.StateRunning); err != nil {
-		return err
+	// Only promote to Running if the orchestrator confirms it synchronously.
+	status, _ := bm.orch.GetBodyStatus(ctx, orchestrator.Handle(b.InstanceID))
+	if status.State == orchestrator.StateRunning {
+		if err := bm.transitionPersisted(ctx, b, orchestrator.StateRunning); err != nil {
+			return err
+		}
+		bm.postStart(ctx, b)
 	}
-
-	bm.postStart(ctx, b)
+	// If not Running yet (Nomad async), body stays at Starting.
+	// Reconcile will promote to Running later and call postStart then.
 	return nil
 }
 
@@ -210,6 +268,11 @@ func (bm *BodyManager) Stop(ctx context.Context, bodyID string, opts orchestrato
 	bm.preStop(ctx, b)
 
 	if err := bm.orch.StopBody(ctx, orchestrator.Handle(b.InstanceID)); err != nil {
+		// If the container/job is already gone, treat it as "already stopped".
+		if strings.Contains(err.Error(), "not found") {
+			slog.Info("stop body: container already gone, treating as stopped", "body_id", bodyID, "error", err)
+			return bm.transitionPersisted(ctx, b, orchestrator.StateStopped)
+		}
 		_ = bm.transitionPersisted(ctx, b, orchestrator.StateError)
 		return fmt.Errorf("orchestrator stop body: %w", err)
 	}
@@ -335,6 +398,14 @@ func (bm *BodyManager) List(ctx context.Context) ([]*Body, error) {
 		b.State = rec.State
 		b.InstanceID = orchestrator.Handle(rec.InstanceID)
 		b.Substrate = rec.Substrate
+		if rec.SpecJSON != "" {
+			var spec orchestrator.BodySpec
+			if jsonErr := json.Unmarshal([]byte(rec.SpecJSON), &spec); jsonErr == nil {
+				b.Spec = spec
+			} else {
+				slog.Warn("failed to unmarshal body spec", "body_id", rec.ID, "error", jsonErr)
+			}
+		}
 		b.mu.Unlock()
 		bodies = append(bodies, b)
 	}
@@ -357,6 +428,14 @@ func (bm *BodyManager) ListByCluster(ctx context.Context, clusterID string) ([]*
 		b.State = rec.State
 		b.InstanceID = orchestrator.Handle(rec.InstanceID)
 		b.Substrate = rec.Substrate
+		if rec.SpecJSON != "" {
+			var spec orchestrator.BodySpec
+			if jsonErr := json.Unmarshal([]byte(rec.SpecJSON), &spec); jsonErr == nil {
+				b.Spec = spec
+			} else {
+				slog.Warn("failed to unmarshal body spec", "body_id", rec.ID, "error", jsonErr)
+			}
+		}
 		b.mu.Unlock()
 		bodies = append(bodies, b)
 	}
@@ -413,6 +492,14 @@ func (bm *BodyManager) Get(ctx context.Context, bodyID string) (*Body, error) {
 	b.State = rec.State
 	b.InstanceID = orchestrator.Handle(rec.InstanceID)
 	b.Substrate = rec.Substrate
+	if rec.SpecJSON != "" {
+		var spec orchestrator.BodySpec
+		if jsonErr := json.Unmarshal([]byte(rec.SpecJSON), &spec); jsonErr == nil {
+			b.Spec = spec
+		} else {
+			slog.Warn("failed to unmarshal body spec", "body_id", rec.ID, "error", jsonErr)
+		}
+	}
 
 	return b, nil
 }
@@ -432,6 +519,14 @@ func (bm *BodyManager) GetByCluster(ctx context.Context, bodyID, clusterID strin
 	b.State = rec.State
 	b.InstanceID = orchestrator.Handle(rec.InstanceID)
 	b.Substrate = rec.Substrate
+	if rec.SpecJSON != "" {
+		var spec orchestrator.BodySpec
+		if jsonErr := json.Unmarshal([]byte(rec.SpecJSON), &spec); jsonErr == nil {
+			b.Spec = spec
+		} else {
+			slog.Warn("failed to unmarshal body spec", "body_id", rec.ID, "error", jsonErr)
+		}
+	}
 
 	return b, nil
 }
