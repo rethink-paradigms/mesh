@@ -192,6 +192,13 @@ func (a *Adapter) ScheduleBody(ctx context.Context, spec orchestrator.BodySpec) 
 		if proto == "" {
 			proto = "tcp"
 		}
+		// Docker only supports tcp, udp, and sctp. Normalize anything else.
+		switch proto {
+		case "tcp", "udp", "sctp":
+			// valid
+		default:
+			proto = "tcp"
+		}
 		portKey := fmt.Sprintf("%d/%s", p.ContainerPort, proto)
 		exposedPorts[portKey] = struct{}{}
 

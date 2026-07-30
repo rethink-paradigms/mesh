@@ -167,7 +167,7 @@ func (i *Installer) Install(ctx context.Context, agentType, name string, env map
 	}
 
 	if descriptor.HealthCheck != nil && i.healthPoll != nil {
-		i.healthPoll(ctx, descriptor, name, allocatedPorts)
+		go i.healthPoll(context.Background(), descriptor, name, allocatedPorts)
 	}
 
 	return &InstallResult{

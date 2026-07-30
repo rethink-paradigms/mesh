@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"log"
 	"net/http"
 	"time"
 
@@ -77,6 +78,26 @@ type bodyServiceAdapter interface {
 
 var _ bodyServiceAdapter = (*service.BodyService)(nil)
 
+// requestLogging wraps an http.Handler and logs every request with method, path, status, and duration.
+func requestLogging(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		start := time.Now()
+		wrapped := &statusRecorder{ResponseWriter: w, status: http.StatusOK}
+		next.ServeHTTP(wrapped, r)
+		log.Printf("%s %s %d %s", r.Method, r.URL.Path, wrapped.status, time.Since(start).Round(time.Millisecond))
+	})
+}
+
+type statusRecorder struct {
+	http.ResponseWriter
+	status int
+}
+
+func (r *statusRecorder) WriteHeader(code int) {
+	r.status = code
+	r.ResponseWriter.WriteHeader(code)
+}
+
 func NewRouter(cfg RouterConfig) http.Handler {
 	mux := http.NewServeMux()
 
@@ -112,7 +133,7 @@ func NewRouter(cfg RouterConfig) http.Handler {
 
 	mux.Handle("/api/v1/", JWTOrTokenAuth(cfg, validator, apiMux))
 
-	return jsonContentType(mux)
+	return requestLogging(jsonContentType(mux))
 }
 
 func jsonContentType(next http.Handler) http.Handler {

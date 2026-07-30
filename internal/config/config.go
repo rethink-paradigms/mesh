@@ -181,7 +181,7 @@ func applyDefaults(cfg *Config) {
 	}
 
 	if cfg.Daemon.HeartbeatIntervalSeconds == 0 {
-		cfg.Daemon.HeartbeatIntervalSeconds = 30
+		cfg.Daemon.HeartbeatIntervalSeconds = 15
 	}
 	cfg.Daemon.HeartbeatEnabled = cfg.Daemon.HeartbeatIntervalSeconds > 0 && cfg.Daemon.GatewayURL != ""
 	if cfg.Store.Path == "" {
